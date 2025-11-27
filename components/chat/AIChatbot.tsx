@@ -14,6 +14,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isMobile = SCREEN_WIDTH < 768;
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
@@ -279,11 +282,11 @@ export function AIChatbot() {
 const styles = StyleSheet.create({
   floatingButton: {
     position: 'absolute',
-    bottom: 100,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    bottom: isMobile ? 90 : 100,
+    right: isMobile ? 16 : 20,
+    width: isMobile ? 52 : 56,
+    height: isMobile ? 52 : 56,
+    borderRadius: isMobile ? 26 : 28,
     backgroundColor: '#047857',
     justifyContent: 'center',
     alignItems: 'center',
@@ -293,6 +296,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     zIndex: 1000,
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
   },
   modalContainer: {
     flex: 1,
