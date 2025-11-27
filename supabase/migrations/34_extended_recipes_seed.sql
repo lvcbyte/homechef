@@ -35,20 +35,20 @@ ARRAY['Frans', 'Vis', 'Gezond'], 'Frans'),
 ARRAY['Frans', 'Vegetarian', 'Vegan', 'Gezond'], 'Frans'),
 
 -- Asian Recipes
-(gen_random_uuid(), 'Peking Duck', 'Legendarische Chinese eend met krokante huid, geserveerd met pannenkoekjes, lente-ui en hoisinsaus. Een feestelijk gerecht.', 'Dietmar Lattré', 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?auto=format&fit=crop&w=800&q=80', 60, 120, 180, 'Advanced', 4,
+(gen_random_uuid(), 'Peking Duck', 'Legendarische Chinese eend met krokante huid, geserveerd met pannenkoekjes, lente-ui en hoisinsaus. Een feestelijk gerecht.', 'Dietmar Lattré', 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?auto=format&fit=crop&w=800&q=80', 60, 120, 180, 'Moeilijk', 4,
 '["1 eend (2-2.5kg)", "2 eetlepels honing", "2 eetlepels sojasaus", "1 eetlepel rijstwijn", "1 theelepel vijfkruidenpoeder", "1 theelepel gemberpoeder", "16 Chinese pannenkoekjes", "4 lente-uien, in reepjes", "1 komkommer, in reepjes", "Hoisinsaus", "Zout"]'::jsonb,
 '["Maak de eend schoon en droog goed af met keukenpapier.", "Meng honing, sojasaus, rijstwijn en kruiden. Bestrijk de eend.", "Hang de eend 24 uur op in de koelkast om te drogen (of gebruik een ventilator).", "Verwarm de oven voor op 180°C. Leg eend op een rooster boven een bakplaat.", "Bak 1.5-2 uur tot de huid krokant is. Verhoog de temperatuur de laatste 20 minuten naar 220°C.", "Snijd de huid en het vlees in dunne plakjes.", "Serveer met pannenkoekjes, lente-ui, komkommer en hoisinsaus."]'::jsonb,
-ARRAY['Aziatisch', 'Feest', 'Advanced'], 'Aziatisch'),
+ARRAY['Aziatisch', 'Feest', 'Moeilijk'], 'Aziatisch'),
 
 (gen_random_uuid(), 'Pad Thai met Garnalen', 'Klassieke Thaise noedelschotel met garnalen, taugé, pindas en een perfecte balans tussen zoet, zuur en zout.', 'Dietmar Lattré', 'https://images.unsplash.com/photo-1559314809-0d155014e29e?auto=format&fit=crop&w=800&q=80', 20, 15, 35, 'Gemiddeld', 4,
 '["200g rijstnoedels", "300g garnalen, gepeld", "2 eieren", "100g taugé", "4 lente-uien, in stukjes", "2 teentjes knoflook, fijngehakt", "50g pindas, fijngehakt", "2 eetlepels vissaus", "2 eetlepels tamarindepasta", "2 eetlepels palmsuiker", "1 theelepel chilivlokken", "2 eetlepels olie", "Limoensap", "Koriander, fijngehakt"]'::jsonb,
 '["Week de noedels 30 minuten in warm water tot zacht. Giet af.", "Meng vissaus, tamarinde, palmsuiker en chilivlokken voor de saus.", "Verhit olie in een wok. Bak knoflook 30 seconden. Voeg garnalen toe en bak 2 minuten.", "Schuif garnalen opzij. Klop eieren in de wok en roerbak tot gestold.", "Voeg noedels en saus toe. Roerbak 2 minuten tot noedels zacht zijn.", "Voeg taugé en lente-ui toe. Roerbak 1 minuut.", "Serveer met pindas, koriander en limoensap."]'::jsonb,
 ARRAY['Aziatisch', 'Quick', 'Vis'], 'Aziatisch'),
 
-(gen_random_uuid(), 'Ramen Tonkotsu', 'Rijke Japanse noedelsoep met varkensbouillon, gesmolten varkensvlees, zacht gekookt ei en diverse toppings.', 'Dietmar Lattré', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 30, 240, 270, 'Advanced', 4,
+(gen_random_uuid(), 'Ramen Tonkotsu', 'Rijke Japanse noedelsoep met varkensbouillon, gesmolten varkensvlees, zacht gekookt ei en diverse toppings.', 'Dietmar Lattré', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80', 30, 240, 270, 'Moeilijk', 4,
 '["1kg varkensbotten", "500g varkensnek", "2kg varkenspoten", "200g varkensreuzel", "4 teentjes knoflook", "1 stuk gember (5cm)", "4 ramen noedels", "4 zachtgekookte eieren", "200g chashu (gekookt varkensvlees)", "4 nori vellen", "Lente-ui, fijngehakt", "Bamboescheuten", "Sesamolie"]'::jsonb,
 '["Blancheer de botten 10 minuten in kokend water. Spoel af.", "Kook botten, nek en poten 12-18 uur op laag vuur tot de bouillon romig wit is.", "Voeg reuzel toe en kook nog 1 uur. Zeef de bouillon.", "Bak knoflook en gember. Voeg toe aan de bouillon.", "Kook de noedels volgens de verpakking.", "Verwarm de bouillon. Breng op smaak met zout.", "Serveer noedels in kommen met bouillon, chashu, ei, nori, lente-ui en bamboescheuten."]'::jsonb,
-ARRAY['Aziatisch', 'Comfort Food', 'Advanced'], 'Aziatisch'),
+ARRAY['Aziatisch', 'Comfort Food', 'Moeilijk'], 'Aziatisch'),
 
 -- Spanish Recipes
 (gen_random_uuid(), 'Paella Valenciana', 'Authentieke Spaanse rijstschotel met kip, konijn, bonen en saffraan. Het nationale gerecht van Spanje.', 'Dietmar Lattré', 'https://images.unsplash.com/photo-1534939561126-855b8675edd7?auto=format&fit=crop&w=800&q=80', 30, 45, 75, 'Gemiddeld', 6,
