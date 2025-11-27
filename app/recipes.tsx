@@ -306,52 +306,91 @@ export default function RecipesScreen() {
       if (cats) {
         const allCats = [{ category: 'Alles', count: 0 }, ...(cats as Category[])];
         setCategories(allCats);
+      }
+      
+      // Fetch recipes for top categories (excluding 'Alles') - separate async calls
+      const topCategories = categories.length > 1 ? categories.slice(1, 8) : (cats ? [{ category: 'Alles', count: 0 }, ...(cats as Category[])].slice(1, 8) : []);
+      const categoryRecipesMap: Record<string, Recipe[]> = {};
+      
+      // Fetch recipes for each category in parallel
+      const categoryPromises = topCategories.map(async (cat) => {
+        if (cat.category === 'Alles') return;
         
-        // Fetch recipes for top categories (excluding 'Alles')
-        const topCategories = allCats.slice(1, 8); // Get top 7 categories
-        const categoryRecipesMap: Record<string, Recipe[]> = {};
-        
-        for (const cat of topCategories) {
-          if (cat.category === 'Alles') continue;
-          
+        try {
           if (profile?.archetype === 'None') {
             // If archetype is "None", get random recipes for this category
             const { data: catRecipes } = await supabase
               .from('recipes')
               .select('*')
-              .limit(50);
+              .limit(100);
             
             if (catRecipes && catRecipes.length > 0) {
               // Filter by category and shuffle
               const filtered = catRecipes.filter((r: any) => 
                 r.category === cat.category || 
-                (r.tags && r.tags.includes(cat.category))
+                (r.tags && Array.isArray(r.tags) && r.tags.includes(cat.category)) ||
+                (r.tags && typeof r.tags === 'string' && r.tags.includes(cat.category))
               );
               const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-              categoryRecipesMap[cat.category] = shuffled.slice(0, 50).map((r: any) => ({
-                ...r,
-                recipe_id: r.id,
-                likes_count: 0,
-              }));
+              return {
+                category: cat.category,
+                recipes: shuffled.slice(0, 100).map((r: any) => ({
+                  ...r,
+                  recipe_id: r.id,
+                  likes_count: 0,
+                }))
+              };
             }
           } else {
-            const { data: catRecipes } = await supabase.rpc('get_recipes_by_category', {
+            const { data: catRecipes, error } = await supabase.rpc('get_recipes_by_category', {
               p_category: cat.category,
-              p_limit: 50,
+              p_limit: 100,
               p_user_id: user?.id || null,
               p_archetype: profile?.archetype || null,
               p_cooking_skill: profile?.cooking_skill || null,
               p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
             });
             
-            if (catRecipes && catRecipes.length > 0) {
-              categoryRecipesMap[cat.category] = catRecipes as Recipe[];
+            if (error) {
+              console.error(`Error fetching recipes for category ${cat.category}:`, error);
+              // Fallback: get recipes directly
+              const { data: fallback } = await supabase
+                .from('recipes')
+                .select('*')
+                .or(`category.eq.${cat.category},tags.cs.{${cat.category}})`)
+                .limit(100);
+              
+              if (fallback && fallback.length > 0) {
+                return {
+                  category: cat.category,
+                  recipes: fallback.map((r: any) => ({
+                    ...r,
+                    recipe_id: r.id,
+                    likes_count: 0,
+                  }))
+                };
+              }
+            } else if (catRecipes && catRecipes.length > 0) {
+              return {
+                category: cat.category,
+                recipes: catRecipes as Recipe[]
+              };
             }
           }
+        } catch (err) {
+          console.error(`Error processing category ${cat.category}:`, err);
         }
-        
-        setCategoryRecipes(categoryRecipesMap);
-      }
+        return null;
+      });
+      
+      const categoryResults = await Promise.all(categoryPromises);
+      categoryResults.forEach((result) => {
+        if (result && result.recipes && result.recipes.length > 0) {
+          categoryRecipesMap[result.category] = result.recipes;
+        }
+      });
+      
+      setCategoryRecipes(categoryRecipesMap);
 
       // Fetch user's liked recipes
       const { data: likes } = await supabase
@@ -708,7 +747,7 @@ export default function RecipesScreen() {
           </View>
           )}
 
-          {/* Category Rows - Infinite scrollable rows like Netflix */}
+          {/* Category Rows - Infinite scrollable rows like Netflix, exact same layout as Trending */}
           {categories.slice(1, 8).map((cat) => {
             const recipes = categoryRecipes[cat.category] || [];
             if (recipes.length === 0) return null;
