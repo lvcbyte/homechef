@@ -424,8 +424,9 @@ export default function Home() {
           {/* Trending */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Trending Recepten</Text>
+            <Text style={styles.sectionSubtitle}>Meest gelikete recepten deze week</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {trendingRecipes.slice(trendingIndex, trendingIndex + 3).map((recipe) => (
+              {trendingRecipes.map((recipe) => (
                 <TouchableOpacity
                   key={recipe.recipe_id}
                   style={styles.recipeCard}
