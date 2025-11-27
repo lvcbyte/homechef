@@ -81,17 +81,43 @@ export default function RecipesScreen() {
 
       // Fetch Chef Radar recipes (inventory-matched, loose matching enabled)
       const category = activeFilter === 'Alles' ? null : activeFilter;
-      const { data: matched } = await supabase.rpc('match_recipes_with_inventory', {
-        p_user_id: user.id,
-        p_category: category,
-        p_limit: 20, // Get more results to filter from
-        p_archetype: profile?.archetype || null,
-        p_cooking_skill: profile?.cooking_skill || null,
-        p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
-        p_loose_matching: true, // Enable loose matching for Chef Radar
-      });
       
-      if (matched && matched.length > 0) {
+      // If archetype is "None", get random recipes
+      if (profile?.archetype === 'None') {
+        const { data: allRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .limit(20);
+        
+        if (allRecipes) {
+          // Shuffle and take 3 random recipes
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          const randomRecipes = shuffled.slice(0, 3).map((r: any) => ({
+            ...r,
+            recipe_id: r.id,
+            match_score: 0,
+            matched_ingredients_count: 0,
+            total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+            likes_count: 0,
+          }));
+          setChefRadarRecipes(randomRecipes as Recipe[]);
+          setChefRadarCarouselData([]);
+        } else {
+          setChefRadarRecipes([]);
+          setChefRadarCarouselData([]);
+        }
+      } else {
+        const { data: matched } = await supabase.rpc('match_recipes_with_inventory', {
+          p_user_id: user.id,
+          p_category: category,
+          p_limit: 20, // Get more results to filter from
+          p_archetype: profile?.archetype || null,
+          p_cooking_skill: profile?.cooking_skill || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+          p_loose_matching: true, // Enable loose matching for Chef Radar
+        });
+        
+        if (matched && matched.length > 0) {
         // Very loose filtering: show recipes with at least 1 matched ingredient or any match score
         const goodMatches = (matched as Recipe[]).filter((r) => {
           const matchScore = r.match_score || 0;
