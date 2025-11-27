@@ -92,6 +92,7 @@ serve(async (req) => {
       nutrition: product.nutrition ?? null,
       price: product.price_current ?? null,
       is_available: product.is_available ?? true,
+      source: 'albert-heijn',
     };
 
     const { data, error } = await supabase.rpc('upsert_product_catalog', {
