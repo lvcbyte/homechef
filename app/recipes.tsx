@@ -53,7 +53,6 @@ export default function RecipesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [trendingIndex, setTrendingIndex] = useState(0);
   const [quickIndex, setQuickIndex] = useState(0);
 
   useEffect(() => {
@@ -65,7 +64,6 @@ export default function RecipesScreen() {
     }
   }, [user, profile, activeFilter]);
 
-  // Remove auto-rotation for trending - make it infinite scroll instead
 
   // Auto-rotate quick recipes every 5 seconds
   useEffect(() => {
