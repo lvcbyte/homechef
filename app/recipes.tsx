@@ -359,6 +359,7 @@ export default function RecipesScreen() {
         }
       });
       
+      console.log('Category recipes loaded:', Object.keys(categoryRecipesMap).length, 'categories');
       setCategoryRecipes(categoryRecipesMap);
 
       // Fetch user's liked recipes
