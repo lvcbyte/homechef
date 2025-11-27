@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
@@ -45,6 +45,7 @@ export default function RecipesScreen() {
   const [activeFilter, setActiveFilter] = useState(params.category as string || 'Alles');
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [chefRadarRecipes, setChefRadarRecipes] = useState<Recipe[]>([]);
+  const [chefRadarCarouselData, setChefRadarCarouselData] = useState<Recipe[]>([]);
   const [trendingRecipes, setTrendingRecipes] = useState<Recipe[]>([]);
   const [quickRecipes, setQuickRecipes] = useState<Recipe[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -120,8 +121,10 @@ export default function RecipesScreen() {
             likes_count: 0,
           }));
           setChefRadarRecipes(fallbackRecipes as Recipe[]);
+          setChefRadarCarouselData([...fallbackRecipes, ...fallbackRecipes, ...fallbackRecipes] as Recipe[]);
         } else {
           setChefRadarRecipes([]);
+          setChefRadarCarouselData([]);
         }
       }
 
@@ -436,44 +439,58 @@ export default function RecipesScreen() {
             {chefRadarRecipes.length === 0 ? (
               <Text style={styles.emptyText}>Geen recepten gevonden. Voeg items toe aan je voorraad!</Text>
             ) : (
-              <View style={styles.verticalList}>
-                {chefRadarRecipes.map((recipe) => (
-                  <TouchableOpacity
-                    key={recipe.recipe_id}
-                    style={styles.radarCard}
-                    onPress={() => handleRecipePress(recipe)}
-                  >
-                    <Image
-                      source={{
-                        uri: recipe.image_url || 'https://images.unsplash.com/photo-1470673042977-43d9b07b7103?auto=format&fit=crop&w=1000&q=80',
-                      }}
-                      style={styles.radarImage}
-                    />
+              <View style={styles.carouselContainer}>
+                <FlatList
+                  data={chefRadarCarouselData}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={Dimensions.get('window').width - 48}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                  keyExtractor={(item, index) => `${item.recipe_id}-${index}`}
+                  renderItem={({ item: recipe }) => (
                     <TouchableOpacity
-                      style={styles.heartButtonRadar}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleLike(recipe.recipe_id);
-                      }}
+                      style={styles.radarCardCarousel}
+                      onPress={() => handleRecipePress(recipe)}
+                      activeOpacity={0.9}
                     >
-                      <Ionicons
-                        name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
-                        size={20}
-                        color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#fff'}
+                      <Image
+                        source={{
+                          uri: recipe.image_url || 'https://images.unsplash.com/photo-1470673042977-43d9b07b7103?auto=format&fit=crop&w=1000&q=80',
+                        }}
+                        style={styles.radarImageCarousel}
                       />
+                      <TouchableOpacity
+                        style={styles.heartButtonRadarCarousel}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleLike(recipe.recipe_id);
+                        }}
+                      >
+                        <Ionicons
+                          name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
+                          size={22}
+                          color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#fff'}
+                        />
+                      </TouchableOpacity>
+                      <View style={styles.radarBodyCarousel}>
+                        <Text style={styles.radarTitleCarousel} numberOfLines={2}>{recipe.title}</Text>
+                        <Text style={styles.radarMatchCarousel}>
+                          {Math.round((recipe.match_score || 0) * 100)}% match • {recipe.matched_ingredients_count || 0} items op voorraad
+                        </Text>
+                        <View style={styles.radarMetaCarousel}>
+                          <Text style={styles.radarTimeCarousel}>
+                            {recipe.total_time_minutes} min
+                          </Text>
+                          <Text style={styles.radarDifficultyCarousel}>
+                            {recipe.difficulty}
+                          </Text>
+                        </View>
+                      </View>
                     </TouchableOpacity>
-                    <View style={styles.radarBody}>
-                      <Text style={styles.radarTitle}>{recipe.title}</Text>
-                      <Text style={styles.radarMatch}>
-                        {Math.round((recipe.match_score || 0) * 100)}% match • {recipe.matched_ingredients_count || 0} items op voorraad
-                      </Text>
-                      <Text style={styles.radarTime}>
-                        {recipe.total_time_minutes} min • {recipe.difficulty}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-                  </TouchableOpacity>
-                ))}
+                  )}
+                />
               </View>
             )}
           </View>

@@ -129,7 +129,7 @@ begin
                     or exists (
                         select 1
                         from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
-                        from unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
+                        cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
                         where length(ing_word) >= 3 and length(inv_word) >= 3
                         and (ing_word = inv_word or ing_word like '%' || inv_word || '%' or inv_word like '%' || ing_word || '%')
                     )
@@ -151,7 +151,7 @@ begin
                         or exists (
                             select 1
                             from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
-                            from unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
+                            cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
                             where length(ing_word) >= 3 and length(inv_word) >= 3
                             and (ing_word = inv_word or ing_word like '%' || inv_word || '%' or inv_word like '%' || ing_word || '%')
                         )
