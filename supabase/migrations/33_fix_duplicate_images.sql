@@ -1,42 +1,8 @@
 -- Fix duplicate recipe images by assigning unique images to each recipe
 -- This script finds recipes with duplicate image_url and assigns new unique images
 
--- First, let's see which recipes have duplicate images
--- Then update them with unique Unsplash images
-
 -- Update recipes with duplicate images to have unique images
 -- Using a variety of food photography from Unsplash
-
-UPDATE public.recipes
-SET image_url = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'
-WHERE id IN (
-    SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY image_url ORDER BY created_at) as rn
-        FROM public.recipes
-        WHERE image_url IN (
-            SELECT image_url 
-            FROM public.recipes 
-            GROUP BY image_url 
-            HAVING COUNT(*) > 1
-        )
-    ) t WHERE rn > 1
-) AND image_url = (
-    SELECT image_url 
-    FROM public.recipes 
-    WHERE id = (
-        SELECT MIN(id) 
-        FROM public.recipes 
-        WHERE image_url IN (
-            SELECT image_url 
-            FROM public.recipes 
-            GROUP BY image_url 
-            HAVING COUNT(*) > 1
-        )
-    )
-);
-
--- Assign unique images to remaining duplicates
--- We'll use a CTE to assign unique images systematically
 
 WITH duplicate_images AS (
     SELECT 
@@ -91,4 +57,3 @@ SELECT image_url, COUNT(*) as count
 FROM public.recipes
 GROUP BY image_url
 HAVING COUNT(*) > 1;
-
