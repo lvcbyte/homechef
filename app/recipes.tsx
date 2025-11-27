@@ -76,31 +76,51 @@ export default function RecipesScreen() {
         if (rod) setRecipeOfTheDay(rod as RecipeDetail);
       }
 
-      // Fetch Chef Radar recipes (inventory-matched, only show if good matches)
+      // Fetch Chef Radar recipes (inventory-matched, loose matching enabled)
       const category = activeFilter === 'Alles' ? null : activeFilter;
       const { data: matched } = await supabase.rpc('match_recipes_with_inventory', {
         p_user_id: user.id,
         p_category: category,
-        p_limit: 10,
+        p_limit: 20, // Get more results to filter from
         p_archetype: profile?.archetype || null,
         p_cooking_skill: profile?.cooking_skill || null,
         p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+        p_loose_matching: true, // Enable loose matching for Chef Radar
       });
       
       if (matched && matched.length > 0) {
-        // Filter to only show recipes with at least 30% match score and at least 2 matched ingredients
+        // Very loose filtering: show recipes with at least 1 matched ingredient or any match score
         const goodMatches = (matched as Recipe[]).filter((r) => {
           const matchScore = r.match_score || 0;
           const matchedCount = r.matched_ingredients_count || 0;
-          return matchScore >= 0.3 && matchedCount >= 2;
+          // Show if at least 1 ingredient matches OR match score > 5%
+          return matchedCount >= 1 || matchScore >= 5;
         });
         
-        // Sort by match score descending and take top 3
+        // Sort by match score descending (best matches first) and take top 3
         const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
         setChefRadarRecipes(sorted.slice(0, 3));
       } else {
-        // No matches found - don't show fallback, keep empty
-        setChefRadarRecipes([]);
+        // Fallback: show general recipes if no inventory matches
+        const { data: fallback } = await supabase
+          .from('recipes')
+          .select('*')
+          .limit(3)
+          .order('created_at', { ascending: false });
+        
+        if (fallback) {
+          const fallbackRecipes = fallback.map((r: any) => ({
+            ...r,
+            recipe_id: r.id,
+            match_score: 0,
+            matched_ingredients_count: 0,
+            total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+            likes_count: 0,
+          }));
+          setChefRadarRecipes(fallbackRecipes as Recipe[]);
+        } else {
+          setChefRadarRecipes([]);
+        }
       }
 
       // Fetch trending recipes with profile filters
