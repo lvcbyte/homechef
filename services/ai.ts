@@ -8,9 +8,10 @@ const OPENAI_KEY =
 const OPENROUTER_KEY =
   Constants.expoConfig?.extra?.openrouterKey || process.env.EXPO_PUBLIC_OPENROUTER_KEY;
 
-const client = new OpenAI({
+// Only initialize OpenAI client if key is available
+const client = OPENAI_KEY ? new OpenAI({
   apiKey: OPENAI_KEY,
-});
+}) : null;
 
 // OpenRouter client for free LLM access
 const openRouterClient = OPENROUTER_KEY ? new OpenAI({
@@ -29,6 +30,11 @@ const FREE_LLM_MODEL = 'deepseek/deepseek-r1-distill-llama-70b';
 
 export async function runInventoryScan(photoUris: string[]): Promise<InventoryItem[]> {
   if (!photoUris.length) {
+    return [];
+  }
+
+  if (!client) {
+    console.warn('OpenAI client not initialized. Please set EXPO_PUBLIC_OPENAI_KEY or use OpenRouter.');
     return [];
   }
 
@@ -72,10 +78,20 @@ export async function generateRecipes({
   profile,
   mood,
 }: RecipeEngineInput): Promise<GeneratedRecipe[]> {
-  const response = await client.responses.create({
-    model: RECIPE_MODEL,
+  // Use OpenRouter if available, otherwise fall back to OpenAI
+  const activeClient = openRouterClient || client;
+  
+  if (!activeClient) {
+    console.warn('No AI client available. Please set EXPO_PUBLIC_OPENAI_KEY or EXPO_PUBLIC_OPENROUTER_KEY');
+    return [];
+  }
+
+  const model = openRouterClient ? FREE_LLM_MODEL : RECIPE_MODEL;
+
+  const response = await activeClient.chat.completions.create({
+    model: model,
     response_format: { type: 'json_object' },
-    input: [
+    messages: [
       {
         role: 'system',
         content:
@@ -97,7 +113,8 @@ export async function generateRecipes({
     ],
   });
 
-  const payload = JSON.parse(response.output[0].content[0].text ?? '{"recipes": []}');
+  const content = response.choices[0]?.message?.content || '{"recipes": []}';
+  const payload = JSON.parse(content);
 
   return (payload.recipes ?? []).map((recipe: any) => {
     const inventoryHits = recipe.ingredients.filter((ingredient: any) =>
