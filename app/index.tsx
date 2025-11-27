@@ -72,18 +72,7 @@ export default function Home() {
     }
   }, [user, profile]);
 
-  // Auto-rotate trending recipes every 5 seconds
-  useEffect(() => {
-    if (trendingRecipes.length <= 3) return;
-    const interval = setInterval(() => {
-      setTrendingIndex((prev) => {
-        const next = prev + 3;
-        // If we've reached the end, wrap around to start
-        return next >= trendingRecipes.length ? 0 : next;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [trendingRecipes.length]);
+  // Remove auto-rotation for trending - make it infinite scroll instead
 
   // Auto-rotate quick recipes every 5 seconds
   useEffect(() => {

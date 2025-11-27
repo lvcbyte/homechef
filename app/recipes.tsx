@@ -65,17 +65,7 @@ export default function RecipesScreen() {
     }
   }, [user, profile, activeFilter]);
 
-  // Auto-rotate trending recipes every 5 seconds
-  useEffect(() => {
-    if (trendingRecipes.length <= 3) return;
-    const interval = setInterval(() => {
-      setTrendingIndex((prev) => {
-        const next = prev + 3;
-        return next >= trendingRecipes.length ? 0 : next;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [trendingRecipes.length]);
+  // Remove auto-rotation for trending - make it infinite scroll instead
 
   // Auto-rotate quick recipes every 5 seconds
   useEffect(() => {
@@ -211,7 +201,7 @@ export default function RecipesScreen() {
         }
       } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', {
-          p_limit: 30, // Get more for rotation
+          p_limit: 100, // Get many for infinite scroll
           p_user_id: user?.id || null,
           p_category: category,
         });
