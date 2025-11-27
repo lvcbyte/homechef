@@ -1,8 +1,8 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".expo/web",
+  "outputDirectory": "dist",
   "devCommand": "npm run web",
-  "installCommand": "npm install",
+  "installCommand": "npm ci",
   "framework": null,
   "rewrites": [
     {
