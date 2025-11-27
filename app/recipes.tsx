@@ -129,6 +129,7 @@ export default function RecipesScreen() {
         // Sort by match score descending (best matches first) and take top 3
         const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
         setChefRadarRecipes(sorted.slice(0, 3));
+        setChefRadarCarouselData([]);
       } else {
         // Fallback: show general recipes if no inventory matches
         const { data: fallback } = await supabase
