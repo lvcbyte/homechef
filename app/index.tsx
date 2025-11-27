@@ -60,6 +60,8 @@ export default function Home() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [trendingIndex, setTrendingIndex] = useState(0);
+  const [quickIndex, setQuickIndex] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -69,6 +71,24 @@ export default function Home() {
       fetchData();
     }
   }, [user, profile]);
+
+  // Auto-rotate trending recipes every 5 seconds
+  useEffect(() => {
+    if (trendingRecipes.length <= 3) return;
+    const interval = setInterval(() => {
+      setTrendingIndex((prev) => (prev + 3) % trendingRecipes.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [trendingRecipes.length]);
+
+  // Auto-rotate quick recipes every 5 seconds
+  useEffect(() => {
+    if (quickRecipes.length <= 3) return;
+    const interval = setInterval(() => {
+      setQuickIndex((prev) => (prev + 3) % quickRecipes.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [quickRecipes.length]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -85,12 +105,32 @@ export default function Home() {
       }
 
       // Fetch trending recipes with profile filters
-      const { data: trending } = await supabase.rpc('get_trending_recipes', { 
-        p_limit: 10,
-        p_user_id: user?.id || null,
-        p_category: null
-      });
-      if (trending) setTrendingRecipes(trending as Recipe[]);
+      if (user && profile && profile.archetype === 'None') {
+        // If archetype is "None", get random recipes
+        const { data: allRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(30);
+        
+        if (allRecipes) {
+          // Shuffle and take 10 random recipes
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          const withLikes = shuffled.slice(0, 30).map((r: any) => ({
+            ...r,
+            recipe_id: r.id,
+            likes_count: 0,
+          }));
+          setTrendingRecipes(withLikes as Recipe[]);
+        }
+      } else {
+        const { data: trending } = await supabase.rpc('get_trending_recipes', { 
+          p_limit: 30, // Get more for rotation
+          p_user_id: user?.id || null,
+          p_category: null
+        });
+        if (trending) setTrendingRecipes(trending as Recipe[]);
+      }
 
       // Fetch quick recipes (<= 30 minutes) with profile filters
       if (user && profile) {
@@ -366,7 +406,7 @@ export default function Home() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Klaar in 30 minuten</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {quickRecipes.map((recipe) => (
+              {quickRecipes.slice(quickIndex, quickIndex + 3).map((recipe) => (
                 <TouchableOpacity
                   key={recipe.recipe_id}
                   style={styles.recipeCard}

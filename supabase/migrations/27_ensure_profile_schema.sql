@@ -59,7 +59,7 @@ begin
     ) then
         alter table public.profiles
         add constraint profiles_archetype_check
-        check (archetype in ('Minimalist', 'Bio-Hacker', 'Flavor Hunter', 'Meal Prepper', 'Family Manager'));
+        check (archetype in ('None', 'Minimalist', 'Bio-Hacker', 'Flavor Hunter', 'Meal Prepper', 'Family Manager'));
     end if;
 end $$;
 

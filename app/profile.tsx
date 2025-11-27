@@ -10,6 +10,12 @@ import { supabase } from '../lib/supabase';
 
 const archetypes = [
   {
+    id: 'None',
+    icon: 'shuffle',
+    description: 'Toon alle recepten at random',
+    color: '#64748b',
+  },
+  {
     id: 'Minimalist',
     icon: 'flash',
     description: 'Values speed and low ingredient counts (<5 items)',
@@ -54,14 +60,14 @@ const dietaryRestrictions = [
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, profile, signOut, refreshProfile } = useAuth();
-  const [selectedArchetype, setSelectedArchetype] = useState('Bio-Hacker');
+  const [selectedArchetype, setSelectedArchetype] = useState('None');
   const [selectedRestrictions, setSelectedRestrictions] = useState<string[]>(['Gluten-Free']);
   const [skillLevel, setSkillLevel] = useState('Intermediate');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
-    setSelectedArchetype(profile.archetype ?? 'Bio-Hacker');
+    setSelectedArchetype(profile.archetype ?? 'None');
     setSelectedRestrictions((profile.dietary_restrictions as string[]) ?? []);
     setSkillLevel(profile.cooking_skill ?? 'Intermediate');
   }, [profile]);
