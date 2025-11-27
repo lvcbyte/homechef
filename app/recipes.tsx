@@ -53,18 +53,43 @@ export default function RecipesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [trendingIndex, setTrendingIndex] = useState(0);
+  const [quickIndex, setQuickIndex] = useState(0);
 
   useEffect(() => {
     if (user) {
       fetchData();
+    } else {
+      // For non-logged-in users, still fetch some data
+      fetchData();
     }
   }, [user, profile, activeFilter]);
 
+  // Auto-rotate trending recipes every 5 seconds
+  useEffect(() => {
+    if (trendingRecipes.length <= 3) return;
+    const interval = setInterval(() => {
+      setTrendingIndex((prev) => {
+        const next = prev + 3;
+        return next >= trendingRecipes.length ? 0 : next;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [trendingRecipes.length]);
+
+  // Auto-rotate quick recipes every 5 seconds
+  useEffect(() => {
+    if (quickRecipes.length <= 3) return;
+    const interval = setInterval(() => {
+      setQuickIndex((prev) => {
+        const next = prev + 3;
+        return next >= quickRecipes.length ? 0 : next;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [quickRecipes.length]);
+
   const fetchData = async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
 
     setLoading(true);
     try {
@@ -164,7 +189,7 @@ export default function RecipesScreen() {
           .select('*')
           .limit(30);
         
-        if (allRecipes) {
+        if (allRecipes && allRecipes.length > 0) {
           // Shuffle and take random recipes
           const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
           const withLikes = shuffled.slice(0, 30).map((r: any) => ({
@@ -173,15 +198,40 @@ export default function RecipesScreen() {
             likes_count: 0,
           }));
           setTrendingRecipes(withLikes as Recipe[]);
+        } else {
+          // Fallback: use trending function
+          const { data: trending } = await supabase.rpc('get_trending_recipes', {
+            p_limit: 30,
+            p_user_id: null,
+            p_category: category,
+          });
+          if (trending && trending.length > 0) {
+            setTrendingRecipes(trending as Recipe[]);
+          }
         }
       } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', {
           p_limit: 30, // Get more for rotation
-          p_user_id: user.id,
+          p_user_id: user?.id || null,
           p_category: category,
         });
-        if (trending) {
+        if (trending && trending.length > 0) {
           setTrendingRecipes(trending as Recipe[]);
+        } else {
+          // Fallback: get any recipes
+          const { data: fallback } = await supabase
+            .from('recipes')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(30);
+          if (fallback && fallback.length > 0) {
+            const withLikes = fallback.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            }));
+            setTrendingRecipes(withLikes as Recipe[]);
+          }
         }
       }
 
@@ -556,7 +606,7 @@ export default function RecipesScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Trending Recepten</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {trendingRecipes.map((recipe) => (
+              {trendingRecipes.slice(trendingIndex, trendingIndex + 3).map((recipe) => (
                 <TouchableOpacity
                   key={recipe.recipe_id}
                   style={styles.recipeCard}

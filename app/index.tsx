@@ -121,8 +121,8 @@ export default function Home() {
           .order('created_at', { ascending: false })
           .limit(30);
         
-        if (allRecipes) {
-          // Shuffle and take 10 random recipes
+        if (allRecipes && allRecipes.length > 0) {
+          // Shuffle and take random recipes
           const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
           const withLikes = shuffled.slice(0, 30).map((r: any) => ({
             ...r,
@@ -130,6 +130,16 @@ export default function Home() {
             likes_count: 0,
           }));
           setTrendingRecipes(withLikes as Recipe[]);
+        } else {
+          // Fallback: use trending function
+          const { data: trending } = await supabase.rpc('get_trending_recipes', { 
+            p_limit: 30,
+            p_user_id: null,
+            p_category: null
+          });
+          if (trending && trending.length > 0) {
+            setTrendingRecipes(trending as Recipe[]);
+          }
         }
       } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', { 
@@ -137,7 +147,24 @@ export default function Home() {
           p_user_id: user?.id || null,
           p_category: null
         });
-        if (trending) setTrendingRecipes(trending as Recipe[]);
+        if (trending && trending.length > 0) {
+          setTrendingRecipes(trending as Recipe[]);
+        } else {
+          // Fallback: get any recipes
+          const { data: fallback } = await supabase
+            .from('recipes')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(30);
+          if (fallback && fallback.length > 0) {
+            const withLikes = fallback.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            }));
+            setTrendingRecipes(withLikes as Recipe[]);
+          }
+        }
       }
 
       // Fetch quick recipes (<= 30 minutes) with profile filters
@@ -182,14 +209,27 @@ export default function Home() {
         // Fallback for non-logged-in users
         const { data: quick } = await supabase
           .from('recipes')
-          .select('*, recipe_likes(count)')
+          .select('*')
           .lte('total_time_minutes', 30)
           .order('created_at', { ascending: false })
-          .limit(10);
-        if (quick) {
+          .limit(30);
+        if (quick && quick.length > 0) {
+          // Get likes count separately
+          const recipeIds = quick.map(r => r.id);
+          const { data: likes } = await supabase
+            .from('recipe_likes')
+            .select('recipe_id')
+            .in('recipe_id', recipeIds);
+          
+          const likesCount = new Map<string, number>();
+          likes?.forEach(like => {
+            likesCount.set(like.recipe_id, (likesCount.get(like.recipe_id) || 0) + 1);
+          });
+          
           const withLikes = quick.map((r: any) => ({
             ...r,
-            likes_count: r.recipe_likes?.[0]?.count || 0,
+            recipe_id: r.id,
+            likes_count: likesCount.get(r.id) || 0,
           }));
           setQuickRecipes(withLikes as Recipe[]);
         }
