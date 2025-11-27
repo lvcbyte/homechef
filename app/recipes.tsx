@@ -68,6 +68,13 @@ export default function RecipesScreen() {
   // Remove auto-rotation for quick recipes - make it infinite scroll instead
 
   const fetchData = async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
 
     setLoading(true);
     try {
@@ -303,13 +310,14 @@ export default function RecipesScreen() {
 
       // Fetch categories
       const { data: cats } = await supabase.rpc('get_recipe_categories');
+      let allCats: Category[] = [];
       if (cats) {
-        const allCats = [{ category: 'Alles', count: 0 }, ...(cats as Category[])];
+        allCats = [{ category: 'Alles', count: 0 }, ...(cats as Category[])];
         setCategories(allCats);
       }
       
       // Fetch recipes for top categories (excluding 'Alles') - separate async calls
-      const topCategories = categories.length > 1 ? categories.slice(1, 8) : (cats ? [{ category: 'Alles', count: 0 }, ...(cats as Category[])].slice(1, 8) : []);
+      const topCategories = allCats.length > 1 ? allCats.slice(1, 8) : [];
       const categoryRecipesMap: Record<string, Recipe[]> = {};
       
       // Fetch recipes for each category in parallel
