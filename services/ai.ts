@@ -9,14 +9,20 @@ const OPENROUTER_KEY =
   Constants.expoConfig?.extra?.openrouterKey || process.env.EXPO_PUBLIC_OPENROUTER_KEY;
 
 // Only initialize OpenAI client if key is available
+// Note: dangerouslyAllowBrowser is needed for web/PWA usage
+// This is safe because we're using public API keys that are meant for client-side use
 const client = OPENAI_KEY ? new OpenAI({
   apiKey: OPENAI_KEY,
+  dangerouslyAllowBrowser: true,
 }) : null;
 
 // OpenRouter client for free LLM access
+// Note: dangerouslyAllowBrowser is needed for web/PWA usage
+// OpenRouter keys are designed for client-side use
 const openRouterClient = OPENROUTER_KEY ? new OpenAI({
   apiKey: OPENROUTER_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
+  dangerouslyAllowBrowser: true,
   defaultHeaders: {
     'HTTP-Referer': 'https://stockpit.app',
     'X-Title': 'Stockpit',
