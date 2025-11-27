@@ -60,7 +60,6 @@ export default function Home() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [quickIndex, setQuickIndex] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -72,18 +71,7 @@ export default function Home() {
   }, [user, profile]);
 
 
-  // Auto-rotate quick recipes every 5 seconds
-  useEffect(() => {
-    if (quickRecipes.length <= 3) return;
-    const interval = setInterval(() => {
-      setQuickIndex((prev) => {
-        const next = prev + 3;
-        // If we've reached the end, wrap around to start
-        return next >= quickRecipes.length ? 0 : next;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [quickRecipes.length]);
+  // Remove auto-rotation for quick recipes - make it infinite scroll instead
 
   const fetchData = async () => {
     setLoading(true);

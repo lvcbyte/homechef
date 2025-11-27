@@ -53,7 +53,6 @@ export default function RecipesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [quickIndex, setQuickIndex] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -65,17 +64,7 @@ export default function RecipesScreen() {
   }, [user, profile, activeFilter]);
 
 
-  // Auto-rotate quick recipes every 5 seconds
-  useEffect(() => {
-    if (quickRecipes.length <= 3) return;
-    const interval = setInterval(() => {
-      setQuickIndex((prev) => {
-        const next = prev + 3;
-        return next >= quickRecipes.length ? 0 : next;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [quickRecipes.length]);
+  // Remove auto-rotation for quick recipes - make it infinite scroll instead
 
   const fetchData = async () => {
 
@@ -995,10 +984,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: '#065f46',
     marginBottom: 8,
+    letterSpacing: -0.5,
   },
   sectionSubtitle: {
     fontSize: 14,
@@ -1163,14 +1153,19 @@ const styles = StyleSheet.create({
     color: '#475569',
   },
   recipeCard: {
-    width: 220,
+    width: 240,
     marginRight: 16,
-    borderRadius: 24,
+    borderRadius: 20,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: 'rgba(15,23,42,0.08)',
     overflow: 'hidden',
     position: 'relative',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   recipeImage: {
     width: '100%',
