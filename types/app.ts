@@ -22,6 +22,7 @@ export interface InventoryItem {
 
 export interface GeneratedRecipe {
   name: string;
+  description?: string;
   steps: string[];
   macros: {
     protein: number;
@@ -31,6 +32,12 @@ export interface GeneratedRecipe {
   };
   missingIngredients?: string[];
   relevanceScore: number;
+  prepTime?: number;
+  cookTime?: number;
+  totalTime?: number;
+  difficulty?: string;
+  servings?: number;
+  tags?: string[];
 }
 
 export interface RecipeEngineInput {
