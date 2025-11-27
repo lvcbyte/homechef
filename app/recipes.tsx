@@ -118,40 +118,41 @@ export default function RecipesScreen() {
         });
         
         if (matched && matched.length > 0) {
-        // Very loose filtering: show recipes with at least 1 matched ingredient or any match score
-        const goodMatches = (matched as Recipe[]).filter((r) => {
-          const matchScore = r.match_score || 0;
-          const matchedCount = r.matched_ingredients_count || 0;
-          // Show if at least 1 ingredient matches OR match score > 5%
-          return matchedCount >= 1 || matchScore >= 5;
-        });
-        
-        // Sort by match score descending (best matches first) and take top 3
-        const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-        setChefRadarRecipes(sorted.slice(0, 3));
-        setChefRadarCarouselData([]);
-      } else {
-        // Fallback: show general recipes if no inventory matches
-        const { data: fallback } = await supabase
-          .from('recipes')
-          .select('*')
-          .limit(3)
-          .order('created_at', { ascending: false });
-        
-        if (fallback) {
-          const fallbackRecipes = fallback.map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            match_score: 0,
-            matched_ingredients_count: 0,
-            total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
-            likes_count: 0,
-          }));
-          setChefRadarRecipes(fallbackRecipes as Recipe[]);
+          // Very loose filtering: show recipes with at least 1 matched ingredient or any match score
+          const goodMatches = (matched as Recipe[]).filter((r) => {
+            const matchScore = r.match_score || 0;
+            const matchedCount = r.matched_ingredients_count || 0;
+            // Show if at least 1 ingredient matches OR match score > 5%
+            return matchedCount >= 1 || matchScore >= 5;
+          });
+          
+          // Sort by match score descending (best matches first) and take top 3
+          const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+          setChefRadarRecipes(sorted.slice(0, 3));
           setChefRadarCarouselData([]);
         } else {
-          setChefRadarRecipes([]);
-          setChefRadarCarouselData([]);
+          // Fallback: show general recipes if no inventory matches
+          const { data: fallback } = await supabase
+            .from('recipes')
+            .select('*')
+            .limit(3)
+            .order('created_at', { ascending: false });
+          
+          if (fallback) {
+            const fallbackRecipes = fallback.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              match_score: 0,
+              matched_ingredients_count: 0,
+              total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+              likes_count: 0,
+            }));
+            setChefRadarRecipes(fallbackRecipes as Recipe[]);
+            setChefRadarCarouselData([]);
+          } else {
+            setChefRadarRecipes([]);
+            setChefRadarCarouselData([]);
+          }
         }
       }
 
@@ -221,50 +222,50 @@ export default function RecipesScreen() {
         if (matchedQuick && matchedQuick.length > 0) {
           quick = matchedQuick;
         } else {
-        // Fallback: get all recipes <= 30 minutes, filtered by category if needed
-        let query = supabase
-          .from('recipes')
-          .select('*')
-          .lte('total_time_minutes', 30)
-          .order('created_at', { ascending: false })
-          .limit(10);
-        
-        if (category) {
-          // Filter by category/tags
-          const { data: categoryRecipes } = await supabase
-            .from('recipe_categories')
-            .select('recipe_id')
-            .eq('category', category);
+          // Fallback: get all recipes <= 30 minutes, filtered by category if needed
+          let query = supabase
+            .from('recipes')
+            .select('*')
+            .lte('total_time_minutes', 30)
+            .order('created_at', { ascending: false })
+            .limit(30);
           
-          const categoryRecipeIds = categoryRecipes?.map(r => r.recipe_id) || [];
-          
-          if (categoryRecipeIds.length > 0) {
-            query = query.or(`category.eq.${category},tags.cs.{${category}},id.in.(${categoryRecipeIds.join(',')})`);
-          } else {
-            query = query.or(`category.eq.${category},tags.cs.{${category}}`);
+          if (category) {
+            // Filter by category/tags
+            const { data: categoryRecipes } = await supabase
+              .from('recipe_categories')
+              .select('recipe_id')
+              .eq('category', category);
+            
+            const categoryRecipeIds = categoryRecipes?.map(r => r.recipe_id) || [];
+            
+            if (categoryRecipeIds.length > 0) {
+              query = query.or(`category.eq.${category},tags.cs.{${category}},id.in.(${categoryRecipeIds.join(',')})`);
+            } else {
+              query = query.or(`category.eq.${category},tags.cs.{${category}}`);
+            }
           }
-        }
-        
-        const { data: allQuick } = await query;
-        if (allQuick) {
-          // Get likes count
-          const recipeIds = allQuick.map(r => r.id);
-          const { data: likes } = await supabase
-            .from('recipe_likes')
-            .select('recipe_id')
-            .in('recipe_id', recipeIds);
           
-          const likesCount = new Map<string, number>();
-          likes?.forEach(like => {
-            likesCount.set(like.recipe_id, (likesCount.get(like.recipe_id) || 0) + 1);
-          });
-          
-          quick = allQuick.map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            likes_count: likesCount.get(r.id) || 0,
-          }));
-        }
+          const { data: allQuick } = await query;
+          if (allQuick) {
+            // Get likes count
+            const recipeIds = allQuick.map(r => r.id);
+            const { data: likes } = await supabase
+              .from('recipe_likes')
+              .select('recipe_id')
+              .in('recipe_id', recipeIds);
+            
+            const likesCount = new Map<string, number>();
+            likes?.forEach(like => {
+              likesCount.set(like.recipe_id, (likesCount.get(like.recipe_id) || 0) + 1);
+            });
+            
+            quick = allQuick.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: likesCount.get(r.id) || 0,
+            }));
+          }
         }
       }
       
