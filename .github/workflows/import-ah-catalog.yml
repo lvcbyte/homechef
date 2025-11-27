@@ -1,0 +1,35 @@
+name: Import AH Catalog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"  # Elke dag 03:00 UTC
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download AH dataset
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: |
+          curl "https://api.apify.com/v2/datasets/V7VW6P5MJk59WJ9a8/items?clean=1&format=json&token=$APIFY_TOKEN" \
+            -o /tmp/ah-products.json
+
+      - name: Import to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -r dotenv/config scripts/import-ah.ts
+
