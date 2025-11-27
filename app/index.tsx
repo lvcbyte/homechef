@@ -435,8 +435,9 @@ export default function Home() {
           {/* Quick */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Klaar in 30 minuten</Text>
+            <Text style={styles.sectionSubtitle}>Snelle recepten voor drukke dagen</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {quickRecipes.slice(quickIndex, quickIndex + 3).map((recipe) => (
+              {quickRecipes.map((recipe) => (
                 <TouchableOpacity
                   key={recipe.recipe_id}
                   style={styles.recipeCard}
