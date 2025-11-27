@@ -49,6 +49,7 @@ export default function RecipesScreen() {
   const [trendingRecipes, setTrendingRecipes] = useState<Recipe[]>([]);
   const [quickRecipes, setQuickRecipes] = useState<Recipe[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryRecipes, setCategoryRecipes] = useState<Record<string, Recipe[]>>({});
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeDetail | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
@@ -305,6 +306,51 @@ export default function RecipesScreen() {
       if (cats) {
         const allCats = [{ category: 'Alles', count: 0 }, ...(cats as Category[])];
         setCategories(allCats);
+        
+        // Fetch recipes for top categories (excluding 'Alles')
+        const topCategories = allCats.slice(1, 8); // Get top 7 categories
+        const categoryRecipesMap: Record<string, Recipe[]> = {};
+        
+        for (const cat of topCategories) {
+          if (cat.category === 'Alles') continue;
+          
+          if (profile?.archetype === 'None') {
+            // If archetype is "None", get random recipes for this category
+            const { data: catRecipes } = await supabase
+              .from('recipes')
+              .select('*')
+              .limit(50);
+            
+            if (catRecipes && catRecipes.length > 0) {
+              // Filter by category and shuffle
+              const filtered = catRecipes.filter((r: any) => 
+                r.category === cat.category || 
+                (r.tags && r.tags.includes(cat.category))
+              );
+              const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+              categoryRecipesMap[cat.category] = shuffled.slice(0, 50).map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              }));
+            }
+          } else {
+            const { data: catRecipes } = await supabase.rpc('get_recipes_by_category', {
+              p_category: cat.category,
+              p_limit: 50,
+              p_user_id: user?.id || null,
+              p_archetype: profile?.archetype || null,
+              p_cooking_skill: profile?.cooking_skill || null,
+              p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+            });
+            
+            if (catRecipes && catRecipes.length > 0) {
+              categoryRecipesMap[cat.category] = catRecipes as Recipe[];
+            }
+          }
+        }
+        
+        setCategoryRecipes(categoryRecipesMap);
       }
 
       // Fetch user's liked recipes
