@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { generateRecipesWithAI } from '../services/ai';
 
 interface Recipe {
   recipe_id: string;
@@ -591,7 +593,10 @@ export default function RecipesScreen() {
               <Text style={styles.emptyText}>Geen recepten gevonden. Voeg items toe aan je voorraad!</Text>
             ) : (
               <View style={styles.verticalList}>
-                {chefRadarRecipes.map((recipe) => (
+                {(showAIGenerated && aiGeneratedRecipes.length > 0
+                  ? aiGeneratedRecipes
+                  : chefRadarRecipes
+                ).map((recipe) => (
                   <TouchableOpacity
                     key={recipe.recipe_id}
                     style={styles.radarCard}
@@ -766,6 +771,7 @@ export default function RecipesScreen() {
         </ScrollView>
       </SafeAreaView>
       <GlassDock />
+      <AIChatbot />
 
       {/* Recipe Detail Modal - Same as index.tsx */}
       <Modal

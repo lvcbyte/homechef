@@ -46,6 +46,7 @@ module.exports = {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
         process.env.SUPABASE_ANON_KEY,
       openaiKey: process.env.EXPO_PUBLIC_OPENAI_KEY || process.env.OPENAI_KEY,
+      openrouterKey: process.env.EXPO_PUBLIC_OPENROUTER_KEY || process.env.OPENROUTER_KEY,
     },
   },
 };

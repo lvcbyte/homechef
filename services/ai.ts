@@ -5,13 +5,27 @@ import type { InventoryItem, RecipeEngineInput, GeneratedRecipe } from '../types
 
 const OPENAI_KEY =
   Constants.expoConfig?.extra?.openaiKey || process.env.EXPO_PUBLIC_OPENAI_KEY;
+const OPENROUTER_KEY =
+  Constants.expoConfig?.extra?.openrouterKey || process.env.EXPO_PUBLIC_OPENROUTER_KEY;
 
 const client = new OpenAI({
   apiKey: OPENAI_KEY,
 });
 
+// OpenRouter client for free LLM access
+const openRouterClient = OPENROUTER_KEY ? new OpenAI({
+  apiKey: OPENROUTER_KEY,
+  baseURL: 'https://openrouter.ai/api/v1',
+  defaultHeaders: {
+    'HTTP-Referer': 'https://stockpit.app',
+    'X-Title': 'Stockpit',
+  },
+}) : null;
+
 const VISION_MODEL = 'gpt-4o';
 const RECIPE_MODEL = 'gpt-4o-mini';
+// Free model from OpenRouter (DeepSeek R1 Distill Llama 70B or similar)
+const FREE_LLM_MODEL = 'deepseek/deepseek-r1-distill-llama-70b';
 
 export async function runInventoryScan(photoUris: string[]): Promise<InventoryItem[]> {
   if (!photoUris.length) {
@@ -104,5 +118,186 @@ export async function generateRecipes({
       relevanceScore,
     } as GeneratedRecipe;
   });
+}
+
+// Generate recipes using free LLM (OpenRouter)
+export async function generateRecipesWithAI(
+  inventory: Array<{ name: string; quantity_approx?: string; expires_at?: string; category?: string }>,
+  profile: { archetype?: string; cooking_skill?: string; dietary_restrictions?: string[] },
+  mood?: string
+): Promise<GeneratedRecipe[]> {
+  if (!openRouterClient) {
+    console.warn('OpenRouter not configured, falling back to database recipes');
+    return [];
+  }
+
+  const inventoryList = inventory.map(item => 
+    `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''}${item.expires_at ? ` - vervalt: ${new Date(item.expires_at).toLocaleDateString('nl-NL')}` : ''}`
+  ).join('\n');
+
+  const prompt = `Je bent een professionele chef en receptengenerator voor Stockpit, een slimme keuken app.
+
+Gebruikersinventaris:
+${inventoryList || 'Geen items in voorraad'}
+
+Gebruikersprofiel:
+- Archetype: ${profile.archetype || 'Niet gespecificeerd'}
+- Kookniveau: ${profile.cooking_skill || 'Niet gespecificeerd'}
+- Dieetbeperkingen: ${profile.dietary_restrictions?.join(', ') || 'Geen'}
+
+Mood: ${mood || 'neutraal'}
+
+Genereer 3-5 originele, praktische recepten die:
+1. Zoveel mogelijk gebruik maken van de beschikbare ingrediënten
+2. Passen bij het kookniveau en archetype van de gebruiker
+3. Rekening houden met dieetbeperkingen
+4. Passen bij de gekozen mood
+5. Realistisch en uitvoerbaar zijn
+
+Geef voor elk recept:
+- Titel (Nederlands)
+- Korte beschrijving (1-2 zinnen)
+- Ingrediëntenlijst (met hoeveelheden)
+- Stap-voor-stap instructies (genummerd)
+- Bereidingstijd in minuten
+- Moeilijkheidsgraad (Makkelijk, Gemiddeld, Moeilijk)
+- Aantal porties
+- Voedingswaarden (eiwitten, koolhydraten, vetten in gram per portie)
+
+Antwoord in JSON formaat:
+{
+  "recipes": [
+    {
+      "title": "Recept naam",
+      "description": "Korte beschrijving",
+      "ingredients": ["ingrediënt 1", "ingrediënt 2"],
+      "instructions": ["Stap 1", "Stap 2"],
+      "prep_time_minutes": 15,
+      "cook_time_minutes": 20,
+      "total_time_minutes": 35,
+      "difficulty": "Makkelijk",
+      "servings": 4,
+      "nutrition": {
+        "protein": 25,
+        "carbs": 40,
+        "fat": 15
+      },
+      "tags": ["tag1", "tag2"]
+    }
+  ]
+}`;
+
+  try {
+    const response = await openRouterClient.chat.completions.create({
+      model: FREE_LLM_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'Je bent een professionele chef en receptengenerator. Antwoord altijd in geldig JSON formaat.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
+
+    const content = response.choices[0]?.message?.content || '{"recipes": []}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const payload = jsonMatch ? JSON.parse(jsonMatch[0]) : { recipes: [] };
+
+    return (payload.recipes ?? []).map((recipe: any) => {
+      const inventoryHits = (recipe.ingredients || []).filter((ingredient: string) =>
+        inventory.some((item) => 
+          item.name.toLowerCase().includes(ingredient.toLowerCase()) ||
+          ingredient.toLowerCase().includes(item.name.toLowerCase())
+        )
+      ).length;
+
+      const archetypeMatch = (recipe.tags || []).includes(profile.archetype) ?? false;
+      const moodMatch = mood ? (recipe.tags || []).includes(mood) ?? false : false;
+
+      const relevanceScore =
+        inventoryHits * 5 + (archetypeMatch ? 20 : -10) + (moodMatch ? 15 : 0);
+
+      return {
+        name: recipe.title,
+        description: recipe.description,
+        steps: recipe.instructions || [],
+        macros: recipe.nutrition || { protein: 0, carbs: 0, fat: 0 },
+        missingIngredients: [],
+        relevanceScore,
+        prepTime: recipe.prep_time_minutes || 0,
+        cookTime: recipe.cook_time_minutes || 0,
+        totalTime: recipe.total_time_minutes || 0,
+        difficulty: recipe.difficulty || 'Gemiddeld',
+        servings: recipe.servings || 4,
+        tags: recipe.tags || [],
+      } as GeneratedRecipe;
+    });
+  } catch (error) {
+    console.error('Error generating recipes with AI:', error);
+    return [];
+  }
+}
+
+// Chat with AI assistant about inventory and recipes
+export async function chatWithAI(
+  message: string,
+  context: {
+    inventory?: Array<{ name: string; quantity_approx?: string; expires_at?: string; category?: string }>;
+    profile?: { archetype?: string; cooking_skill?: string; dietary_restrictions?: string[] };
+    recentRecipes?: Array<{ title: string; total_time_minutes: number }>;
+  }
+): Promise<string> {
+  if (!openRouterClient) {
+    return 'AI-assistentie is momenteel niet beschikbaar. Controleer je OpenRouter API key.';
+  }
+
+  const inventoryList = context.inventory?.map(item => 
+    `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''}${item.expires_at ? ` - vervalt: ${new Date(item.expires_at).toLocaleDateString('nl-NL')}` : ''}`
+  ).join('\n') || 'Geen items in voorraad';
+
+  const systemPrompt = `Je bent Stockpit, een vriendelijke en behulpzame AI-keukenassistent. Je helpt gebruikers met:
+- Recepten vinden op basis van hun voorraad
+- Kooktips en technieken
+- Voedselveiligheid en houdbaarheid
+- Dieetadvies en voedingsinformatie
+- Kookplanning en meal prep
+
+Huidige voorraad van de gebruiker:
+${inventoryList}
+
+Gebruikersprofiel:
+- Archetype: ${context.profile?.archetype || 'Niet gespecificeerd'}
+- Kookniveau: ${context.profile?.cooking_skill || 'Niet gespecificeerd'}
+- Dieetbeperkingen: ${context.profile?.dietary_restrictions?.join(', ') || 'Geen'}
+
+Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands. Houd antwoorden beknopt maar informatief.`;
+
+  try {
+    const response = await openRouterClient.chat.completions.create({
+      model: FREE_LLM_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
+          role: 'user',
+          content: message,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    return response.choices[0]?.message?.content || 'Sorry, ik kon geen antwoord genereren.';
+  } catch (error) {
+    console.error('Error chatting with AI:', error);
+    return 'Er is een fout opgetreden bij het communiceren met de AI. Probeer het later opnieuw.';
+  }
 }
 
