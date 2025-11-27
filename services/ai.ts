@@ -301,6 +301,7 @@ Gebruikersprofiel:
 Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands. Houd antwoorden beknopt maar informatief.`;
 
   try {
+    console.log('Sending message to OpenRouter:', message.substring(0, 50) + '...');
     const response = await openRouterClient.chat.completions.create({
       model: FREE_LLM_MODEL,
       messages: [
@@ -317,10 +318,35 @@ Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands.
       max_tokens: 500,
     });
 
-    return response.choices[0]?.message?.content || 'Sorry, ik kon geen antwoord genereren.';
-  } catch (error) {
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.warn('No content in OpenRouter response:', response);
+      return 'Sorry, ik kon geen antwoord genereren. Probeer het opnieuw.';
+    }
+
+    console.log('Received response from OpenRouter:', content.substring(0, 100) + '...');
+    return content;
+  } catch (error: any) {
     console.error('Error chatting with AI:', error);
-    return 'Er is een fout opgetreden bij het communiceren met de AI. Probeer het later opnieuw.';
+    console.error('Error details:', {
+      message: error?.message,
+      status: error?.status,
+      code: error?.code,
+      response: error?.response,
+    });
+    
+    // Provide more specific error messages
+    if (error?.status === 401) {
+      return 'API key is ongeldig. Controleer je OpenRouter API key in .env.local';
+    }
+    if (error?.status === 429) {
+      return 'Te veel verzoeken. Wacht even en probeer het later opnieuw.';
+    }
+    if (error?.message?.includes('rate limit')) {
+      return 'Rate limit bereikt. Wacht even en probeer het later opnieuw.';
+    }
+    
+    return `Er is een fout opgetreden: ${error?.message || 'Onbekende fout'}. Controleer de console voor meer details.`;
   }
 }
 

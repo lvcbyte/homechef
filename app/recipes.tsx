@@ -56,6 +56,8 @@ export default function RecipesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [aiGeneratedRecipes, setAiGeneratedRecipes] = useState<Recipe[]>([]);
+  const [showAIGenerated, setShowAIGenerated] = useState(false);
 
   useEffect(() => {
     if (user) {
