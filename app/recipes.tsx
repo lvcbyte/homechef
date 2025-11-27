@@ -999,6 +999,47 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#065f46',
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 16,
+    fontWeight: '400',
+  },
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 4,
+  },
+  categoryCard: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryCardActive: {
+    backgroundColor: '#047857',
+    borderColor: '#047857',
+  },
+  categoryCardText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  categoryCardTextActive: {
+    color: '#fff',
+  },
+  categoryCount: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 4,
   },
   emptyText: {
     fontSize: 15,
