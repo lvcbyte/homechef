@@ -76,7 +76,11 @@ export default function Home() {
   useEffect(() => {
     if (trendingRecipes.length <= 3) return;
     const interval = setInterval(() => {
-      setTrendingIndex((prev) => (prev + 3) % trendingRecipes.length);
+      setTrendingIndex((prev) => {
+        const next = prev + 3;
+        // If we've reached the end, wrap around to start
+        return next >= trendingRecipes.length ? 0 : next;
+      });
     }, 5000);
     return () => clearInterval(interval);
   }, [trendingRecipes.length]);
@@ -85,7 +89,11 @@ export default function Home() {
   useEffect(() => {
     if (quickRecipes.length <= 3) return;
     const interval = setInterval(() => {
-      setQuickIndex((prev) => (prev + 3) % quickRecipes.length);
+      setQuickIndex((prev) => {
+        const next = prev + 3;
+        // If we've reached the end, wrap around to start
+        return next >= quickRecipes.length ? 0 : next;
+      });
     }, 5000);
     return () => clearInterval(interval);
   }, [quickRecipes.length]);
