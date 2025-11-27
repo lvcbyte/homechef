@@ -403,40 +403,65 @@ export default function ScanScreen() {
     if (!manualName || manualName.length < 2) {
       setProductMatches([]);
       setSelectedMatch(null);
+      setProductLookupLoading(false);
       return;
     }
-    let active = true;
-    setProductLookupLoading(true);
-    supabase
-      .rpc('match_product_catalog', { search_term: manualName })
-      .then(({ data }) => {
-        if (!active) return;
-        if (data && data.length > 0) {
-          const matches = data as CatalogMatch[];
-          // Sort by match_score if available (best matches first)
-          const sortedMatches = matches.sort((a, b) => {
-            const scoreA = a.match_score || 0;
-            const scoreB = b.match_score || 0;
-            return scoreB - scoreA;
-          });
-          setProductMatches(sortedMatches);
-          // Auto-select best match (first one after sorting)
-          if (!selectedMatch && sortedMatches.length > 0) {
-            setSelectedMatch(sortedMatches[0]);
-            if (!categoryLocked) {
-              setManualCategory(sortedMatches[0].category ?? 'pantry');
-            }
+    
+    // Debounce search for better performance (300ms delay)
+    const timeoutId = setTimeout(() => {
+      let active = true;
+      setProductLookupLoading(true);
+      
+      // Use RPC with explicit error handling for Vercel compatibility
+      supabase
+        .rpc('match_product_catalog', { search_term: manualName.trim() })
+        .then(({ data, error }) => {
+          if (!active) return;
+          
+          if (error) {
+            console.error('Search error:', error);
+            setProductMatches([]);
+            setSelectedMatch(null);
+            return;
           }
-        } else {
-          setProductMatches([]);
-          setSelectedMatch(null);
-        }
-      })
-      .finally(() => {
-        if (active) setProductLookupLoading(false);
-      });
+          
+          if (data && data.length > 0) {
+            const matches = data as CatalogMatch[];
+            // Results are already sorted by match_score from the RPC function
+            // Limit to maximum 10 results
+            const limitedMatches = matches.slice(0, 10);
+            setProductMatches(limitedMatches);
+            
+            // Auto-select best match (first one, already sorted by score)
+            if (!selectedMatch && limitedMatches.length > 0) {
+              setSelectedMatch(limitedMatches[0]);
+              if (!categoryLocked) {
+                setManualCategory(limitedMatches[0].category ?? 'pantry');
+              }
+            }
+          } else {
+            setProductMatches([]);
+            setSelectedMatch(null);
+          }
+        })
+        .catch((err) => {
+          console.error('Search exception:', err);
+          if (active) {
+            setProductMatches([]);
+            setSelectedMatch(null);
+          }
+        })
+        .finally(() => {
+          if (active) setProductLookupLoading(false);
+        });
+      
+      return () => {
+        active = false;
+      };
+    }, 300); // 300ms debounce
+    
     return () => {
-      active = false;
+      clearTimeout(timeoutId);
     };
   }, [manualName, categoryLocked]);
 
