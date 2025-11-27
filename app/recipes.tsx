@@ -147,7 +147,7 @@ export default function RecipesScreen() {
             likes_count: 0,
           }));
           setChefRadarRecipes(fallbackRecipes as Recipe[]);
-          setChefRadarCarouselData([...fallbackRecipes, ...fallbackRecipes, ...fallbackRecipes] as Recipe[]);
+          setChefRadarCarouselData([]);
         } else {
           setChefRadarRecipes([]);
           setChefRadarCarouselData([]);
