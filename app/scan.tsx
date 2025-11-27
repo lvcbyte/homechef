@@ -485,9 +485,9 @@ export default function ScanScreen() {
         <View style={styles.header}>
           <View style={styles.brandRow}>
             <View style={styles.logo}>
-              <Text style={styles.logoText}>H</Text>
+              <Text style={styles.logoText}>S</Text>
             </View>
-            <Text style={styles.brandLabel}>HomeChef OS</Text>
+            <Text style={styles.brandLabel}>Stockpit</Text>
           </View>
           <View style={styles.headerIcons}>
             <Pressable onPress={() => router.push('/inventory')} style={styles.backButton}>

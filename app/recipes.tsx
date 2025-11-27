@@ -41,7 +41,7 @@ interface Category {
 export default function RecipesScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activeFilter, setActiveFilter] = useState(params.category as string || 'Alles');
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [chefRadarRecipes, setChefRadarRecipes] = useState<Recipe[]>([]);
@@ -55,7 +55,7 @@ export default function RecipesScreen() {
 
   useEffect(() => {
     fetchData();
-  }, [user, activeFilter]);
+  }, [user, profile, activeFilter]);
 
   const fetchData = async () => {
     if (!user) {
@@ -82,6 +82,9 @@ export default function RecipesScreen() {
         p_user_id: user.id,
         p_category: category,
         p_limit: 10,
+        p_archetype: profile?.archetype || null,
+        p_cooking_skill: profile?.cooking_skill || null,
+        p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
       });
       
       if (matched && matched.length > 0) {
@@ -100,65 +103,26 @@ export default function RecipesScreen() {
         setChefRadarRecipes([]);
       }
 
-      // Fetch trending recipes (filtered by category if not "Alles")
-      if (category) {
-        // Get recipes that match the category from recipe_categories table
-        const { data: categoryRecipes } = await supabase
-          .from('recipe_categories')
-          .select('recipe_id')
-          .eq('category', category);
-        
-        const categoryRecipeIds = categoryRecipes?.map(r => r.recipe_id) || [];
-        
-        // Get all recipes that match category in tags, category field, or recipe_categories
-        const { data: allRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .or(`category.eq.${category},tags.cs.{${category}}${categoryRecipeIds.length > 0 ? `,id.in.(${categoryRecipeIds.join(',')})` : ''}`);
-        
-        if (allRecipes && allRecipes.length > 0) {
-          // Get likes count for trending calculation
-          const recipeIds = allRecipes.map(r => r.id);
-          const { data: likes } = await supabase
-            .from('recipe_likes')
-            .select('recipe_id')
-            .in('recipe_id', recipeIds);
-          
-          const likesCount = new Map<string, number>();
-          likes?.forEach(like => {
-            likesCount.set(like.recipe_id, (likesCount.get(like.recipe_id) || 0) + 1);
-          });
-          
-          // Also check if recipe matches category via recipe_categories
-          const filtered = allRecipes.filter((r: any) => {
-            const matchesCategory = r.category === category || 
-              (r.tags && Array.isArray(r.tags) && r.tags.includes(category)) ||
-              categoryRecipeIds.includes(r.id);
-            return matchesCategory;
-          });
-          
-          const withLikes = filtered.map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            likes_count: likesCount.get(r.id) || 0,
-          })).sort((a: any, b: any) => b.likes_count - a.likes_count);
-          
-          setTrendingRecipes((withLikes as Recipe[]).slice(0, 10));
-        } else {
-          setTrendingRecipes([]);
-        }
-      } else {
-        const { data: trending } = await supabase.rpc('get_trending_recipes', { p_limit: 10 });
-        if (trending) setTrendingRecipes(trending as Recipe[]);
+      // Fetch trending recipes with profile filters
+      const { data: trending } = await supabase.rpc('get_trending_recipes', {
+        p_limit: 10,
+        p_user_id: user.id,
+        p_category: category,
+      });
+      if (trending) {
+        setTrendingRecipes(trending as Recipe[]);
       }
 
-      // Fetch quick recipes (<= 30 minutes) with inventory matching and category filter
+      // Fetch quick recipes (<= 30 minutes) with inventory matching, category filter, and profile filters
       let quick: any[] = [];
       const { data: matchedQuick } = await supabase.rpc('match_recipes_with_inventory', {
         p_user_id: user.id,
         p_category: category,
         p_max_time_minutes: 30,
         p_limit: 10,
+        p_archetype: profile?.archetype || null,
+        p_cooking_skill: profile?.cooking_skill || null,
+        p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
       });
       
       if (matchedQuick && matchedQuick.length > 0) {
@@ -331,9 +295,9 @@ export default function RecipesScreen() {
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <View style={styles.logo}>
-                <Text style={styles.logoText}>H</Text>
-              </View>
-              <Text style={styles.brandLabel}>HomeChef OS</Text>
+                <Text style={styles.logoText}>S</Text>
+            </View>
+            <Text style={styles.brandLabel}>Stockpit</Text>
             </View>
             <View style={styles.headerIcons}>
               <Ionicons name="search" size={22} color="#0f172a" />
@@ -367,9 +331,9 @@ export default function RecipesScreen() {
         <View style={styles.header}>
           <View style={styles.brandRow}>
             <View style={styles.logo}>
-              <Text style={styles.logoText}>H</Text>
+                <Text style={styles.logoText}>S</Text>
             </View>
-            <Text style={styles.brandLabel}>HomeChef OS</Text>
+            <Text style={styles.brandLabel}>Stockpit</Text>
           </View>
           <View style={styles.headerIcons}>
             <Ionicons name="search" size={22} color="#0f172a" />
@@ -423,7 +387,7 @@ export default function RecipesScreen() {
             <Text style={styles.heroEyebrow}>Chef Radar</Text>
             <Text style={styles.heroSectionTitle}>Jouw voorraad, onze recepten.</Text>
             <Text style={styles.heroSubtitle}>
-              De HomeChef engine sorteert alle combinaties op beschikbaarheid en vibe. Kies jouw mood en start een sessie.
+              De Stockpit engine sorteert alle combinaties op beschikbaarheid en vibe. Kies jouw mood en start een sessie.
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={styles.filterRow}>

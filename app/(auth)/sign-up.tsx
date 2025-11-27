@@ -26,7 +26,7 @@ export default function SignUpScreen() {
           <Text style={styles.headerTitle}>Account aanmaken</Text>
         </View>
         <View style={styles.body}>
-          <Text style={styles.heroTitle}>Welkom bij HomeChef</Text>
+          <Text style={styles.heroTitle}>Welkom bij Stockpit</Text>
           <Text style={styles.heroSub}>
             Bouw je voorraadarchief en krijg realtime inspiratie op maat van jouw keuken.
           </Text>
@@ -47,7 +47,7 @@ export default function SignUpScreen() {
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="jou@homechef.dev"
+              placeholder="jou@stockpit.dev"
               placeholderTextColor="#94a3b8"
               style={styles.input}
               keyboardType="email-address"

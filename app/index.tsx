@@ -51,7 +51,7 @@ const categoryColors: Record<string, string> = {
 
 export default function Home() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [trendingRecipes, setTrendingRecipes] = useState<Recipe[]>([]);
   const [quickRecipes, setQuickRecipes] = useState<Recipe[]>([]);
@@ -63,7 +63,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchData();
-  }, [user]);
+  }, [user, profile]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -79,23 +79,43 @@ export default function Home() {
         if (rod) setRecipeOfTheDay(rod as RecipeDetail);
       }
 
-      // Fetch trending recipes
-      const { data: trending } = await supabase.rpc('get_trending_recipes', { p_limit: 10 });
+      // Fetch trending recipes with profile filters
+      const { data: trending } = await supabase.rpc('get_trending_recipes', { 
+        p_limit: 10,
+        p_user_id: user?.id || null,
+        p_category: null
+      });
       if (trending) setTrendingRecipes(trending as Recipe[]);
 
-      // Fetch quick recipes (<= 30 minutes)
-      const { data: quick } = await supabase
-        .from('recipes')
-        .select('*, recipe_likes(count)')
-        .lte('total_time_minutes', 30)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      if (quick) {
-        const withLikes = quick.map((r: any) => ({
-          ...r,
-          likes_count: r.recipe_likes?.[0]?.count || 0,
-        }));
-        setQuickRecipes(withLikes as Recipe[]);
+      // Fetch quick recipes (<= 30 minutes) with profile filters
+      if (user && profile) {
+        const { data: quick } = await supabase.rpc('match_recipes_with_inventory', {
+          p_user_id: user.id,
+          p_category: null,
+          p_max_time_minutes: 30,
+          p_limit: 10,
+          p_archetype: profile.archetype || null,
+          p_cooking_skill: profile.cooking_skill || null,
+          p_dietary_restrictions: (profile.dietary_restrictions as string[]) || null,
+        });
+        if (quick) {
+          setQuickRecipes(quick as Recipe[]);
+        }
+      } else {
+        // Fallback for non-logged-in users
+        const { data: quick } = await supabase
+          .from('recipes')
+          .select('*, recipe_likes(count)')
+          .lte('total_time_minutes', 30)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (quick) {
+          const withLikes = quick.map((r: any) => ({
+            ...r,
+            likes_count: r.recipe_likes?.[0]?.count || 0,
+          }));
+          setQuickRecipes(withLikes as Recipe[]);
+        }
       }
 
       // Fetch categories
@@ -217,9 +237,9 @@ export default function Home() {
         <View style={styles.header}>
           <View style={styles.brandRow}>
             <View style={styles.logo}>
-              <Text style={styles.logoText}>H</Text>
+              <Text style={styles.logoText}>S</Text>
             </View>
-            <Text style={styles.brandLabel}>HomeChef OS</Text>
+            <Text style={styles.brandLabel}>Stockpit</Text>
           </View>
           <View style={styles.headerIcons}>
             <Ionicons name="search" size={22} color="#0f172a" />

@@ -33,7 +33,7 @@ export default function SignInScreen() {
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="jou@homechef.dev"
+              placeholder="jou@stockpit.dev"
               placeholderTextColor="#94a3b8"
               style={styles.input}
               keyboardType="email-address"

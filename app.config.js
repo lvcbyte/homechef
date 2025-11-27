@@ -8,9 +8,9 @@ try {
 
 module.exports = {
   expo: {
-    name: 'HomeChef OS',
-    slug: 'homechef-os',
-    scheme: 'homechef',
+    name: 'Stockpit',
+    slug: 'stockpit',
+    scheme: 'stockpit',
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
