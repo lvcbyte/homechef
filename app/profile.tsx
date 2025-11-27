@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
@@ -53,7 +53,7 @@ const dietaryRestrictions = [
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, refreshProfile } = useAuth();
   const [selectedArchetype, setSelectedArchetype] = useState('Bio-Hacker');
   const [selectedRestrictions, setSelectedRestrictions] = useState<string[]>(['Gluten-Free']);
   const [skillLevel, setSkillLevel] = useState('Intermediate');
@@ -82,13 +82,33 @@ export default function ProfileScreen() {
       return;
     }
     setSaving(true);
-    await supabase.from('profiles').upsert({
-      id: user.id,
-      archetype: selectedArchetype,
-      dietary_restrictions: selectedRestrictions,
-      cooking_skill: skillLevel,
-    });
-    setSaving(false);
+    try {
+      const { error } = await supabase.from('profiles').upsert({
+        id: user.id,
+        archetype: selectedArchetype,
+        dietary_restrictions: selectedRestrictions,
+        cooking_skill: skillLevel,
+      }, {
+        onConflict: 'id'
+      });
+      
+      if (error) {
+        console.error('Error saving profile:', error);
+        Alert.alert('Fout', 'Kon voorkeuren niet opslaan. Probeer het opnieuw.');
+        setSaving(false);
+        return;
+      }
+      
+      // Refresh profile in AuthContext
+      await refreshProfile();
+      
+      Alert.alert('Opgeslagen', 'Je voorkeuren zijn opgeslagen en worden nu toegepast op je feed.');
+    } catch (err) {
+      console.error('Exception saving profile:', err);
+      Alert.alert('Fout', 'Er is een fout opgetreden. Probeer het opnieuw.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const displayName =

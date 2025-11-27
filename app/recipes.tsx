@@ -54,7 +54,9 @@ export default function RecipesScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
+    if (user) {
+      fetchData();
+    }
   }, [user, profile, activeFilter]);
 
   const fetchData = async () => {

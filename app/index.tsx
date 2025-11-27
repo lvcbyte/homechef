@@ -62,7 +62,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
+    if (user) {
+      fetchData();
+    } else {
+      // For non-logged-in users, still fetch some data
+      fetchData();
+    }
   }, [user, profile]);
 
   const fetchData = async () => {
