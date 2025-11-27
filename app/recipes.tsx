@@ -75,9 +75,6 @@ export default function RecipesScreen() {
 
     setLoading(true);
     try {
-
-    setLoading(true);
-    try {
       // Fetch recipe of the day
       const { data: rodId } = await supabase.rpc('get_recipe_of_the_day');
       if (rodId) {
