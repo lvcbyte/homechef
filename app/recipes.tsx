@@ -645,7 +645,7 @@ export default function RecipesScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Klaar in 30 minuten</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {quickRecipes.map((recipe) => (
+              {quickRecipes.slice(quickIndex, quickIndex + 3).map((recipe) => (
                 <TouchableOpacity
                   key={recipe.recipe_id}
                   style={styles.quickCard}
