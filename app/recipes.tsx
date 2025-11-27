@@ -155,6 +155,25 @@ export default function RecipesScreen() {
         }
       }
 
+      // Fetch trending recipes with profile filters
+      if (profile?.archetype === 'None') {
+        // If archetype is "None", get random recipes
+        const { data: allRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .limit(30);
+        
+        if (allRecipes) {
+          // Shuffle and take random recipes
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          const withLikes = shuffled.slice(0, 30).map((r: any) => ({
+            ...r,
+            recipe_id: r.id,
+            likes_count: 0,
+          }));
+          setTrendingRecipes(withLikes as Recipe[]);
+        }
+      } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', {
           p_limit: 30, // Get more for rotation
           p_user_id: user.id,
@@ -246,9 +265,12 @@ export default function RecipesScreen() {
             likes_count: likesCount.get(r.id) || 0,
           }));
         }
+        }
       }
       
-      if (quick) setQuickRecipes(quick as Recipe[]);
+      if (quick && quick.length > 0) {
+        setQuickRecipes(quick as Recipe[]);
+      }
 
       // Fetch categories
       const { data: cats } = await supabase.rpc('get_recipe_categories');
