@@ -142,71 +142,53 @@ export default function Home() {
         }
       }
 
-      // Fetch quick recipes (<= 30 minutes) with profile filters
-      if (user && profile) {
+      // Fetch quick recipes (<= 30 minutes) with profile filters - infinite scroll
+      if (profile?.archetype === 'None') {
         // If archetype is "None", get random recipes
-        if (profile.archetype === 'None') {
-          const { data: allRecipes } = await supabase
-            .from('recipes')
-            .select('*')
-            .lte('total_time_minutes', 30)
-            .order('created_at', { ascending: false })
-            .limit(30);
-          
-          if (allRecipes) {
-            // Shuffle and take 30 random recipes
-            const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-            const withLikes = shuffled.slice(0, 30).map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              match_score: 0,
-              matched_ingredients_count: 0,
-              total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
-              likes_count: 0,
-            }));
-            setQuickRecipes(withLikes as Recipe[]);
-          }
-        } else {
-          const { data: quick } = await supabase.rpc('match_recipes_with_inventory', {
-            p_user_id: user.id,
-            p_category: null,
-            p_max_time_minutes: 30,
-            p_limit: 30, // Get more for rotation
-            p_archetype: profile.archetype || null,
-            p_cooking_skill: profile.cooking_skill || null,
-            p_dietary_restrictions: (profile.dietary_restrictions as string[]) || null,
-          });
-          if (quick) {
-            setQuickRecipes(quick as Recipe[]);
-          }
-        }
-      } else {
-        // Fallback for non-logged-in users
-        const { data: quick } = await supabase
+        const { data: allRecipes } = await supabase
           .from('recipes')
           .select('*')
           .lte('total_time_minutes', 30)
           .order('created_at', { ascending: false })
-          .limit(30);
-        if (quick && quick.length > 0) {
-          // Get likes count separately
-          const recipeIds = quick.map(r => r.id);
-          const { data: likes } = await supabase
-            .from('recipe_likes')
-            .select('recipe_id')
-            .in('recipe_id', recipeIds);
-          
-          const likesCount = new Map<string, number>();
-          likes?.forEach(like => {
-            likesCount.set(like.recipe_id, (likesCount.get(like.recipe_id) || 0) + 1);
-          });
-          
-          const withLikes = quick.map((r: any) => ({
+          .limit(100);
+        
+        if (allRecipes && allRecipes.length > 0) {
+          // Shuffle and take recipes
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          const withLikes = shuffled.map((r: any) => ({
             ...r,
             recipe_id: r.id,
-            likes_count: likesCount.get(r.id) || 0,
+            likes_count: 0,
           }));
           setQuickRecipes(withLikes as Recipe[]);
+        }
+      } else {
+        const { data: quick } = await supabase.rpc('get_quick_recipes', {
+          p_limit: 100, // Get many for infinite scroll
+          p_user_id: user?.id || null,
+          p_category: null,
+          p_archetype: profile?.archetype || null,
+          p_cooking_skill: profile?.cooking_skill || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+        });
+        if (quick && quick.length > 0) {
+          setQuickRecipes(quick as Recipe[]);
+        } else {
+          // Fallback: get all recipes <= 30 minutes
+          const { data: fallback } = await supabase
+            .from('recipes')
+            .select('*')
+            .lte('total_time_minutes', 30)
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (fallback && fallback.length > 0) {
+            const withLikes = fallback.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            }));
+            setQuickRecipes(withLikes as Recipe[]);
+          }
         }
       }
 
