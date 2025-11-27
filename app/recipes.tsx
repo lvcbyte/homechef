@@ -848,7 +848,9 @@ export default function RecipesScreen() {
                         <View key={idx} style={styles.ingredientRow}>
                           <Text style={styles.ingredientBullet}>•</Text>
                           <Text style={styles.ingredientText}>
-                            {ing.quantity} {ing.unit} {ing.name}
+                            {typeof ing === 'string' 
+                              ? ing 
+                              : `${ing.quantity || ''} ${ing.unit || ''} ${ing.name || ''}`.trim()}
                           </Text>
                         </View>
                       ))}
@@ -861,9 +863,11 @@ export default function RecipesScreen() {
                       {selectedRecipe.instructions.map((step: any, idx: number) => (
                         <View key={idx} style={styles.instructionRow}>
                           <View style={styles.instructionNumber}>
-                            <Text style={styles.instructionNumberText}>{step.step || idx + 1}</Text>
+                            <Text style={styles.instructionNumberText}>{typeof step === 'object' ? (step.step || idx + 1) : idx + 1}</Text>
                           </View>
-                          <Text style={styles.instructionText}>{step.instruction}</Text>
+                          <Text style={styles.instructionText}>
+                            {typeof step === 'string' ? step : (step.instruction || '')}
+                          </Text>
                         </View>
                       ))}
                     </View>
