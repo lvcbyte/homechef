@@ -660,6 +660,37 @@ export default function RecipesScreen() {
               ))}
             </ScrollView>
           </View>
+          )}
+
+          {/* New Section: Popular Categories */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Populaire Categorieën</Text>
+            <Text style={styles.sectionSubtitle}>Ontdek recepten per thema</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.categoryGrid}>
+                {categories.slice(1, 11).map((cat) => (
+                  <TouchableOpacity
+                    key={cat.category}
+                    style={[
+                      styles.categoryCard,
+                      activeFilter === cat.category && styles.categoryCardActive
+                    ]}
+                    onPress={() => setActiveFilter(cat.category)}
+                  >
+                    <Text style={[
+                      styles.categoryCardText,
+                      activeFilter === cat.category && styles.categoryCardTextActive
+                    ]}>
+                      {cat.category}
+                    </Text>
+                    {cat.count > 0 && (
+                      <Text style={styles.categoryCount}>{cat.count}</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
         </ScrollView>
       </SafeAreaView>
       <GlassDock />
