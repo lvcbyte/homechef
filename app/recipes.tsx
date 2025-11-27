@@ -1327,6 +1327,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(15,23,42,0.08)',
     overflow: 'hidden',
     position: 'relative',
+    flexDirection: 'column',
   },
   quickImage: {
     width: '100%',
@@ -1334,12 +1335,17 @@ const styles = StyleSheet.create({
   },
   quickBody: {
     padding: 14,
-    gap: 8,
+    flex: 1,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    minHeight: 90,
   },
   quickTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#111827',
+    marginBottom: 8,
+    flexShrink: 1,
   },
   quickTag: {
     alignSelf: 'flex-start',
@@ -1347,10 +1353,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
+    marginTop: 'auto',
   },
   quickTagText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 12,
   },
   // Modal styles (same as index.tsx)
   modalOverlay: {

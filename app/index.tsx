@@ -797,6 +797,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(15,23,42,0.08)',
     overflow: 'hidden',
     position: 'relative',
+    flexDirection: 'column',
   },
   recipeImage: {
     width: '100%',
@@ -817,6 +818,10 @@ const styles = StyleSheet.create({
   recipeBody: {
     padding: 14,
     gap: 6,
+    flex: 1,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    minHeight: 90,
   },
   socialProof: {
     fontSize: 12,
@@ -843,6 +848,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
+    marginTop: 'auto',
   },
   quickPillText: {
     color: '#fff',
