@@ -708,35 +708,55 @@ export default function RecipesScreen() {
           </View>
           )}
 
-          {/* New Section: Popular Categories */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Populaire Categorieën</Text>
-            <Text style={styles.sectionSubtitle}>Ontdek recepten per thema</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.categoryGrid}>
-                {categories.slice(1, 11).map((cat) => (
-                  <TouchableOpacity
-                    key={cat.category}
-                    style={[
-                      styles.categoryCard,
-                      activeFilter === cat.category && styles.categoryCardActive
-                    ]}
-                    onPress={() => setActiveFilter(cat.category)}
-                  >
-                    <Text style={[
-                      styles.categoryCardText,
-                      activeFilter === cat.category && styles.categoryCardTextActive
-                    ]}>
-                      {cat.category}
-                    </Text>
-                    {cat.count > 0 && (
-                      <Text style={styles.categoryCount}>{cat.count}</Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
+          {/* Category Rows - Infinite scrollable rows like Netflix */}
+          {categories.slice(1, 8).map((cat) => {
+            const recipes = categoryRecipes[cat.category] || [];
+            if (recipes.length === 0) return null;
+            
+            return (
+              <View key={cat.category} style={styles.section}>
+                <Text style={styles.sectionTitle}>{cat.category}</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {cat.count > 0 ? `${cat.count} recepten beschikbaar` : 'Ontdek deze categorie'}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {recipes.map((recipe) => (
+                    <TouchableOpacity
+                      key={recipe.recipe_id}
+                      style={styles.recipeCard}
+                      onPress={() => handleRecipePress(recipe)}
+                    >
+                      <Image
+                        source={{
+                          uri: recipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=800&q=80',
+                        }}
+                        style={styles.recipeImage}
+                      />
+                      <TouchableOpacity
+                        style={styles.heartButtonCard}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleLike(recipe.recipe_id);
+                        }}
+                      >
+                        <Ionicons
+                          name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
+                          size={22}
+                          color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#fff'}
+                        />
+                      </TouchableOpacity>
+                      <View style={styles.recipeBody}>
+                        <Text style={styles.socialProof}>
+                          {recipe.likes_count}x bewaard deze week
+                        </Text>
+                        <Text style={styles.recipeName}>{recipe.title}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
-            </ScrollView>
-          </View>
+            );
+          })}
         </ScrollView>
       </SafeAreaView>
       <GlassDock />
