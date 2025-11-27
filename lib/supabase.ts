@@ -3,14 +3,38 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database';
 
 // Try to get from Constants.extra first (loaded via app.config.js), then fall back to process.env
-const SUPABASE_URL =
-  Constants.expoConfig?.extra?.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY =
-  Constants.expoConfig?.extra?.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+// Also check window.__EXPO_ENV__ for runtime environment variables (Vercel)
+const getEnvVar = (key: string): string | undefined => {
+  // Check Constants.extra (build-time)
+  if (Constants.expoConfig?.extra?.[key]) {
+    return Constants.expoConfig.extra[key] as string;
+  }
+  // Check process.env (build-time and runtime)
+  if (process.env[key]) {
+    return process.env[key];
+  }
+  // Check window.__EXPO_ENV__ (runtime, for Vercel)
+  if (typeof window !== 'undefined' && (window as any).__EXPO_ENV__?.[key]) {
+    return (window as any).__EXPO_ENV__[key];
+  }
+  return undefined;
+};
+
+const SUPABASE_URL = 
+  getEnvVar('supabaseUrl') || 
+  getEnvVar('EXPO_PUBLIC_SUPABASE_URL') ||
+  getEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
+  getEnvVar('SUPABASE_URL');
+
+const SUPABASE_ANON_KEY = 
+  getEnvVar('supabaseAnonKey') || 
+  getEnvVar('EXPO_PUBLIC_SUPABASE_ANON_KEY') ||
+  getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
+  getEnvVar('SUPABASE_ANON_KEY');
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn(
-    '[supabase] Missing Supabase credentials. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env.local'
+  console.error(
+    '[supabase] Missing Supabase credentials. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY as environment variables.'
   );
 }
 
@@ -55,12 +79,19 @@ let supabaseInstance: SupabaseClient<Database> | null = null;
 function initSupabase() {
   if (supabaseInstance) return supabaseInstance;
   
+  // Validate credentials before creating client
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error(
+      'Supabase credentials are missing. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY as environment variables in your Vercel project settings.'
+    );
+  }
+  
   // Don't initialize during SSR (when window is undefined and we're in Node.js)
   const isSSR = typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node;
   
   if (isSSR) {
     // Return a minimal mock client for SSR
-    return createClient<Database>(SUPABASE_URL ?? '', SUPABASE_ANON_KEY ?? '', {
+    return createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         storage: {
           getItem: () => Promise.resolve(null),
@@ -74,7 +105,7 @@ function initSupabase() {
     });
   }
   
-  supabaseInstance = createClient<Database>(SUPABASE_URL ?? '', SUPABASE_ANON_KEY ?? '', {
+  supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       storage: createStorageAdapter(),
       autoRefreshToken: true,

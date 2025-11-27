@@ -76,7 +76,7 @@ export default function RecipesScreen() {
         if (rod) setRecipeOfTheDay(rod as RecipeDetail);
       }
 
-      // Fetch Chef Radar recipes (inventory-matched, with fallback)
+      // Fetch Chef Radar recipes (inventory-matched, only show if good matches)
       const category = activeFilter === 'Alles' ? null : activeFilter;
       const { data: matched } = await supabase.rpc('match_recipes_with_inventory', {
         p_user_id: user.id,
@@ -85,58 +85,19 @@ export default function RecipesScreen() {
       });
       
       if (matched && matched.length > 0) {
-        setChefRadarRecipes(matched as Recipe[]);
+        // Filter to only show recipes with at least 30% match score and at least 2 matched ingredients
+        const goodMatches = (matched as Recipe[]).filter((r) => {
+          const matchScore = r.match_score || 0;
+          const matchedCount = r.matched_ingredients_count || 0;
+          return matchScore >= 0.3 && matchedCount >= 2;
+        });
+        
+        // Sort by match score descending and take top 3
+        const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+        setChefRadarRecipes(sorted.slice(0, 3));
       } else {
-        // Fallback: show all recipes (or filtered by category) if no inventory matches
-        let query = supabase
-          .from('recipes')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(10);
-        
-        if (category) {
-          // Filter by category/tags
-          const { data: categoryRecipes } = await supabase
-            .from('recipe_categories')
-            .select('recipe_id')
-            .eq('category', category);
-          
-          const categoryRecipeIds = categoryRecipes?.map(r => r.recipe_id) || [];
-          
-          if (categoryRecipeIds.length > 0) {
-            query = query.or(`category.eq.${category},tags.cs.{${category}},id.in.(${categoryRecipeIds.join(',')})`);
-          } else {
-            query = query.or(`category.eq.${category},tags.cs.{${category}}`);
-          }
-        }
-        
-        const { data: allRecipes } = await query;
-        if (allRecipes) {
-          // Get likes count and match score (set to 0.5 as default)
-          const recipeIds = allRecipes.map(r => r.id);
-          const { data: likes } = await supabase
-            .from('recipe_likes')
-            .select('recipe_id')
-            .in('recipe_id', recipeIds);
-          
-          const likesCount = new Map<string, number>();
-          likes?.forEach(like => {
-            likesCount.set(like.recipe_id, (likesCount.get(like.recipe_id) || 0) + 1);
-          });
-          
-          const withDefaults = allRecipes.map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            match_score: 0.5, // Default match score
-            matched_ingredients_count: 0,
-            total_ingredients_count: Array.isArray(r.ingredients) ? r.ingredients.length : 0,
-            likes_count: likesCount.get(r.id) || 0,
-          }));
-          
-          setChefRadarRecipes((withDefaults as Recipe[]).slice(0, 10));
-        } else {
-          setChefRadarRecipes([]);
-        }
+        // No matches found - don't show fallback, keep empty
+        setChefRadarRecipes([]);
       }
 
       // Fetch trending recipes (filtered by category if not "Alles")

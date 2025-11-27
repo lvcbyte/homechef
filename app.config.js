@@ -1,4 +1,10 @@
-require('dotenv').config({ path: '.env.local' });
+// Try to load .env.local if it exists (for local development)
+// On Vercel, environment variables are available via process.env
+try {
+  require('dotenv').config({ path: '.env.local' });
+} catch (e) {
+  // .env.local doesn't exist, that's fine - use process.env (Vercel)
+}
 
 module.exports = {
   expo: {

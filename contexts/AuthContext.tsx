@@ -23,25 +23,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
+    
+    // Wrap in try-catch to handle missing credentials gracefully
+    try {
+      supabase.auth.getSession().then(({ data }) => {
+        if (!mounted) return;
+        setSession(data.session);
+        setLoading(false);
+      }).catch((error) => {
+        console.error('Error getting session:', error);
+        if (!mounted) return;
+        setLoading(false);
+      });
+
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, newSession) => {
+        setSession(newSession);
+        if (!newSession) {
+          setProfile(null);
+        }
+      });
+
+      return () => {
+        mounted = false;
+        subscription?.unsubscribe();
+      };
+    } catch (error) {
+      console.error('Error initializing auth:', error);
       setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      if (!newSession) {
-        setProfile(null);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+      return () => {
+        mounted = false;
+      };
+    }
   }, []);
 
   useEffect(() => {
