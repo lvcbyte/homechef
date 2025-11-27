@@ -260,12 +260,12 @@ export default function RecipesScreen() {
           
           if (category) {
             // Filter by category/tags
-            const { data: categoryRecipes } = await supabase
+            const { data: categoryRecipesData } = await supabase
               .from('recipe_categories')
               .select('recipe_id')
               .eq('category', category);
             
-            const categoryRecipeIds = categoryRecipes?.map(r => r.recipe_id) || [];
+            const categoryRecipeIds = categoryRecipesData?.map(r => r.recipe_id) || [];
             
             if (categoryRecipeIds.length > 0) {
               query = query.or(`category.eq.${category},tags.cs.{${category}},id.in.(${categoryRecipeIds.join(',')})`);
