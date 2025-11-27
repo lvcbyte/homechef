@@ -155,31 +155,53 @@ export default function RecipesScreen() {
         }
       }
 
-      // Fetch trending recipes with profile filters
-      const { data: trending } = await supabase.rpc('get_trending_recipes', {
-        p_limit: 10,
-        p_user_id: user.id,
-        p_category: category,
-      });
-      if (trending) {
-        setTrendingRecipes(trending as Recipe[]);
+        const { data: trending } = await supabase.rpc('get_trending_recipes', {
+          p_limit: 30, // Get more for rotation
+          p_user_id: user.id,
+          p_category: category,
+        });
+        if (trending) {
+          setTrendingRecipes(trending as Recipe[]);
+        }
       }
 
       // Fetch quick recipes (<= 30 minutes) with inventory matching, category filter, and profile filters
       let quick: any[] = [];
-      const { data: matchedQuick } = await supabase.rpc('match_recipes_with_inventory', {
-        p_user_id: user.id,
-        p_category: category,
-        p_max_time_minutes: 30,
-        p_limit: 10,
-        p_archetype: profile?.archetype || null,
-        p_cooking_skill: profile?.cooking_skill || null,
-        p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
-      });
       
-      if (matchedQuick && matchedQuick.length > 0) {
-        quick = matchedQuick;
+      // If archetype is "None", get random recipes
+      if (profile?.archetype === 'None') {
+        const { data: allRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .lte('total_time_minutes', 30)
+          .limit(30);
+        
+        if (allRecipes) {
+          // Shuffle and take random recipes
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          quick = shuffled.slice(0, 30).map((r: any) => ({
+            ...r,
+            recipe_id: r.id,
+            match_score: 0,
+            matched_ingredients_count: 0,
+            total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+            likes_count: 0,
+          }));
+        }
       } else {
+        const { data: matchedQuick } = await supabase.rpc('match_recipes_with_inventory', {
+          p_user_id: user.id,
+          p_category: category,
+          p_max_time_minutes: 30,
+          p_limit: 30, // Get more for rotation
+          p_archetype: profile?.archetype || null,
+          p_cooking_skill: profile?.cooking_skill || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+        });
+        
+        if (matchedQuick && matchedQuick.length > 0) {
+          quick = matchedQuick;
+        } else {
         // Fallback: get all recipes <= 30 minutes, filtered by category if needed
         let query = supabase
           .from('recipes')
