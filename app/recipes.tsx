@@ -352,7 +352,7 @@ export default function RecipesScreen() {
     }
   };
 
-  const fetchCategoryRecipes = async (categoryName: string) => {
+  const fetchCategoryRecipes = useCallback(async (categoryName: string) => {
     if (!user || loadingCategories[categoryName]) return;
     
     setLoadingCategories((prev) => ({ ...prev, [categoryName]: true }));
@@ -407,7 +407,7 @@ export default function RecipesScreen() {
     } finally {
       setLoadingCategories((prev) => ({ ...prev, [categoryName]: false }));
     }
-  };
+  }, [user, profile, loadingCategories]);
 
   const generateAIChefRadarRecipes = async () => {
     if (!user || !profile) return;
@@ -937,17 +937,20 @@ export default function RecipesScreen() {
           {categories.slice(1, 8).map((cat) => {
             const recipes = categoryRecipes[cat.category] || [];
             const isLoading = loadingCategories[cat.category];
+            const categoryName = cat.category; // Store in const to avoid closure issues
+            
+            // Create a handler function for this specific category
+            const handleCategoryLayout = () => {
+              if (recipes.length === 0 && !isLoading) {
+                fetchCategoryRecipes(categoryName);
+              }
+            };
             
             return (
               <View 
                 key={cat.category} 
                 style={styles.section}
-                onLayout={() => {
-                  // Lazy load category recipes when section comes into view
-                  if (recipes.length === 0 && !isLoading) {
-                    fetchCategoryRecipes(cat.category);
-                  }
-                }}
+                onLayout={handleCategoryLayout}
               >
                 <Text style={styles.sectionTitle}>{cat.category}</Text>
                 <Text style={styles.sectionSubtitle}>
