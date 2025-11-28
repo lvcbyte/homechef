@@ -1175,7 +1175,7 @@ export default function ScanScreen() {
                             recipe_payload: recipePayload,
                           });
 
-                          Alert.alert('Succes', 'Recept is toegevoegd en bewaard!');
+                          Alert.alert('Opgeslagen', 'Je AI-recept staat nu bij Saved.');
                           setRecipeModalVisible(false);
                           setRecipeTitle('');
                           setRecipeDescription('');

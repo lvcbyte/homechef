@@ -70,6 +70,11 @@ const attachRecipeImage = (recipe: any) => ({
   image_url: recipe.image_url || buildRecipeImage(recipe.title, recipe.recipe_id || recipe.id),
 });
 
+const matchesCategoryFilter = (recipe: any, activeFilter: string) => {
+  if (activeFilter === 'Alles') return true;
+  return canonicalCategory(recipe) === activeFilter.toLowerCase();
+};
+
 const CHEF_RADAR_LOADING_MESSAGES = [
   'Deciding your meals...',
   'Chef Radar scant je voorraad...',
@@ -346,23 +351,33 @@ export default function RecipesScreen() {
           .limit(60);
         
         if (allRecipes && allRecipes.length > 0) {
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          let curated = dedupeRecipes(
-            shuffled.slice(0, 40).map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            }))
-          ).map(attachRecipeImage);
+          const filtered = activeFilter === 'Alles'
+            ? allRecipes
+            : allRecipes.filter((r: any) => matchesCategoryFilter(r, activeFilter));
 
-          if (curated.length === 0) {
-            curated = shuffled.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            })).map(attachRecipeImage);
+          if (filtered.length === 0 && activeFilter !== 'Alles') {
+            setTrendingRecipes([]);
+          } else {
+            const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+            let curated = dedupeRecipes(
+              shuffled.slice(0, 40).map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              }))
+            ).map(attachRecipeImage);
+
+            if (curated.length === 0) {
+              curated = filtered.map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              })).map(attachRecipeImage);
+            }
+            setTrendingRecipes(curated as Recipe[]);
           }
-          setTrendingRecipes(curated as Recipe[]);
+        } else {
+          setTrendingRecipes([]);
         }
       } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', {
@@ -385,7 +400,12 @@ export default function RecipesScreen() {
               likes_count: r.likes_count || 0,
             })).map(attachRecipeImage);
           }
-          setTrendingRecipes(curated as Recipe[]);
+          const filteredCurated = activeFilter === 'Alles'
+            ? curated
+            : curated.filter((recipe) => matchesCategoryFilter(recipe, activeFilter));
+          setTrendingRecipes(filteredCurated as Recipe[]);
+        } else {
+          setTrendingRecipes([]);
         }
       }
     } catch (error) {
@@ -409,23 +429,33 @@ export default function RecipesScreen() {
           .limit(100);
         
         if (allRecipes && allRecipes.length > 0) {
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          let curated = dedupeRecipes(
-            shuffled.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            }))
-          ).map(attachRecipeImage);
+          const filtered = activeFilter === 'Alles'
+            ? allRecipes
+            : allRecipes.filter((r: any) => matchesCategoryFilter(r, activeFilter));
 
-          if (curated.length === 0) {
-            curated = shuffled.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            })).map(attachRecipeImage);
+          if (filtered.length === 0 && activeFilter !== 'Alles') {
+            setQuickRecipes([]);
+          } else {
+            const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+            let curated = dedupeRecipes(
+              shuffled.map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              }))
+            ).map(attachRecipeImage);
+
+            if (curated.length === 0) {
+              curated = filtered.map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              })).map(attachRecipeImage);
+            }
+            setQuickRecipes(curated as Recipe[]);
           }
-          setQuickRecipes(curated as Recipe[]);
+        } else {
+          setQuickRecipes([]);
         }
       } else {
         // Always pass null for category - we want ALL recipes <= 30 minutes
@@ -453,7 +483,12 @@ export default function RecipesScreen() {
               likes_count: r.likes_count || 0,
             })).map(attachRecipeImage);
           }
-          setQuickRecipes(curated as Recipe[]);
+          const filteredCurated = activeFilter === 'Alles'
+            ? curated
+            : curated.filter((recipe) => matchesCategoryFilter(recipe, activeFilter));
+          setQuickRecipes(filteredCurated as Recipe[]);
+        } else {
+          setQuickRecipes([]);
         }
       }
     } catch (error) {
