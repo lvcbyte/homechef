@@ -1261,10 +1261,19 @@ const styles = StyleSheet.create({
   radarMatch: {
     fontSize: 13,
     color: '#047857',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  radarIngredients: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   radarTime: {
     fontSize: 12,
     color: '#475569',
+    marginTop: 4,
   },
   recipeCard: {
     width: 240,
