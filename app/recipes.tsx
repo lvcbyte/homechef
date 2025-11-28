@@ -22,6 +22,7 @@ interface Recipe {
   match_score?: number;
   matched_ingredients_count?: number;
   total_ingredients_count?: number;
+  matched_ingredients?: string[];
   likes_count: number;
   ingredients?: any;
   instructions?: any;
@@ -129,41 +130,27 @@ export default function RecipesScreen() {
         });
         
         if (matched && matched.length > 0) {
-          // Very loose filtering: show recipes with at least 1 matched ingredient or any match score
+          // Filter: show recipes with at least 1 matched ingredient
           const goodMatches = (matched as Recipe[]).filter((r) => {
-            const matchScore = r.match_score || 0;
             const matchedCount = r.matched_ingredients_count || 0;
-            // Show if at least 1 ingredient matches OR match score > 5%
-            return matchedCount >= 1 || matchScore >= 5;
+            return matchedCount >= 1;
           });
           
           // Sort by match score descending (best matches first) and take top 3
           const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-          setChefRadarRecipes(sorted.slice(0, 3));
-          setChefRadarCarouselData([]);
-        } else {
-          // Fallback: show general recipes if no inventory matches
-          const { data: fallback } = await supabase
-            .from('recipes')
-            .select('*')
-            .limit(3)
-            .order('created_at', { ascending: false });
+          const topMatches = sorted.slice(0, 3);
           
-          if (fallback) {
-            const fallbackRecipes = fallback.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              match_score: 0,
-              matched_ingredients_count: 0,
-              total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
-              likes_count: 0,
-            }));
-            setChefRadarRecipes(fallbackRecipes as Recipe[]);
+          // If we have good matches, use them
+          if (topMatches.length > 0) {
+            setChefRadarRecipes(topMatches);
             setChefRadarCarouselData([]);
           } else {
-            setChefRadarRecipes([]);
-            setChefRadarCarouselData([]);
+            // If no good matches, generate AI recipes
+            await generateAIChefRadarRecipes();
           }
+        } else {
+          // No matches at all, generate AI recipes
+          await generateAIChefRadarRecipes();
         }
       }
 
@@ -630,8 +617,14 @@ export default function RecipesScreen() {
                     <View style={styles.radarBody}>
                       <Text style={styles.radarTitle}>{recipe.title}</Text>
                       <Text style={styles.radarMatch}>
-                        {Math.round((recipe.match_score || 0) * 100)}% match • {recipe.matched_ingredients_count || 0} items op voorraad
+                        {Math.round(recipe.match_score || 0)}% match • {recipe.matched_ingredients_count || 0} items op voorraad
                       </Text>
+                      {recipe.matched_ingredients && recipe.matched_ingredients.length > 0 && (
+                        <Text style={styles.radarIngredients} numberOfLines={1}>
+                          {recipe.matched_ingredients.slice(0, 3).join(', ')}
+                          {recipe.matched_ingredients.length > 3 && '...'}
+                        </Text>
+                      )}
                       <Text style={styles.radarTime}>
                         {recipe.total_time_minutes} min • {recipe.difficulty}
                       </Text>
