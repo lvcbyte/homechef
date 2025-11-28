@@ -943,18 +943,21 @@ export default function RecipesScreen() {
             const isLoading = loadingCategories[cat.category];
             const categoryName = cat.category; // Store in const to avoid closure issues
             
-            // Create a handler function for this specific category
-            const handleCategoryLayout = () => {
-              if (recipes.length === 0 && !isLoading) {
-                fetchCategoryRecipes(categoryName);
-              }
-            };
-            
             return (
               <View 
                 key={cat.category} 
                 style={styles.section}
-                onLayout={handleCategoryLayout}
+                onLayout={() => {
+                  // Lazy load category recipes when section comes into view
+                  if (recipes.length === 0 && !isLoading) {
+                    // Use window.setTimeout to ensure function is available
+                    setTimeout(() => {
+                      if (typeof fetchCategoryRecipes === 'function') {
+                        fetchCategoryRecipes(categoryName);
+                      }
+                    }, 0);
+                  }
+                }}
               >
                 <Text style={styles.sectionTitle}>{cat.category}</Text>
                 <Text style={styles.sectionSubtitle}>
