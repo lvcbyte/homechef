@@ -31,8 +31,8 @@ const openRouterClient = OPENROUTER_KEY ? new OpenAI({
 
 const VISION_MODEL = 'gpt-4o';
 const RECIPE_MODEL = 'gpt-4o-mini';
-// Free model from OpenRouter (DeepSeek R1 Distill Llama 70B or similar)
-const FREE_LLM_MODEL = 'deepseek/deepseek-r1-distill-llama-70b';
+// Free model from OpenRouter - Grok 4.1 Fast (free tier)
+const FREE_LLM_MODEL = 'x-ai/grok-4.1-fast:free';
 
 export async function runInventoryScan(photoUris: string[]): Promise<InventoryItem[]> {
   if (!photoUris.length) {
