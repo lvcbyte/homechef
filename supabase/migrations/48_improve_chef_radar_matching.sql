@@ -108,54 +108,63 @@ begin
             r.tags,
             r.category,
             r.ingredients,
-            -- Get matched ingredients list
-            array_agg(distinct ui.original_name) filter (
-                where exists (
-                    select 1
-                    from jsonb_array_elements(r.ingredients) as ing
-                    where 
-                        -- Exact match (case-insensitive)
-                        lower(trim(ing->>'name')) = ui.ingredient_name
-                        -- Partial match (contains)
-                        or lower(trim(ing->>'name')) like '%' || ui.ingredient_name || '%'
-                        or ui.ingredient_name like '%' || lower(trim(ing->>'name')) || '%'
-                        -- Word-based matching (split by spaces)
-                        or exists (
+            -- Get matched ingredients list (only if inventory exists)
+            case 
+                when exists (select 1 from user_inventory limit 1) then
+                    array_agg(distinct ui.original_name) filter (
+                        where exists (
                             select 1
-                            from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
-                            cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
-                            where length(ing_word) >= 3 and length(inv_word) >= 3
-                            and (ing_word = inv_word 
-                                 or ing_word like '%' || inv_word || '%' 
-                                 or inv_word like '%' || ing_word || '%')
+                            from jsonb_array_elements(r.ingredients) as ing
+                            where 
+                                -- Exact match (case-insensitive)
+                                lower(trim(ing->>'name')) = ui.ingredient_name
+                                -- Partial match (contains)
+                                or lower(trim(ing->>'name')) like '%' || ui.ingredient_name || '%'
+                                or ui.ingredient_name like '%' || lower(trim(ing->>'name')) || '%'
+                                -- Word-based matching (split by spaces)
+                                or exists (
+                                    select 1
+                                    from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
+                                    cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
+                                    where length(ing_word) >= 3 and length(inv_word) >= 3
+                                    and (ing_word = inv_word 
+                                         or ing_word like '%' || inv_word || '%' 
+                                         or inv_word like '%' || ing_word || '%')
+                                )
+                                -- Category-based matching
+                                or (ui.category_name is not null and r.category = ui.category_name)
                         )
-                        -- Category-based matching
-                        or (ui.category_name is not null and r.category = ui.category_name)
-                )
-            ) as matched_ingredients,
-            -- Count matched ingredients
-            (
-                select count(distinct ing->>'name')
-                from jsonb_array_elements(r.ingredients) as ing
-                cross join user_inventory ui
-                where 
-                    lower(trim(ing->>'name')) = ui.ingredient_name
-                    or lower(trim(ing->>'name')) like '%' || ui.ingredient_name || '%'
-                    or ui.ingredient_name like '%' || lower(trim(ing->>'name')) || '%'
-                    or exists (
-                        select 1
-                        from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
-                        cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
-                        where length(ing_word) >= 3 and length(inv_word) >= 3
-                        and (ing_word = inv_word 
-                             or ing_word like '%' || inv_word || '%' 
-                             or inv_word like '%' || ing_word || '%')
                     )
-                    or (ui.category_name is not null and r.category = ui.category_name)
-            ) as matched_ingredients_count,
+                else ARRAY[]::text[]
+            end as matched_ingredients,
+            -- Count matched ingredients (only if inventory exists)
+            case 
+                when exists (select 1 from user_inventory limit 1) then
+                    (
+                        select count(distinct ing->>'name')
+                        from jsonb_array_elements(r.ingredients) as ing
+                        cross join user_inventory ui
+                        where 
+                            lower(trim(ing->>'name')) = ui.ingredient_name
+                            or lower(trim(ing->>'name')) like '%' || ui.ingredient_name || '%'
+                            or ui.ingredient_name like '%' || lower(trim(ing->>'name')) || '%'
+                            or exists (
+                                select 1
+                                from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
+                                cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
+                                where length(ing_word) >= 3 and length(inv_word) >= 3
+                                and (ing_word = inv_word 
+                                     or ing_word like '%' || inv_word || '%' 
+                                     or inv_word like '%' || ing_word || '%')
+                            )
+                            or (ui.category_name is not null and r.category = ui.category_name)
+                    )
+                else 0
+            end as matched_ingredients_count,
             jsonb_array_length(r.ingredients) as total_ingredients_count,
             -- Calculate base match score (percentage of ingredients matched)
             case
+                when not exists (select 1 from user_inventory limit 1) then 0.0
                 when jsonb_array_length(r.ingredients) = 0 then 0.0
                 else (
                     select count(distinct ing->>'name')::numeric / greatest(jsonb_array_length(r.ingredients), 1)
@@ -196,6 +205,29 @@ begin
           )
         group by r.id, r.title, r.description, r.author, r.image_url, r.total_time_minutes, 
                  r.difficulty, r.servings, r.tags, r.category, r.ingredients
+        having 
+            -- If no inventory, show all recipes (base_match_score will be 0)
+            not exists (select 1 from user_inventory limit 1)
+            -- If inventory exists, require at least 1 match
+            or (
+                select count(distinct ing->>'name')
+                from jsonb_array_elements(r.ingredients) as ing
+                cross join user_inventory ui
+                where 
+                    lower(trim(ing->>'name')) = ui.ingredient_name
+                    or lower(trim(ing->>'name')) like '%' || ui.ingredient_name || '%'
+                    or ui.ingredient_name like '%' || lower(trim(ing->>'name')) || '%'
+                    or exists (
+                        select 1
+                        from unnest(string_to_array(lower(trim(ing->>'name')), ' ')) as ing_word
+                        cross join unnest(string_to_array(ui.ingredient_name, ' ')) as inv_word
+                        where length(ing_word) >= 3 and length(inv_word) >= 3
+                        and (ing_word = inv_word 
+                             or ing_word like '%' || inv_word || '%' 
+                             or inv_word like '%' || ing_word || '%')
+                    )
+                    or (ui.category_name is not null and r.category = ui.category_name)
+            ) >= 1
         having (
             select count(distinct ing->>'name')
             from jsonb_array_elements(r.ingredients) as ing
