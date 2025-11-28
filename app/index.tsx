@@ -840,6 +840,9 @@ export default function Home() {
   );
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isMobile = SCREEN_WIDTH < 768;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -905,6 +908,99 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 120,
     gap: 32,
+  },
+  dailyAIHeroCard: {
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    overflow: 'hidden',
+    marginBottom: 16,
+    position: 'relative',
+    ...(Platform.OS === 'web' && {
+      maxWidth: '100%',
+    }),
+  },
+  dailyAIHeroImage: {
+    width: '100%',
+    height: isMobile ? 320 : 360,
+    resizeMode: 'cover',
+  },
+  dailyAIHeroOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 60,
+    paddingBottom: 24,
+    paddingHorizontal: isMobile ? 20 : 24,
+    justifyContent: 'flex-end',
+  },
+  dailyAIHeroContent: {
+    gap: 12,
+  },
+  dailyAIHeroHeader: {
+    gap: 6,
+  },
+  dailyAIHeroTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(4, 120, 87, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  dailyAIHeroTagText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  dailyAIHeroSubtitle: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  dailyAIHeroTitle: {
+    fontSize: isMobile ? 26 : 32,
+    fontWeight: '800',
+    color: '#fff',
+    lineHeight: isMobile ? 32 : 40,
+    letterSpacing: -0.5,
+  },
+  dailyAIHeroDescription: {
+    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.95)',
+    lineHeight: 22,
+  },
+  dailyAIHeroMetaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  dailyAIHeroMetaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    ...(Platform.OS === 'web' && {
+      backdropFilter: 'blur(10px)',
+    }),
+  },
+  dailyAIHeroMetaText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   heroCard: {
     backgroundColor: '#fff',
