@@ -23,7 +23,9 @@ export interface InventoryItem {
 export interface GeneratedRecipe {
   name: string;
   description?: string;
+  image_url?: string;
   steps: string[];
+  ingredients?: string[];
   macros: {
     protein: number;
     carbs: number;
