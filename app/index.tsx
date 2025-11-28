@@ -90,6 +90,11 @@ export default function Home() {
         if (rod) setRecipeOfTheDay(rod as RecipeDetail);
       }
 
+      // Fetch or generate daily AI recipe for logged-in users
+      if (user && profile) {
+        await fetchDailyAIRecipe();
+      }
+
       // Fetch trending recipes with profile filters
       if (user && profile && profile.archetype === 'None') {
         // If archetype is "None", get random recipes
