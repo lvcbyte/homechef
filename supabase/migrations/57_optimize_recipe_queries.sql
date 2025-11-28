@@ -30,9 +30,19 @@ ANALYZE public.recipe_categories;
 -- This ensures the function uses indexes efficiently
 COMMENT ON FUNCTION public.get_recipe_categories() IS 'Returns recipe categories with counts. Optimized for fast loading.';
 
--- Optimize get_trending_recipes function
-COMMENT ON FUNCTION public.get_trending_recipes(text, integer) IS 'Returns trending recipes sorted by likes. Uses indexes for performance.';
+-- Optimize get_trending_recipes function (correct signature: integer, uuid, text)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_trending_recipes' AND pronamespace = 'public'::regnamespace) THEN
+        COMMENT ON FUNCTION public.get_trending_recipes(integer, uuid, text) IS 'Returns trending recipes sorted by likes. Uses indexes for performance.';
+    END IF;
+END $$;
 
--- Optimize get_quick_recipes function
-COMMENT ON FUNCTION public.get_quick_recipes(integer, uuid, text, text, text, text[]) IS 'Returns quick recipes (<=30 min). Uses index on total_time_minutes.';
+-- Optimize get_quick_recipes function (correct signature: integer, uuid, text, text, text, text[])
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'get_quick_recipes' AND pronamespace = 'public'::regnamespace) THEN
+        COMMENT ON FUNCTION public.get_quick_recipes(integer, uuid, text, text, text, text[]) IS 'Returns quick recipes (<=30 min). Uses index on total_time_minutes.';
+    END IF;
+END $$;
 

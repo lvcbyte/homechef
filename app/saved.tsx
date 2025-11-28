@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StatusBa
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
+import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateShoppingListFromInventory } from '../services/ai';
@@ -78,24 +79,51 @@ export default function SavedScreen() {
 
   const fetchData = async () => {
     setLoading(true);
+    
+    // Force hide loading screen after max 3 seconds
+    const maxLoadingTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
     try {
-      // Fetch saved recipes
-      const { data: saved } = await supabase
-        .from('saved_recipes')
-        .select('*')
-        .eq('user_id', user!.id);
-      
-      // Fetch liked recipes
-      const { data: likes } = await supabase
-        .from('recipe_likes')
-        .select('recipe_id, recipes(*)')
-        .eq('user_id', user!.id);
+      // Fetch only essentials first
+      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 2000): Promise<T | null> => {
+        try {
+          return await Promise.race([
+            promise,
+            new Promise<T | null>((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+            ),
+          ]);
+        } catch (error) {
+          console.error('Fetch timeout or error:', error);
+          return null;
+        }
+      };
+
+      // Fetch saved and liked recipes in parallel
+      const [savedResult, likesResult] = await Promise.all([
+        fetchWithTimeout(
+          supabase
+            .from('saved_recipes')
+            .select('*')
+            .eq('user_id', user!.id)
+            .then(r => r.data || [])
+        ),
+        fetchWithTimeout(
+          supabase
+            .from('recipe_likes')
+            .select('recipe_id, recipes(*)')
+            .eq('user_id', user!.id)
+            .then(r => r.data || [])
+        ),
+      ]);
 
       // Combine saved and liked recipes
       const allRecipes: SavedRecipe[] = [];
       
-      if (saved) {
-        saved.forEach((item: any) => {
+      if (savedResult) {
+        savedResult.forEach((item: any) => {
           allRecipes.push({
             id: item.id,
             recipe_name: item.recipe_name,
@@ -105,9 +133,9 @@ export default function SavedScreen() {
         });
       }
 
-      if (likes) {
+      if (likesResult) {
         const likedSet = new Set<string>();
-        likes.forEach((like: any) => {
+        likesResult.forEach((like: any) => {
           if (like.recipes) {
             likedSet.add(like.recipe_id);
             allRecipes.push({
@@ -128,40 +156,54 @@ export default function SavedScreen() {
 
       setRecipes(uniqueRecipes);
 
-      // Fetch shopping lists
-      const { data: shoppingLists } = await supabase
+      // Hide loading screen - page is ready
+      clearTimeout(maxLoadingTimeout);
+      setTimeout(() => {
+        setLoading(false);
+      }, 200);
+
+      // Fetch shopping lists in background (non-blocking)
+      supabase
         .from('shopping_lists')
         .select('*')
         .eq('user_id', user!.id)
-        .order('updated_at', { ascending: false });
-      
-      if (shoppingLists && shoppingLists.length > 0) {
-        const listIds = shoppingLists.map((list: any) => list.id);
-        let countMap: Record<string, number> = {};
-        if (listIds.length > 0) {
-          const { data: counts } = await supabase
-            .from('shopping_list_items')
-            .select('list_id')
-            .in('list_id', listIds);
-          if (counts) {
-            counts.forEach((item: any) => {
-              countMap[item.list_id] = (countMap[item.list_id] || 0) + 1;
-            });
+        .order('updated_at', { ascending: false })
+        .then(({ data: shoppingLists }) => {
+          if (shoppingLists && shoppingLists.length > 0) {
+            const listIds = shoppingLists.map((list: any) => list.id);
+            let countMap: Record<string, number> = {};
+            if (listIds.length > 0) {
+              supabase
+                .from('shopping_list_items')
+                .select('list_id')
+                .in('list_id', listIds)
+                .then(({ data: counts }) => {
+                  if (counts) {
+                    counts.forEach((item: any) => {
+                      countMap[item.list_id] = (countMap[item.list_id] || 0) + 1;
+                    });
+                  }
+
+                  const enriched = shoppingLists.map((list: any) => ({
+                    ...list,
+                    items_count: countMap[list.id] || 0,
+                  }));
+
+                  setLists(enriched as ShoppingList[]);
+                });
+            } else {
+              setLists(shoppingLists.map((list: any) => ({ ...list, items_count: 0 })) as ShoppingList[]);
+            }
+          } else {
+            setLists([]);
           }
-        }
-
-        const enriched = shoppingLists.map((list: any) => ({
-          ...list,
-          items_count: countMap[list.id] || 0,
-        }));
-
-        setLists(enriched as ShoppingList[]);
-      } else {
-        setLists([]);
-      }
+        })
+        .catch(() => {
+          setLists([]);
+        });
     } catch (error) {
       console.error('Error fetching saved data:', error);
-    } finally {
+      clearTimeout(maxLoadingTimeout);
       setLoading(false);
     }
   };
@@ -394,9 +436,7 @@ export default function SavedScreen() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#047857" />
-          </View>
+          <StockpitLoader variant="saved" />
         </SafeAreaView>
       </View>
     );

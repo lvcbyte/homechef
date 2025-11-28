@@ -5,7 +5,8 @@ import { Animated, Dimensions, StyleSheet, Text, View } from 'react-native';
 interface StockpitLoaderProps {
   message?: string;
   progress?: number; // 0-100
-  variant?: 'fullscreen' | 'inline' | 'button' | 'recipes';
+  variant?: 'fullscreen' | 'inline' | 'button' | 'recipes' | 'home' | 'inventory' | 'saved';
+  customTip?: string;
 }
 
 const LOADING_MESSAGES = [
@@ -56,22 +57,103 @@ const RECIPES_LOADING_MESSAGES = [
   'Alles is klaar!',
 ];
 
+// Messages for home page
+const HOME_LOADING_MESSAGES = [
+  'Jouw dashboard voorbereiden...',
+  'Persoonlijke recepten laden...',
+  'Voorraad synchroniseren...',
+  'Dagelijkse suggesties genereren...',
+  'Trending recepten ophalen...',
+  'Favorieten laden...',
+  'Chef Radar activeert...',
+  'Recept van de dag vinden...',
+  'Voorraad analyseren...',
+  'Perfecte matches zoeken...',
+  'Culinaire inspiratie ophalen...',
+  'Persoonlijke feed samenstellen...',
+  'Bijna klaar...',
+];
+
+// Messages for inventory page
+const INVENTORY_LOADING_MESSAGES = [
+  'Voorraad scannen...',
+  'Items analyseren...',
+  'Houdbaarheidsdata laden...',
+  'Categorieën sorteren...',
+  'Foto\'s ophalen...',
+  'Stockpit Mode voorbereiden...',
+  'Producten synchroniseren...',
+  'Catalogus matchen...',
+  'Prijzen ophalen...',
+  'Voedingswaarden laden...',
+  'Voorraad bijwerken...',
+  'Bijna klaar...',
+];
+
+// Messages for saved page
+const SAVED_LOADING_MESSAGES = [
+  'Opgeslagen recepten laden...',
+  'Favorieten ophalen...',
+  'Boodschappenlijsten synchroniseren...',
+  'Recepten verzamelen...',
+  'Likes checken...',
+  'Persoonlijke collectie samenstellen...',
+  'Bewaard materiaal ophalen...',
+  'Lijsten voorbereiden...',
+  'Recepten organiseren...',
+  'Bijna klaar...',
+];
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isMobile = SCREEN_WIDTH < 768;
 
-export function StockpitLoader({ message, progress, variant = 'inline' }: StockpitLoaderProps) {
+export function StockpitLoader({ message, progress, variant = 'inline', customTip }: StockpitLoaderProps) {
   const animatedProgress = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
-  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
-  const [displayMessage, setDisplayMessage] = useState(message || LOADING_MESSAGES[0]);
+  // Get messages based on variant
+  const getMessagesForVariant = () => {
+    switch (variant) {
+      case 'recipes':
+        return RECIPES_LOADING_MESSAGES;
+      case 'home':
+        return HOME_LOADING_MESSAGES;
+      case 'inventory':
+        return INVENTORY_LOADING_MESSAGES;
+      case 'saved':
+        return SAVED_LOADING_MESSAGES;
+      default:
+        return LOADING_MESSAGES;
+    }
+  };
 
-  // Rotate messages for recipes variant
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+  const [displayMessage, setDisplayMessage] = useState(message || getMessagesForVariant()[0]);
+
+  // Get tip based on variant
+  const getTipForVariant = () => {
+    if (customTip) return customTip;
+    switch (variant) {
+      case 'recipes':
+        return '💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen';
+      case 'home':
+        return '💡 Tip: Swipe door je persoonlijke recepten voor dagelijkse inspiratie';
+      case 'inventory':
+        return '💡 Tip: Scan je voorraad met Stockpit Mode voor automatische detectie';
+      case 'saved':
+        return '💡 Tip: Bewaar je favoriete recepten voor snelle toegang later';
+      default:
+        return '💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen';
+    }
+  };
+
+  // Rotate messages for fullscreen variants
   useEffect(() => {
-    if (variant === 'recipes' && !message) {
-      const messages = RECIPES_LOADING_MESSAGES;
+    const fullscreenVariants = ['recipes', 'home', 'inventory', 'saved'];
+    if (fullscreenVariants.includes(variant) && !message) {
+      const messages = getMessagesForVariant();
       let index = 0;
       
       const interval = setInterval(() => {
@@ -116,7 +198,8 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
     } else if (message) {
       setDisplayMessage(message);
     } else {
-      setDisplayMessage(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
+      const messages = getMessagesForVariant();
+      setDisplayMessage(messages[0]);
     }
   }, [variant, message, fadeAnim, slideAnim]);
 
@@ -150,7 +233,8 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
   }, [pulseAnim]);
 
   useEffect(() => {
-    if (variant === 'recipes') {
+    const fullscreenVariants = ['recipes', 'home', 'inventory', 'saved'];
+    if (fullscreenVariants.includes(variant)) {
       const rotate = Animated.loop(
         Animated.timing(rotateAnim, {
           toValue: 1,
@@ -174,7 +258,8 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
     );
   }
 
-  if (variant === 'recipes') {
+  const fullscreenVariants = ['recipes', 'home', 'inventory', 'saved'];
+  if (fullscreenVariants.includes(variant)) {
     const rotateInterpolation = rotateAnim.interpolate({
       inputRange: [0, 1],
       outputRange: ['0deg', '360deg'],
@@ -303,7 +388,7 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
               ]}
             >
               <Text style={styles.tipText}>
-                💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen
+                {getTipForVariant()}
               </Text>
             </Animated.View>
           </View>

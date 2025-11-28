@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StatusBa
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
+import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { InventoryRecord, InventoryItem } from '../types/app';
@@ -174,6 +175,7 @@ export default function InventoryScreen() {
   const [viewMode, setViewMode] = useState<'items' | 'categories' | 'expiry'>('items');
   const [inventory, setInventory] = useState<InventoryRecord[]>([]);
   const [loadingInventory, setLoadingInventory] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [selectedNutritionItem, setSelectedNutritionItem] = useState<InventoryRecord | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryRecord | null>(null);
   const [editQuantity, setEditQuantity] = useState('');
@@ -204,10 +206,36 @@ export default function InventoryScreen() {
     if (!user) {
       setInventory([]);
       setShelfPhotos([]);
+      setInitialLoading(false);
       return;
     }
-    fetchInventory();
-    fetchShelfPhotos();
+    const loadData = async () => {
+      setInitialLoading(true);
+      
+      // Force hide loading screen after max 3 seconds
+      const maxLoadingTimeout = setTimeout(() => {
+        setInitialLoading(false);
+      }, 3000);
+
+      try {
+        // Fetch inventory first (essential)
+        await fetchInventory();
+        
+        // Hide loading screen - page is ready
+        clearTimeout(maxLoadingTimeout);
+        setTimeout(() => {
+          setInitialLoading(false);
+        }, 200);
+
+        // Fetch shelf photos in background (non-blocking)
+        fetchShelfPhotos();
+      } catch (error) {
+        console.error('Error loading inventory:', error);
+        clearTimeout(maxLoadingTimeout);
+        setInitialLoading(false);
+      }
+    };
+    loadData();
   }, [user]);
 
   const fetchInventory = async () => {
@@ -417,6 +445,16 @@ export default function InventoryScreen() {
   const usablePercentage = inventory.length
     ? Math.round((usableItems / inventory.length) * 100)
     : 0;
+
+  if (initialLoading) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <StockpitLoader variant="inventory" />
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

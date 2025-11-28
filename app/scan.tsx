@@ -165,6 +165,10 @@ export default function ScanScreen() {
   const [capturedPhotos, setCapturedPhotos] = useState<LocalPhoto[]>([]);
   const [barcodeMode, setBarcodeMode] = useState(false);
   const [hasScannerPermission, setHasScannerPermission] = useState<boolean | null>(null);
+  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
+  const [scannedProduct, setScannedProduct] = useState<CatalogMatch | null>(null);
+  const [scanningProduct, setScanningProduct] = useState(false);
+  const [productDetailModalVisible, setProductDetailModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [manualName, setManualName] = useState('');
   const [manualCategory, setManualCategory] = useState('pantry');
@@ -238,53 +242,119 @@ export default function ScanScreen() {
   };
 
   const handleBarcode = async ({ data: ean }: { data: string }) => {
+    // Prevent multiple scans of the same barcode
+    if (scannedBarcode === ean || scanningProduct) return;
+    
     if (!user) return;
-    const targetSession = await ensureSession();
-    if (!targetSession) return;
     
     // Normalize barcode (remove spaces, ensure it's a string)
     const normalizedBarcode = String(ean).trim().replace(/\s/g, '');
     
-    // Save barcode scan
-    const { error: scanError } = await supabase.from('barcode_scans').insert({
-      user_id: user.id,
-      ean: normalizedBarcode,
-      session_id: targetSession,
-    });
+    // Set scanned state to prevent duplicate scans
+    setScannedBarcode(normalizedBarcode);
+    setScanningProduct(true);
     
-    if (scanError) {
-      console.error('Error saving barcode scan:', scanError);
+    // Close scanner immediately for better UX
+    setBarcodeMode(false);
+    
+    try {
+      const targetSession = await ensureSession();
+      if (targetSession) {
+        // Save barcode scan
+        await supabase.from('barcode_scans').insert({
+          user_id: user.id,
+          ean: normalizedBarcode,
+          session_id: targetSession,
+        });
+      }
+      
+      // Try to match with product catalog
+      const { data: catalogMatch, error: matchError } = await supabase.rpc('match_product_by_barcode', { 
+        barcode: normalizedBarcode 
+      });
+      
+      if (catalogMatch && !matchError) {
+        // Product found - show detail modal (Yuka-style)
+        const product: CatalogMatch = {
+          id: catalogMatch.id,
+          product_name: catalogMatch.product_name,
+          brand: catalogMatch.brand,
+          category: catalogMatch.category,
+          barcode: catalogMatch.barcode,
+          price: catalogMatch.price,
+          unit_size: catalogMatch.unit_size,
+          image_url: catalogMatch.image_url,
+          source: (catalogMatch as any).source,
+        };
+        setScannedProduct(product);
+        setProductDetailModalVisible(true);
+      } else {
+        // Product not found
+        Alert.alert(
+          'Product niet gevonden',
+          `EAN ${normalizedBarcode} is niet gevonden in onze catalogus.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setScannedBarcode(null);
+                setScanningProduct(false);
+              },
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error handling barcode:', error);
+      Alert.alert('Fout', 'Er is een fout opgetreden bij het scannen van de barcode.');
+      setScannedBarcode(null);
+      setScanningProduct(false);
     }
+  };
+
+  const handleAddProductToInventory = async () => {
+    if (!user || !scannedProduct) return;
     
-    // Try to match with product catalog
-    const { data: catalogMatch, error: matchError } = await supabase.rpc('match_product_by_barcode', { 
-      barcode: normalizedBarcode 
-    });
-    
-    if (catalogMatch && !matchError) {
-      // Product found in catalog - add to inventory
+    try {
+      // Get expiry date from FAVV/HACCP estimation
+      const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
+        category_slug: scannedProduct.category || 'pantry',
+      });
+      
+      const expires = expiryData ? expiryData : null;
+      
       const { error: insertError } = await supabase.from('inventory').insert({
         user_id: user.id,
-        name: catalogMatch.product_name,
-        category: catalogMatch.category,
-        quantity_approx: catalogMatch.unit_size || null,
+        name: scannedProduct.product_name,
+        category: scannedProduct.category,
+        quantity_approx: scannedProduct.unit_size || null,
         confidence_score: 0.98,
-        catalog_product_id: catalogMatch.id,
-        catalog_price: catalogMatch.price || null,
-        catalog_image_url: catalogMatch.image_url || null,
+        catalog_product_id: scannedProduct.id,
+        catalog_price: scannedProduct.price || null,
+        catalog_image_url: scannedProduct.image_url || null,
+        expires_at: expires,
       });
       
       if (insertError) {
         Alert.alert('Fout', `Kon product niet toevoegen: ${insertError.message}`);
       } else {
-        Alert.alert('Toegevoegd', `${catalogMatch.product_name} is toegevoegd aan je voorraad.`);
+        Alert.alert('Toegevoegd', `${scannedProduct.product_name} is toegevoegd aan je voorraad.`, [
+          {
+            text: 'OK',
+            onPress: () => {
+              setProductDetailModalVisible(false);
+              setScannedProduct(null);
+              setScannedBarcode(null);
+              setScanningProduct(false);
+              router.push('/inventory');
+            },
+          },
+        ]);
       }
-    } else {
-      // Product not found - just save the barcode
-      Alert.alert('Barcode opgeslagen', `EAN ${normalizedBarcode} is opgeslagen. Product niet gevonden in catalogus.`);
+    } catch (error) {
+      console.error('Error adding product to inventory:', error);
+      Alert.alert('Fout', 'Er is een fout opgetreden bij het toevoegen van het product.');
     }
-    
-    setBarcodeMode(false);
   };
 
   const handlePhotoCapture = async () => {
@@ -603,6 +673,10 @@ export default function ScanScreen() {
                       return;
                     }
                     
+                    // Reset scan state
+                    setScannedBarcode(null);
+                    setScannedProduct(null);
+                    setScanningProduct(false);
                     setBarcodeMode(true);
                   }}
                 >
@@ -684,23 +758,38 @@ export default function ScanScreen() {
       </SafeAreaView>
       <GlassDock />
 
-      <Modal visible={barcodeMode} animationType="slide" onRequestClose={() => setBarcodeMode(false)}>
+      <Modal visible={barcodeMode} animationType="slide" onRequestClose={() => {
+        setBarcodeMode(false);
+        setScannedBarcode(null);
+      }}>
         <View style={styles.barcodeContainer}>
           {hasScannerPermission ? (
             <>
               <BarCodeScanner
-                onBarCodeScanned={handleBarcode}
-                style={{ flex: 1 }}
+                onBarCodeScanned={scannedBarcode ? undefined : handleBarcode}
+                style={StyleSheet.absoluteFillObject}
                 barCodeTypes={[
                   BarCodeScanner.Constants.BarCodeType.ean13,
                   BarCodeScanner.Constants.BarCodeType.ean8,
                   BarCodeScanner.Constants.BarCodeType.upc_a,
                   BarCodeScanner.Constants.BarCodeType.upc_e,
+                  BarCodeScanner.Constants.BarCodeType.code128,
+                  BarCodeScanner.Constants.BarCodeType.code39,
                 ]}
+                type={BarCodeScanner.Constants.Type.back}
               />
               <View style={styles.barcodeOverlay}>
-                <View style={styles.barcodeFrame} />
-                <Pressable style={styles.closeOverlay} onPress={() => setBarcodeMode(false)}>
+                <View style={styles.barcodeFrame}>
+                  <View style={styles.barcodeCorner} />
+                  <View style={[styles.barcodeCorner, { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 }]} />
+                  <View style={[styles.barcodeCorner, { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 }]} />
+                  <View style={[styles.barcodeCorner, { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 }]} />
+                </View>
+                <Text style={styles.barcodeHint}>Richt de camera op de barcode</Text>
+                <Pressable style={styles.closeOverlay} onPress={() => {
+                  setBarcodeMode(false);
+                  setScannedBarcode(null);
+                }}>
                   <View style={styles.closeButton}>
                     <Ionicons name="close" size={24} color="#fff" />
                   </View>
@@ -729,12 +818,90 @@ export default function ScanScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.permissionCancelButton}
-                onPress={() => setBarcodeMode(false)}
+                onPress={() => {
+                  setBarcodeMode(false);
+                  setScannedBarcode(null);
+                }}
               >
                 <Text style={styles.permissionCancelText}>Annuleren</Text>
               </TouchableOpacity>
             </View>
           )}
+        </View>
+      </Modal>
+
+      {/* Product Detail Modal (Yuka-style) */}
+      <Modal visible={productDetailModalVisible} transparent animationType="slide" onRequestClose={() => {
+        setProductDetailModalVisible(false);
+        setScannedProduct(null);
+        setScannedBarcode(null);
+        setScanningProduct(false);
+      }}>
+        <View style={styles.productDetailBackdrop}>
+          <View style={styles.productDetailCard}>
+            {scannedProduct && (
+              <>
+                <Pressable
+                  style={styles.productDetailClose}
+                  onPress={() => {
+                    setProductDetailModalVisible(false);
+                    setScannedProduct(null);
+                    setScannedBarcode(null);
+                    setScanningProduct(false);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color="#0f172a" />
+                </Pressable>
+                
+                {scannedProduct.image_url ? (
+                  <Image source={{ uri: scannedProduct.image_url }} style={styles.productDetailImage} />
+                ) : (
+                  <View style={styles.productDetailImagePlaceholder}>
+                    <Ionicons name="image-outline" size={64} color="#94a3b8" />
+                  </View>
+                )}
+                
+                <View style={styles.productDetailContent}>
+                  <Text style={styles.productDetailBrand}>{scannedProduct.brand || 'Onbekend merk'}</Text>
+                  <Text style={styles.productDetailName}>{scannedProduct.product_name}</Text>
+                  
+                  <View style={styles.productDetailMeta}>
+                    {scannedProduct.price && (
+                      <View style={styles.productDetailMetaItem}>
+                        <Ionicons name="pricetag-outline" size={18} color="#047857" />
+                        <Text style={styles.productDetailMetaText}>€{scannedProduct.price.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {scannedProduct.unit_size && (
+                      <View style={styles.productDetailMetaItem}>
+                        <Ionicons name="cube-outline" size={18} color="#047857" />
+                        <Text style={styles.productDetailMetaText}>{scannedProduct.unit_size}</Text>
+                      </View>
+                    )}
+                    <View style={styles.productDetailMetaItem}>
+                      <Ionicons name="grid-outline" size={18} color="#047857" />
+                      <Text style={styles.productDetailMetaText}>{getCategoryLabel(scannedProduct.category)}</Text>
+                    </View>
+                  </View>
+                  
+                  {scannedProduct.barcode && (
+                    <View style={styles.productDetailBarcode}>
+                      <Text style={styles.productDetailBarcodeLabel}>EAN</Text>
+                      <Text style={styles.productDetailBarcodeValue}>{scannedProduct.barcode}</Text>
+                    </View>
+                  )}
+                  
+                  <TouchableOpacity
+                    style={styles.productDetailAddButton}
+                    onPress={handleAddProductToInventory}
+                  >
+                    <Ionicons name="add-circle" size={24} color="#fff" />
+                    <Text style={styles.productDetailAddButtonText}>Toevoegen aan voorraad</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
         </View>
       </Modal>
 
@@ -1513,12 +1680,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   barcodeFrame: {
-    width: 250,
-    height: 250,
+    width: 280,
+    height: 280,
     borderWidth: 2,
     borderColor: '#047857',
-    borderRadius: 16,
+    borderRadius: 20,
     backgroundColor: 'transparent',
+    position: 'relative',
+  },
+  barcodeCorner: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderColor: '#047857',
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    top: 0,
+    left: 0,
+  },
+  barcodeHint: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 24,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
   closeOverlay: {
     position: 'absolute',
@@ -1862,6 +2051,116 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginBottom: 12,
     fontWeight: '500',
+  },
+  productDetailBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  productDetailCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 24,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  productDetailClose: {
+    position: 'absolute',
+    top: 24,
+    right: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  productDetailImage: {
+    width: '100%',
+    height: 300,
+    resizeMode: 'contain',
+    backgroundColor: '#f8fafc',
+  },
+  productDetailImagePlaceholder: {
+    width: '100%',
+    height: 300,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  productDetailContent: {
+    padding: 24,
+    gap: 16,
+  },
+  productDetailBrand: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  productDetailName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0f172a',
+    lineHeight: 32,
+  },
+  productDetailMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+  productDetailMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  productDetailMetaText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#047857',
+  },
+  productDetailBarcode: {
+    marginTop: 8,
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    gap: 4,
+  },
+  productDetailBarcodeLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  productDetailBarcodeValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+    fontFamily: 'monospace',
+  },
+  productDetailAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#047857',
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginTop: 8,
+  },
+  productDetailAddButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
   },
 });
 

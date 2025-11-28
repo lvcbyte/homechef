@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AIChatbot } from '../components/chat/AIChatbot';
@@ -80,140 +81,190 @@ export default function Home() {
 
   const fetchData = async () => {
     setLoading(true);
+    
+    // Force hide loading screen after max 3 seconds
+    const maxLoadingTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
     try {
-      // Fetch recipe of the day
-      const { data: rodId } = await supabase.rpc('get_recipe_of_the_day');
-      if (rodId) {
-        const { data: rod } = await supabase
-          .from('recipes')
-          .select('*')
-          .eq('id', rodId)
-          .single();
-        if (rod) setRecipeOfTheDay(rod as RecipeDetail);
+      // Fetch only essentials first, rest in background
+      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 2000): Promise<T | null> => {
+        try {
+          return await Promise.race([
+            promise,
+            new Promise<T | null>((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+            ),
+          ]);
+        } catch (error) {
+          console.error('Fetch timeout or error:', error);
+          return null;
+        }
+      };
+
+      // Fetch only essentials first
+      const [categoriesResult, likesResult] = await Promise.all([
+        fetchWithTimeout(supabase.rpc('get_recipe_categories').then(r => r.data || [])),
+        user ? fetchWithTimeout(
+          supabase
+            .from('recipe_likes')
+            .select('recipe_id')
+            .eq('user_id', user.id)
+            .then(r => r.data || [])
+        ) : Promise.resolve([]),
+      ]);
+
+      // Set categories (essential for page structure)
+      if (categoriesResult && Array.isArray(categoriesResult)) {
+        setCategories(categoriesResult as Category[]);
       }
 
-      // Fetch trending recipes with profile filters
-      if (user && profile && profile.archetype === 'None') {
-        // If archetype is "None", get random recipes
-        const { data: allRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(30);
-        
-        if (allRecipes && allRecipes.length > 0) {
-          // Shuffle and take random recipes
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          const withLikes = shuffled.slice(0, 30).map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            likes_count: 0,
-          }));
-          setTrendingRecipes(withLikes as Recipe[]);
-        } else {
-          // Fallback: use trending function
-          const { data: trending } = await supabase.rpc('get_trending_recipes', { 
-            p_limit: 30,
-            p_user_id: null,
-            p_category: null
-          });
-          if (trending && trending.length > 0) {
-            setTrendingRecipes(trending as Recipe[]);
+      // Set liked recipes
+      if (likesResult && Array.isArray(likesResult)) {
+        setLikedRecipes(new Set(likesResult.map((l: any) => l.recipe_id)));
+      }
+
+      // Hide loading screen - page is ready
+      clearTimeout(maxLoadingTimeout);
+      setTimeout(() => {
+        setLoading(false);
+      }, 200);
+
+      // Load everything else in background (non-blocking)
+      // Recipe of the day
+      fetchWithTimeout(
+        supabase.rpc('get_recipe_of_the_day').then(async (result) => {
+          if (result?.data) {
+            const { data: rod } = await supabase
+              .from('recipes')
+              .select('*')
+              .eq('id', result.data)
+              .single();
+            if (rod) setRecipeOfTheDay(rod as RecipeDetail);
           }
-        }
-      } else {
-        const { data: trending } = await supabase.rpc('get_trending_recipes', { 
-          p_limit: 30, // Get more for rotation
-          p_user_id: user?.id || null,
-          p_category: null
-        });
-        if (trending && trending.length > 0) {
-          setTrendingRecipes(trending as Recipe[]);
-        } else {
-          // Fallback: get any recipes
-          const { data: fallback } = await supabase
+          return null;
+        })
+      ).catch(() => {});
+
+      // Fetch trending recipes with profile filters (background, non-blocking)
+      setTimeout(async () => {
+        if (user && profile && profile.archetype === 'None') {
+          // If archetype is "None", get random recipes
+          const { data: allRecipes } = await supabase
             .from('recipes')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(30);
-          if (fallback && fallback.length > 0) {
-            const withLikes = fallback.map((r: any) => ({
+          
+          if (allRecipes && allRecipes.length > 0) {
+            // Shuffle and take random recipes
+            const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+            const withLikes = shuffled.slice(0, 30).map((r: any) => ({
               ...r,
               recipe_id: r.id,
               likes_count: 0,
             }));
             setTrendingRecipes(withLikes as Recipe[]);
+          } else {
+            // Fallback: use trending function
+            const { data: trending } = await supabase.rpc('get_trending_recipes', { 
+              p_limit: 30,
+              p_user_id: null,
+              p_category: null
+            });
+            if (trending && trending.length > 0) {
+              setTrendingRecipes(trending as Recipe[]);
+            }
+          }
+        } else {
+          const { data: trending } = await supabase.rpc('get_trending_recipes', { 
+            p_limit: 30,
+            p_user_id: user?.id || null,
+            p_category: null
+          });
+          if (trending && trending.length > 0) {
+            // Sort by likes_count descending (most liked first)
+            trending.sort((a: any, b: any) => (b.likes_count || 0) - (a.likes_count || 0));
+            setTrendingRecipes(trending as Recipe[]);
+          } else {
+            // Fallback: get any recipes
+            const { data: fallback } = await supabase
+              .from('recipes')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(30);
+            if (fallback && fallback.length > 0) {
+              const withLikes = fallback.map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              }));
+              setTrendingRecipes(withLikes as Recipe[]);
+            }
           }
         }
-      }
+      }, 100);
 
-      // Fetch quick recipes (<= 30 minutes) with profile filters - infinite scroll
-      if (profile?.archetype === 'None') {
-        // If archetype is "None", get random recipes
-        const { data: allRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .lte('total_time_minutes', 30)
-          .order('created_at', { ascending: false })
-          .limit(100);
-        
-        if (allRecipes && allRecipes.length > 0) {
-          // Shuffle and take recipes
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          const withLikes = shuffled.map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            likes_count: 0,
-          }));
-          setQuickRecipes(withLikes as Recipe[]);
-        }
-      } else {
-        const { data: quick } = await supabase.rpc('get_quick_recipes', {
-          p_limit: 100, // Get many for infinite scroll
-          p_user_id: user?.id || null,
-          p_category: null,
-          p_archetype: profile?.archetype || null,
-          p_cooking_skill: profile?.cooking_skill || null,
-          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
-        });
-        if (quick && quick.length > 0) {
-          setQuickRecipes(quick as Recipe[]);
-        } else {
-          // Fallback: get all recipes <= 30 minutes
-          const { data: fallback } = await supabase
+      // Fetch quick recipes (<= 30 minutes) with profile filters - infinite scroll (background)
+      setTimeout(async () => {
+        if (profile?.archetype === 'None') {
+          // If archetype is "None", get random recipes
+          const { data: allRecipes } = await supabase
             .from('recipes')
             .select('*')
             .lte('total_time_minutes', 30)
             .order('created_at', { ascending: false })
             .limit(100);
-          if (fallback && fallback.length > 0) {
-            const withLikes = fallback.map((r: any) => ({
+          
+          if (allRecipes && allRecipes.length > 0) {
+            // Random shuffle for quick recipes
+            const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+            const withLikes = shuffled.map((r: any) => ({
               ...r,
               recipe_id: r.id,
               likes_count: 0,
             }));
             setQuickRecipes(withLikes as Recipe[]);
           }
+        } else {
+          const { data: quick } = await supabase.rpc('get_quick_recipes', {
+            p_limit: 100,
+            p_user_id: user?.id || null,
+            p_category: null,
+            p_archetype: profile?.archetype || null,
+            p_cooking_skill: profile?.cooking_skill || null,
+            p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+          });
+          if (quick && quick.length > 0) {
+            // Random shuffle for quick recipes
+            quick.sort(() => Math.random() - 0.5);
+            setQuickRecipes(quick as Recipe[]);
+          } else {
+            // Fallback: get all recipes <= 30 minutes
+            const { data: fallback } = await supabase
+              .from('recipes')
+              .select('*')
+              .lte('total_time_minutes', 30)
+              .order('created_at', { ascending: false })
+              .limit(100);
+            if (fallback && fallback.length > 0) {
+              const shuffled = [...fallback].sort(() => Math.random() - 0.5);
+              const withLikes = shuffled.map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                likes_count: 0,
+              }));
+              setQuickRecipes(withLikes as Recipe[]);
+            }
+          }
         }
-      }
+      }, 200);
 
-      // Fetch categories
-      const { data: cats } = await supabase.rpc('get_recipe_categories');
-      if (cats) setCategories(cats as Category[]);
-
-      // Fetch user's liked recipes
-      if (user) {
-        const { data: likes } = await supabase
-          .from('recipe_likes')
-          .select('recipe_id')
-          .eq('user_id', user.id);
-        if (likes) {
-          setLikedRecipes(new Set(likes.map((l) => l.recipe_id)));
-        }
-      }
+      // All other data loads in background
     } catch (error) {
       console.error('Error fetching data:', error);
-    } finally {
+      clearTimeout(maxLoadingTimeout);
       setLoading(false);
     }
   };
@@ -504,9 +555,7 @@ export default function Home() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#047857" />
-          </View>
+          <StockpitLoader variant="home" />
         </SafeAreaView>
       </View>
     );
