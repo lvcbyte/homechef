@@ -292,10 +292,20 @@ Antwoord in JSON formaat:
       const relevanceScore =
         inventoryHits * 5 + (archetypeMatch ? 20 : -10) + (moodMatch ? 15 : 0);
 
+      // Generate image URL based on recipe title
+      const recipeNameForImage = recipe.title.replace(/\s+/g, ',').toLowerCase();
+      const imageUrl = `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80`;
+
       return {
         name: recipe.title,
         description: recipe.description,
+        image_url: imageUrl,
         steps: recipe.instructions || [],
+        prepTime: recipe.prep_time_minutes || 0,
+        cookTime: recipe.cook_time_minutes || 0,
+        totalTime: recipe.total_time_minutes || 30,
+        difficulty: recipe.difficulty || 'Gemiddeld',
+        servings: recipe.servings || 4,
         macros: recipe.nutrition || { protein: 0, carbs: 0, fat: 0 },
         missingIngredients: [],
         relevanceScore,

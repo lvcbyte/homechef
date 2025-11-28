@@ -342,27 +342,35 @@ export default function RecipesScreen() {
         );
 
         if (aiRecipes && aiRecipes.length > 0) {
-          // Convert AI recipes to Recipe format
-          const convertedRecipes: Recipe[] = aiRecipes.slice(0, 3).map((recipe, index) => ({
-            recipe_id: `ai-${Date.now()}-${index}`,
-            title: recipe.name,
-            description: recipe.description || null,
-            author: 'Stockpit AI',
-            image_url: `https://source.unsplash.com/featured/?${recipe.name.replace(/\s/g, ',')},food,recipe&sig=${Math.random()}`,
-            total_time_minutes: recipe.totalTime || 30,
-            difficulty: recipe.difficulty || 'Gemiddeld',
-            servings: recipe.servings || 4,
-            match_score: 100, // AI recipes are 100% match since they're generated from inventory
-            matched_ingredients_count: inventory.length,
-            total_ingredients_count: recipe.ingredients?.length || 0,
-            matched_ingredients: inventory.map((item: any) => item.name),
-            likes_count: 0,
-            ingredients: recipe.ingredients || [],
-            instructions: recipe.steps || [],
-            nutrition: recipe.macros || null,
-            tags: recipe.tags || [],
-            category: recipe.tags?.[0] || null,
-          }));
+          // Convert AI recipes to Recipe format with better images
+          const convertedRecipes: Recipe[] = aiRecipes.slice(0, 3).map((recipe, index) => {
+            // Generate a better image URL based on recipe name
+            const recipeNameForImage = recipe.name.replace(/\s+/g, ',').toLowerCase();
+            const imageUrl = recipe.image_url || `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80&sig=${Date.now()}-${index}`;
+            
+            return {
+              recipe_id: `ai-${Date.now()}-${index}`,
+              title: recipe.name,
+              description: recipe.description || null,
+              author: 'Stockpit AI',
+              image_url: imageUrl,
+              total_time_minutes: recipe.totalTime || 30,
+              difficulty: recipe.difficulty || 'Gemiddeld',
+              servings: recipe.servings || 4,
+              prep_time_minutes: recipe.prepTime || 0,
+              cook_time_minutes: recipe.cookTime || recipe.totalTime || 30,
+              match_score: 100, // AI recipes are 100% match since they're generated from inventory
+              matched_ingredients_count: inventory.length,
+              total_ingredients_count: recipe.ingredients?.length || 0,
+              matched_ingredients: inventory.map((item: any) => item.name),
+              likes_count: 0,
+              ingredients: recipe.ingredients || [],
+              instructions: recipe.steps || [],
+              nutrition: recipe.macros || null,
+              tags: recipe.tags || [],
+              category: recipe.tags?.[0] || null,
+            };
+          });
 
           setChefRadarRecipes(convertedRecipes);
           setChefRadarCarouselData([]);
@@ -436,6 +444,33 @@ export default function RecipesScreen() {
   };
 
   const handleRecipePress = async (recipe: Recipe) => {
+    // Check if it's an AI-generated recipe (starts with 'ai-')
+    if (recipe.recipe_id.startsWith('ai-')) {
+      // It's an AI recipe, convert it to RecipeDetail format
+      const recipeDetail: RecipeDetail = {
+        recipe_id: recipe.recipe_id,
+        title: recipe.title,
+        description: recipe.description || null,
+        author: recipe.author || 'Stockpit AI',
+        image_url: recipe.image_url || `https://source.unsplash.com/featured/?${encodeURIComponent(recipe.title)},food,recipe&w=1200&q=80`,
+        total_time_minutes: recipe.total_time_minutes || 30,
+        difficulty: recipe.difficulty || 'Gemiddeld',
+        servings: recipe.servings || 4,
+        prep_time_minutes: recipe.prep_time_minutes || 0,
+        cook_time_minutes: recipe.cook_time_minutes || recipe.total_time_minutes || 30,
+        ingredients: recipe.ingredients || [],
+        instructions: recipe.instructions || [],
+        nutrition: recipe.nutrition || null,
+        tags: recipe.tags || [],
+        category: recipe.category || null,
+        likes_count: recipe.likes_count || 0,
+      };
+      setSelectedRecipe(recipeDetail);
+      setModalVisible(true);
+      return;
+    }
+    
+    // Regular recipe from database
     const { data } = await supabase
       .from('recipes')
       .select('*')
