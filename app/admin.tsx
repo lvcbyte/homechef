@@ -248,26 +248,16 @@ export default function AdminPage() {
         setRecentLogs(logsResult.data as AdminLog[]);
       }
 
-      // Process users list
+      // Process users list from RPC function
       if (usersListResult.data) {
-        // Fetch emails separately since join might not work
-        const userIds = usersListResult.data.map((u: any) => u.id);
-        const { data: authUsers } = await supabase
-          .from('auth.users')
-          .select('id, email')
-          .in('id', userIds);
-
-        const usersWithEmail = usersListResult.data.map((profile: any) => {
-          const authUser = authUsers?.find((au: any) => au.id === profile.id);
-          return {
-            id: profile.id,
-            email: authUser?.email || 'N/A',
-            created_at: profile.created_at,
-            is_admin: profile.is_admin || false,
-            admin_role: profile.admin_role,
-            archetype: profile.archetype,
-          };
-        });
+        const usersWithEmail = usersListResult.data.map((user: any) => ({
+          id: user.user_id,
+          email: user.email || 'N/A',
+          created_at: user.created_at,
+          is_admin: user.is_admin || false,
+          admin_role: user.admin_role,
+          archetype: user.archetype,
+        }));
 
         setUsers(usersWithEmail as User[]);
       }
@@ -539,6 +529,42 @@ Geef concrete SQL queries of acties die uitgevoerd moeten worden. Antwoord in he
                 <Ionicons name="key" size={24} color="#047857" />
                 <Text style={styles.actionLabel}>API Keys</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Users List */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Alle Gebruikers ({users.length})</Text>
+            <View style={styles.usersContainer}>
+              {users.length === 0 ? (
+                <Text style={styles.emptyText}>Geen gebruikers gevonden</Text>
+              ) : (
+                users.map((user) => (
+                  <View key={user.id} style={styles.userItem}>
+                    <View style={styles.userHeader}>
+                      <View style={styles.userInfo}>
+                        <Text style={styles.userEmail}>{user.email}</Text>
+                        {user.is_admin && (
+                          <View style={styles.adminBadge}>
+                            <Text style={styles.adminBadgeText}>ADMIN</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.userDate}>
+                        {new Date(user.created_at).toLocaleDateString('nl-NL')}
+                      </Text>
+                    </View>
+                    <View style={styles.userMeta}>
+                      {user.archetype && (
+                        <Text style={styles.userMetaText}>Archetype: {user.archetype}</Text>
+                      )}
+                      {user.admin_role && (
+                        <Text style={styles.userMetaText}>Rol: {user.admin_role}</Text>
+                      )}
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           </View>
 
