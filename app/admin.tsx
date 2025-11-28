@@ -196,26 +196,71 @@ Geef concrete SQL queries of acties die uitgevoerd moeten worden. Antwoord in he
       
       setChatMessages((prev) => [...prev, { role: 'assistant', content: response }]);
 
-      // Try to execute SQL if the AI suggests it
-      if (response.includes('INSERT') || response.includes('UPDATE') || response.includes('DELETE')) {
-        // Extract SQL from response (basic implementation)
-        const sqlMatch = response.match(/(?:INSERT|UPDATE|DELETE|SELECT).*?;/is);
-        if (sqlMatch) {
+      // Try to detect and execute admin actions
+      const lowerResponse = response.toLowerCase();
+      
+      // Detect recipe creation
+      if (lowerResponse.includes('recept toevoegen') || lowerResponse.includes('create recipe') || lowerResponse.includes('nieuw recept')) {
+        // Extract recipe details from AI response (simplified - in production, use structured output)
+        const titleMatch = response.match(/titel[:\s]+([^\n]+)/i) || response.match(/title[:\s]+([^\n]+)/i);
+        if (titleMatch) {
           Alert.alert(
-            'SQL Query gedetecteerd',
-            'Wil je deze query uitvoeren?\n\n' + sqlMatch[0].substring(0, 200),
+            'Recept Toevoegen',
+            `Wil je het recept "${titleMatch[1]}" toevoegen?`,
             [
               { text: 'Annuleren', style: 'cancel' },
               {
-                text: 'Uitvoeren',
+                text: 'Toevoegen',
                 onPress: async () => {
                   try {
-                    // Execute via RPC or direct query
-                    const { error } = await supabase.rpc('execute_admin_query', {
-                      p_query: sqlMatch[0],
+                    // Use admin function to create recipe
+                    const { data, error } = await supabase.rpc('admin_create_recipe', {
+                      p_title: titleMatch[1].trim(),
+                      p_description: response.substring(0, 500),
+                      p_author: 'Admin AI',
+                      p_image_url: null,
+                      p_prep_time_minutes: 15,
+                      p_cook_time_minutes: 30,
+                      p_total_time_minutes: 45,
+                      p_difficulty: 'Gemiddeld',
+                      p_servings: 4,
+                      p_ingredients: [],
+                      p_instructions: [],
+                      p_tags: [],
+                      p_category: null,
                     });
                     if (error) throw error;
-                    Alert.alert('Succes', 'Query uitgevoerd.');
+                    Alert.alert('Succes', 'Recept toegevoegd!');
+                    fetchDashboardData();
+                  } catch (error: any) {
+                    Alert.alert('Fout', error.message);
+                  }
+                },
+              },
+            ]
+          );
+        }
+      }
+      
+      // Detect recipe deletion
+      if (lowerResponse.includes('recept verwijderen') || lowerResponse.includes('delete recipe') || lowerResponse.includes('verwijder recept')) {
+        const idMatch = response.match(/id[:\s]+([a-f0-9-]+)/i) || response.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+        if (idMatch) {
+          Alert.alert(
+            'Recept Verwijderen',
+            `Wil je het recept met ID ${idMatch[1]} verwijderen?`,
+            [
+              { text: 'Annuleren', style: 'cancel' },
+              {
+                text: 'Verwijderen',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    const { error } = await supabase.rpc('admin_delete_recipe', {
+                      p_recipe_id: idMatch[1],
+                    });
+                    if (error) throw error;
+                    Alert.alert('Succes', 'Recept verwijderd!');
                     fetchDashboardData();
                   } catch (error: any) {
                     Alert.alert('Fout', error.message);
