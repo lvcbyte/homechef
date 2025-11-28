@@ -232,18 +232,8 @@ export default function AdminPage() {
           .select('*')
           .order('created_at', { ascending: false })
           .limit(20),
-        // Fetch all users with their profiles
-        supabase
-          .from('profiles')
-          .select(`
-            id,
-            is_admin,
-            admin_role,
-            archetype,
-            created_at,
-            auth_users:auth.users!inner(email)
-          `)
-          .order('created_at', { ascending: false }),
+        // Fetch all users via admin function
+        supabase.rpc('get_all_users_for_admin'),
       ]);
 
       setMetrics({

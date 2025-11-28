@@ -188,21 +188,25 @@ export default function RecipesScreen() {
           // Fallback: use trending function
           const { data: trending } = await supabase.rpc('get_trending_recipes', {
             p_limit: 30,
-            p_user_id: null,
             p_category: category,
           });
           if (trending && trending.length > 0) {
-            setTrendingRecipes(trending as Recipe[]);
+            setTrendingRecipes(trending.map((r: any) => ({
+              ...r,
+              likes_count: r.likes_count || 0,
+            })) as Recipe[]);
           }
         }
       } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', {
           p_limit: 100, // Get many for infinite scroll
-          p_user_id: user?.id || null,
           p_category: category,
         });
         if (trending && trending.length > 0) {
-          setTrendingRecipes(trending as Recipe[]);
+          setTrendingRecipes(trending.map((r: any) => ({
+            ...r,
+            likes_count: r.likes_count || 0,
+          })) as Recipe[]);
         } else {
           // Fallback: get any recipes
           const { data: fallback } = await supabase
