@@ -85,12 +85,6 @@ begin
     -- Set match threshold based on loose matching
     v_match_threshold := case when p_loose_matching then 0.05 else 0.1 end;
 
-    -- Check if user has inventory
-    if not exists (select 1 from public.inventory where user_id = p_user_id and (expires_at is null or expires_at > now())) then
-        -- No inventory, return empty result
-        return;
-    end if;
-
     return query
     with user_inventory as (
         select 
