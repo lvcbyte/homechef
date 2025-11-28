@@ -21,6 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
+import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
@@ -187,6 +188,8 @@ export default function ScanScreen() {
   const [recipeGenerating, setRecipeGenerating] = useState(false);
   const [recipeGenerated, setRecipeGenerated] = useState<any>(null);
   const [savingRecipe, setSavingRecipe] = useState(false);
+  const [savingProgress, setSavingProgress] = useState(0);
+  const [savingMessage, setSavingMessage] = useState('');
   const visibleMonthCalendar = useMemo(
     () => getMonthCalendar(expiryMonthOffset),
     [expiryMonthOffset]
@@ -1113,6 +1116,13 @@ export default function ScanScreen() {
                     multiline
                   />
                   
+                  {savingRecipe && (
+                    <StockpitLoader
+                      variant="inline"
+                      message={savingMessage}
+                      progress={savingProgress}
+                    />
+                  )}
                   <TouchableOpacity
                     style={[styles.modalButton, savingRecipe && { opacity: 0.6 }]}
                     disabled={savingRecipe}
@@ -1128,6 +1138,8 @@ export default function ScanScreen() {
                       }
                       if (savingRecipe) return;
                       setSavingRecipe(true);
+                      setSavingProgress(0);
+                      setSavingMessage('Recept opslaan...');
                       
                       try {
                         const ingredients = recipeGenerated.ingredients || [];
@@ -1135,6 +1147,9 @@ export default function ScanScreen() {
                           step: idx + 1,
                           instruction: inst,
                         }));
+                        
+                        setSavingProgress(20);
+                        setSavingMessage('Recept aanmaken in database...');
                         
                         const { data: newRecipeId, error } = await supabase.rpc('create_recipe', {
                           p_title: recipeTitle,
@@ -1154,66 +1169,105 @@ export default function ScanScreen() {
                         
                         if (error) {
                           console.error('Error creating recipe:', error);
+                          setSavingRecipe(false);
+                          setSavingProgress(0);
                           Alert.alert('Fout', `Kon recept niet opslaan: ${error.message}`);
-                        } else {
-                          const recipePayload = {
-                            id: newRecipeId,
-                            title: recipeTitle,
-                            description: recipeDescription,
-                            image_url: recipeGenerated.image_url,
-                            total_time_minutes: recipeGenerated.totalTime || 30,
-                            difficulty: recipeGenerated.difficulty || 'Gemiddeld',
-                            servings: recipeGenerated.servings || 4,
-                            ingredients,
-                            instructions,
-                            tags: recipeGenerated.tags || [recipeCategory],
-                            category: recipeCategory,
-                          };
-
-                          // Save to saved_recipes with upsert to avoid duplicates
-                          const { error: saveError } = await supabase
-                            .from('saved_recipes')
-                            .upsert({
-                              user_id: user.id,
-                              recipe_name: recipeTitle,
-                              recipe_payload: recipePayload,
-                            }, {
-                              onConflict: 'user_id,recipe_name',
-                            });
-
-                          if (saveError) {
-                            console.error('Error saving to saved_recipes:', saveError);
-                            // Don't fail the whole operation if saved_recipes insert fails
-                            // The recipe is already created in the recipes table
-                          }
-
-                          // Also like the recipe automatically
-                          try {
-                            await supabase.rpc('toggle_recipe_like', { p_recipe_id: newRecipeId });
-                          } catch (likeError) {
-                            console.error('Error liking recipe:', likeError);
-                            // Non-critical, continue
-                          }
-
-                          Alert.alert('Opgeslagen', 'Je AI-recept staat nu bij Saved.');
-                          setRecipeModalVisible(false);
-                          setRecipeTitle('');
-                          setRecipeDescription('');
-                          setRecipeDescriptionText('');
-                          setRecipeGenerated(null);
-                          setRecipeCategory('Comfort Food');
-                          router.push('/saved');
+                          return;
                         }
+
+                        if (!newRecipeId) {
+                          console.error('No recipe ID returned');
+                          setSavingRecipe(false);
+                          setSavingProgress(0);
+                          Alert.alert('Fout', 'Kon recept niet opslaan: Geen ID ontvangen');
+                          return;
+                        }
+                        
+                        setSavingProgress(50);
+                        setSavingMessage('Recept toevoegen aan opgeslagen...');
+                        
+                        const recipePayload = {
+                          id: newRecipeId,
+                          title: recipeTitle,
+                          description: recipeDescription,
+                          image_url: recipeGenerated.image_url,
+                          total_time_minutes: recipeGenerated.totalTime || 30,
+                          difficulty: recipeGenerated.difficulty || 'Gemiddeld',
+                          servings: recipeGenerated.servings || 4,
+                          ingredients,
+                          instructions,
+                          tags: recipeGenerated.tags || [recipeCategory],
+                          category: recipeCategory,
+                        };
+
+                        // Save to saved_recipes with upsert to avoid duplicates
+                        const { error: saveError } = await supabase
+                          .from('saved_recipes')
+                          .upsert({
+                            user_id: user.id,
+                            recipe_name: recipeTitle,
+                            recipe_payload: recipePayload,
+                          }, {
+                            onConflict: 'user_id,recipe_name',
+                          });
+
+                        if (saveError) {
+                          console.error('Error saving to saved_recipes:', saveError);
+                          // Don't fail the whole operation if saved_recipes insert fails
+                          // The recipe is already created in the recipes table
+                        }
+
+                        setSavingProgress(75);
+                        setSavingMessage('Recept liken...');
+
+                        // Also like the recipe automatically
+                        try {
+                          await supabase.rpc('toggle_recipe_like', { p_recipe_id: newRecipeId });
+                        } catch (likeError) {
+                          console.error('Error liking recipe:', likeError);
+                          // Non-critical, continue
+                        }
+
+                        setSavingProgress(100);
+                        setSavingMessage('Klaar!');
+                        
+                        // Small delay to show completion
+                        await new Promise(resolve => setTimeout(resolve, 300));
+
+                        // Close modal and reset state
+                        setRecipeModalVisible(false);
+                        setRecipeTitle('');
+                        setRecipeDescription('');
+                        setRecipeDescriptionText('');
+                        setRecipeGenerated(null);
+                        setRecipeCategory('Comfort Food');
+                        setSavingRecipe(false);
+                        setSavingProgress(0);
+                        setSavingMessage('');
+
+                        // Show success and navigate
+                        Alert.alert('Opgeslagen', 'Je AI-recept staat nu bij Saved.', [
+                          {
+                            text: 'OK',
+                            onPress: () => {
+                              router.push('/saved');
+                            },
+                          },
+                        ]);
                       } catch (error: any) {
                         console.error('Error saving recipe:', error);
-                        Alert.alert('Fout', 'Er is een fout opgetreden bij het opslaan van het recept.');
-                      } finally {
                         setSavingRecipe(false);
+                        setSavingProgress(0);
+                        setSavingMessage('');
+                        Alert.alert('Fout', `Er is een fout opgetreden: ${error.message || 'Onbekende fout'}`);
                       }
                     }}
                   >
                     {savingRecipe ? (
-                      <ActivityIndicator color="#fff" />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <ActivityIndicator color="#fff" size="small" />
+                        <Text style={styles.modalButtonText}>Opslaan...</Text>
+                      </View>
                     ) : (
                       <Text style={styles.modalButtonText}>Recept opslaan</Text>
                     )}

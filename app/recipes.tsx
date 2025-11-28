@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AIChatbot } from '../components/chat/AIChatbot';
@@ -150,7 +151,7 @@ export default function RecipesScreen() {
       setInventoryCount(inventoryCountResult ?? 0);
 
       // Fetch critical data in parallel with timeout and error handling
-      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T | null> => {
+      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T | null> => {
         try {
           return await Promise.race([
             promise,
@@ -163,6 +164,9 @@ export default function RecipesScreen() {
           return null;
         }
       };
+
+      // Reduce initial data load - only fetch essentials first
+      // Other data will be lazy loaded
 
       const [
         rodResult,
@@ -187,28 +191,10 @@ export default function RecipesScreen() {
         ),
         // Categories
         fetchWithTimeout(supabase.rpc('get_recipe_categories').then(r => r.data || [])),
-        // Trending recipes (non-blocking, can show loading state)
-        fetchWithTimeout(
-          profile?.archetype === 'None'
-            ? supabase.from('recipes').select('*').limit(30).then(r => r.data || [])
-            : supabase.rpc('get_trending_recipes', {
-                p_limit: 100,
-                p_category: category,
-              }).then(r => r.data || [])
-        ),
-        // Quick recipes (non-blocking) - always show all recipes <= 30 minutes, not filtered by category
-        fetchWithTimeout(
-          profile?.archetype === 'None'
-            ? supabase.from('recipes').select('*').lte('total_time_minutes', 30).limit(100).then(r => r.data || [])
-            : supabase.rpc('get_quick_recipes', {
-                p_limit: 100,
-                p_user_id: user?.id || null,
-                p_category: null, // Always null - show all quick recipes regardless of active filter
-                p_archetype: profile?.archetype || null,
-                p_cooking_skill: profile?.cooking_skill || null,
-                p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
-              }).then(r => r.data || [])
-        ),
+        // Trending recipes - lazy load after initial render
+        Promise.resolve([]),
+        // Quick recipes - lazy load after initial render
+        Promise.resolve([]),
         // User's liked recipes
         fetchWithTimeout(
           supabase
@@ -233,57 +219,17 @@ export default function RecipesScreen() {
         setCategories(allCats);
       }
 
-      // Set trending recipes - always set, even if empty
-      if (trendingResult && Array.isArray(trendingResult) && trendingResult.length > 0) {
-        if (profile?.archetype === 'None') {
-          const shuffled = [...trendingResult].sort(() => Math.random() - 0.5);
-          setTrendingRecipes(
-            shuffled.slice(0, 30).map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            })) as Recipe[]
-          );
-        } else {
-          setTrendingRecipes(
-            trendingResult.map((r: any) => ({
-              ...r,
-              recipe_id: r.id || r.recipe_id,
-              likes_count: r.likes_count || 0,
-            })) as Recipe[]
-          );
-        }
-      } else {
-        // If no data, try to fetch trending recipes separately (lazy load)
+      // Lazy load trending and quick recipes after initial render
+      // This speeds up initial page load
+      setTimeout(() => {
         setLoadingTrending(true);
         fetchTrendingRecipes().finally(() => setLoadingTrending(false));
-      }
+      }, 100);
 
-      // Set quick recipes - always set, even if empty
-      if (quickResult && Array.isArray(quickResult) && quickResult.length > 0) {
-        if (profile?.archetype === 'None') {
-          const shuffled = [...quickResult].sort(() => Math.random() - 0.5);
-          setQuickRecipes(
-            shuffled.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            })) as Recipe[]
-          );
-        } else {
-          setQuickRecipes(
-            quickResult.map((r: any) => ({
-              ...r,
-              recipe_id: r.id || r.recipe_id,
-              likes_count: r.likes_count || 0,
-            })) as Recipe[]
-          );
-        }
-      } else {
-        // If no data, try to fetch quick recipes separately (lazy load)
+      setTimeout(() => {
         setLoadingQuick(true);
         fetchQuickRecipes().finally(() => setLoadingQuick(false));
-      }
+      }, 200);
 
       // Set liked recipes
       if (likesResult && Array.isArray(likesResult)) {
@@ -854,9 +800,7 @@ export default function RecipesScreen() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#047857" />
-          </View>
+          <StockpitLoader variant="fullscreen" message="Recepten laden..." />
         </SafeAreaView>
       </View>
     );
@@ -996,10 +940,7 @@ export default function RecipesScreen() {
                 Geen voorraad gevonden. Upload een shelf shot in Stockpit Mode om Chef Radar te activeren.
               </Text>
             ) : chefRadarLoading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color="#047857" />
-                <Text style={styles.loadingText}>{chefRadarLoadingMessage}</Text>
-              </View>
+              <StockpitLoader variant="inline" message={chefRadarLoadingMessage} />
             ) : chefRadarRecipes.length === 0 ? (
               <Text style={styles.emptyText}>
                 Geen directe match gevonden. Probeer de AI-toggle of voeg producten toe aan je voorraad.
@@ -1060,10 +1001,7 @@ export default function RecipesScreen() {
             <Text style={styles.sectionTitle}>Trending Recepten</Text>
             <Text style={styles.sectionSubtitle}>Meest gelikete recepten deze week</Text>
             {loadingTrending ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color="#047857" />
-                <Text style={styles.loadingText}>Trending recepten laden...</Text>
-              </View>
+              <StockpitLoader variant="inline" message="Trending recepten laden..." />
             ) : trendingRecipes.length === 0 ? (
               <Text style={styles.emptyText}>Geen trending recepten gevonden.</Text>
             ) : (
@@ -1117,10 +1055,7 @@ export default function RecipesScreen() {
             <Text style={styles.sectionTitle}>Klaar in 30 minuten</Text>
             <Text style={styles.sectionSubtitle}>Snelle recepten voor drukke dagen</Text>
             {loadingQuick ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color="#047857" />
-                <Text style={styles.loadingText}>Recepten laden...</Text>
-              </View>
+              <StockpitLoader variant="inline" message="Snelle recepten laden..." />
             ) : quickRecipes.length === 0 ? (
               <Text style={styles.emptyText}>Geen snelle recepten gevonden.</Text>
             ) : (
@@ -1189,10 +1124,7 @@ export default function RecipesScreen() {
                   {cat.count > 0 ? `${cat.count} recepten beschikbaar` : 'Ontdek deze categorie'}
                 </Text>
                 {isLoading ? (
-                  <View style={styles.loadingRow}>
-                    <ActivityIndicator size="small" color="#047857" />
-                    <Text style={styles.loadingText}>Recepten laden...</Text>
-                  </View>
+                  <StockpitLoader variant="inline" message={`${cat.category} recepten laden...`} />
                 ) : recipes.length === 0 ? (
                   <Text style={styles.emptyText}>Geen recepten gevonden in deze categorie.</Text>
                 ) : (
