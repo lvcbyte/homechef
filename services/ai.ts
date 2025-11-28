@@ -319,7 +319,14 @@ Gebruikersprofiel:
 - Kookniveau: ${context.profile?.cooking_skill || 'Niet gespecificeerd'}
 - Dieetbeperkingen: ${context.profile?.dietary_restrictions?.join(', ') || 'Geen'}
 
-Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands. Houd antwoorden beknopt maar informatief.`;
+BELANGRIJK: 
+- Antwoord altijd in het Nederlands
+- Gebruik GEEN markdown formatting (geen ###, ####, **, etc.)
+- Gebruik gewone tekst met duidelijke paragrafen
+- Gebruik nummering (1., 2., 3.) voor lijsten in plaats van markdown
+- Wees vriendelijk, professioneel en praktisch
+- Houd antwoorden beknopt maar informatief
+- Gebruik lege regels tussen paragrafen voor leesbaarheid`;
 
   try {
     console.log('Sending message to OpenRouter (Grok 4.1 free):', message.substring(0, 50) + '...');
@@ -372,12 +379,26 @@ Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands.
     }
 
     const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
+    let content = result.choices?.[0]?.message?.content;
     
     if (!content) {
       console.warn('No content in OpenRouter response:', result);
       return 'Sorry, ik kon geen antwoord genereren. Probeer het opnieuw.';
     }
+
+    // Clean up markdown formatting
+    content = content
+      // Remove markdown headers (###, ####, etc.)
+      .replace(/^#{1,6}\s+/gm, '')
+      // Remove bold/italic markdown (**text** -> text, *text* -> text)
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      // Remove markdown links ([text](url) -> text)
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      // Clean up multiple newlines (max 2 consecutive)
+      .replace(/\n{3,}/g, '\n\n')
+      // Trim whitespace
+      .trim();
 
     console.log('Received response from OpenRouter:', content.substring(0, 100) + '...');
     return content;
