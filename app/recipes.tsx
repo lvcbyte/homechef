@@ -105,6 +105,7 @@ export default function RecipesScreen() {
   const [loadingCategories, setLoadingCategories] = useState<Record<string, boolean>>({});
   const [chefRadarLoading, setChefRadarLoading] = useState(false);
   const [chefRadarLoadingMessage, setChefRadarLoadingMessage] = useState(CHEF_RADAR_LOADING_MESSAGES[0]);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [inventoryCount, setInventoryCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -141,14 +142,17 @@ export default function RecipesScreen() {
     }
 
     setLoading(true);
+    setLoadingProgress(0);
     try {
       const category = activeFilter === 'Alles' ? null : activeFilter;
 
+      setLoadingProgress(10);
       const { count: inventoryCountResult } = await supabase
         .from('inventory')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id);
       setInventoryCount(inventoryCountResult ?? 0);
+      setLoadingProgress(20);
 
       // Fetch critical data in parallel with timeout and error handling
       const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T | null> => {
@@ -205,6 +209,8 @@ export default function RecipesScreen() {
         ),
       ]);
 
+      setLoadingProgress(40);
+      
       // Set recipe of the day
       if (rodResult) {
         setRecipeOfTheDay(rodResult as RecipeDetail);
@@ -218,6 +224,8 @@ export default function RecipesScreen() {
         ];
         setCategories(allCats);
       }
+      
+      setLoadingProgress(60);
 
       // Lazy load trending and quick recipes after initial render
       // This speeds up initial page load
@@ -300,10 +308,17 @@ export default function RecipesScreen() {
       }
 
       // Don't fetch category recipes initially - they will be lazy loaded on scroll
+      setLoadingProgress(100);
+      
+      // Small delay to show 100% before hiding loader
+      setTimeout(() => {
+        setLoading(false);
+        setLoadingProgress(0);
+      }, 300);
     } catch (error) {
       console.error('Error fetching data:', error);
-    } finally {
       setLoading(false);
+      setLoadingProgress(0);
     }
   };
 
@@ -800,7 +815,7 @@ export default function RecipesScreen() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
-          <StockpitLoader variant="fullscreen" message="Recepten laden..." />
+          <StockpitLoader variant="recipes" progress={loadingProgress} />
         </SafeAreaView>
       </View>
     );
