@@ -1,6 +1,9 @@
 -- Improve Chef Radar Picks matching to accurately match ingredients
 -- Ensure recipes match actual inventory items (e.g., rijst + kip = recipe with rijst and kip)
 
+-- Drop existing function first to change return type
+drop function if exists public.match_recipes_with_inventory(uuid, text, integer, integer, text, text, text[], boolean);
+
 create or replace function public.match_recipes_with_inventory(
     p_user_id uuid,
     p_category text default null,
