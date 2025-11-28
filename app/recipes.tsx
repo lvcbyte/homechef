@@ -976,7 +976,9 @@ export default function RecipesScreen() {
                     <ActivityIndicator size="small" color="#047857" />
                     <Text style={styles.loadingText}>Recepten laden...</Text>
                   </View>
-                ) : recipes.length === 0 ? null : (
+                ) : recipes.length === 0 ? (
+                  <Text style={styles.emptyText}>Geen recepten gevonden in deze categorie.</Text>
+                ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {recipes.map((recipe) => (
                     <TouchableOpacity
