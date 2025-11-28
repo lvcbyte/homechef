@@ -72,13 +72,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('id', session.user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (mounted) {
-          setProfile(data as Profile);
-          setLoading(false);
+          if (error && error.code === 'PGRST116') {
+            // Profile doesn't exist, create it
+            supabase
+              .from('profiles')
+              .insert({
+                id: session.user.id,
+                archetype: 'Minimalist',
+                dietary_restrictions: [],
+                cooking_skill: 'Intermediate',
+              })
+              .select()
+              .single()
+              .then(({ data: newProfile }) => {
+                if (mounted && newProfile) {
+                  setProfile(newProfile as Profile);
+                  setLoading(false);
+                }
+              })
+              .catch((createError) => {
+                console.error('Error creating profile:', createError);
+                if (mounted) {
+                  setLoading(false);
+                }
+              });
+          } else if (data) {
+            setProfile(data as Profile);
+            setLoading(false);
+          } else {
+            setLoading(false);
+          }
         }
       })
-      .catch(() => setLoading(false));
+      .catch((error) => {
+        console.error('Error fetching profile:', error);
+        if (mounted) {
+          setLoading(false);
+        }
+      });
 
     return () => {
       mounted = false;
