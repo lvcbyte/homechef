@@ -5,7 +5,7 @@ import { Animated, Dimensions, StyleSheet, Text, View } from 'react-native';
 interface StockpitLoaderProps {
   message?: string;
   progress?: number; // 0-100
-  variant?: 'fullscreen' | 'inline' | 'button' | 'recipes' | 'chef-radar';
+  variant?: 'fullscreen' | 'inline' | 'button' | 'recipes';
 }
 
 const LOADING_MESSAGES = [
@@ -17,25 +17,6 @@ const LOADING_MESSAGES = [
   'Ingrediënten matchen...',
   'Recepten genereren...',
   'Bijna klaar...',
-];
-
-// Chef Radar specific messages - focused on recipe matching and generation
-const CHEF_RADAR_LOADING_MESSAGES = [
-  'Chef Radar scant je voorraad...',
-  'Ingrediënten analyseren...',
-  'Perfecte matches zoeken...',
-  'Recepten genereren met AI...',
-  'Match score berekenen...',
-  'Persoonlijke suggesties maken...',
-  'Culinaire combinaties vinden...',
-  'Recepten personaliseren...',
-  'Ingrediëntenlijsten samenstellen...',
-  'Bereidingswijzen voorbereiden...',
-  'Voedingswaarden berekenen...',
-  'Kooktijd optimaliseren...',
-  'Bijna klaar met Chef Radar...',
-  'Laatste recepten toevoegen...',
-  'Chef Radar is klaar!',
 ];
 
 // Extended messages for recipes page - marketing focused, engaging
@@ -87,10 +68,10 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [displayMessage, setDisplayMessage] = useState(message || LOADING_MESSAGES[0]);
 
-  // Rotate messages for recipes and chef-radar variants
+  // Rotate messages for recipes variant
   useEffect(() => {
-    if ((variant === 'recipes' || variant === 'chef-radar') && !message) {
-      const messages = variant === 'chef-radar' ? CHEF_RADAR_LOADING_MESSAGES : RECIPES_LOADING_MESSAGES;
+    if (variant === 'recipes' && !message) {
+      const messages = RECIPES_LOADING_MESSAGES;
       let index = 0;
       
       const interval = setInterval(() => {
@@ -169,7 +150,7 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
   }, [pulseAnim]);
 
   useEffect(() => {
-    if (variant === 'recipes' || variant === 'chef-radar') {
+    if (variant === 'recipes') {
       const rotate = Animated.loop(
         Animated.timing(rotateAnim, {
           toValue: 1,
@@ -193,18 +174,16 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
     );
   }
 
-  if (variant === 'recipes' || variant === 'chef-radar') {
+  if (variant === 'recipes') {
     const rotateInterpolation = rotateAnim.interpolate({
       inputRange: [0, 1],
       outputRange: ['0deg', '360deg'],
     });
 
-    const isChefRadar = variant === 'chef-radar';
-
     return (
-      <View style={isChefRadar ? styles.chefRadarContainer : styles.recipesContainer}>
-        <BlurView intensity={90} tint="light" style={isChefRadar ? styles.chefRadarBlur : styles.recipesBlur}>
-          <View style={isChefRadar ? styles.chefRadarContent : styles.recipesContent}>
+      <View style={styles.recipesContainer}>
+        <BlurView intensity={90} tint="light" style={styles.recipesBlur}>
+          <View style={styles.recipesContent}>
             {/* Animated Logo with rotation */}
             <Animated.View
               style={[
@@ -254,29 +233,14 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
             </Animated.View>
 
             {/* Brand Text */}
-            {!isChefRadar && (
-              <Animated.View
-                style={{
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }],
-                }}
-              >
-                <Text style={styles.brandText}>Stockpit</Text>
-              </Animated.View>
-            )}
-            
-            {/* Chef Radar Title */}
-            {isChefRadar && (
-              <Animated.View
-                style={{
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }],
-                }}
-              >
-                <Text style={styles.chefRadarTitle}>Chef Radar</Text>
-                <Text style={styles.chefRadarSubtitle}>Persoonlijke recepten voor jou</Text>
-              </Animated.View>
-            )}
+            <Animated.View
+              style={{
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              }}
+            >
+              <Text style={styles.brandText}>Stockpit</Text>
+            </Animated.View>
 
             {/* Animated Message */}
             <Animated.View
@@ -327,42 +291,21 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
             </View>
 
             {/* Fun fact or tip */}
-            {!isChefRadar && (
-              <Animated.View
-                style={[
-                  styles.tipContainer,
-                  {
-                    opacity: fadeAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1],
-                    }),
-                  },
-                ]}
-              >
-                <Text style={styles.tipText}>
-                  💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen
-                </Text>
-              </Animated.View>
-            )}
-            
-            {/* Chef Radar tip */}
-            {isChefRadar && (
-              <Animated.View
-                style={[
-                  styles.tipContainer,
-                  {
-                    opacity: fadeAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1],
-                    }),
-                  },
-                ]}
-              >
-                <Text style={styles.tipText}>
-                  🎯 Chef Radar matcht recepten met jouw voorraad
-                </Text>
-              </Animated.View>
-            )}
+            <Animated.View
+              style={[
+                styles.tipContainer,
+                {
+                  opacity: fadeAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.6, 1],
+                  }),
+                },
+              ]}
+            >
+              <Text style={styles.tipText}>
+                💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen
+              </Text>
+            </Animated.View>
           </View>
         </BlurView>
       </View>
@@ -513,20 +456,6 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     letterSpacing: 1,
     textAlign: 'center',
-  },
-  chefRadarTitle: {
-    fontSize: isMobile ? 22 : 26,
-    fontWeight: '700',
-    color: '#047857',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  chefRadarSubtitle: {
-    fontSize: isMobile ? 13 : 14,
-    color: '#64748b',
-    textAlign: 'center',
-    marginTop: 4,
-    fontWeight: '500',
   },
   messageContainer: {
     minHeight: isMobile ? 50 : 60,

@@ -346,20 +346,38 @@ export default function RecipesScreen() {
           if (filtered.length === 0 && activeFilter !== 'Alles') {
             setTrendingRecipes([]);
           } else {
-            const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+            // For Trending: fetch likes count for all recipes at once
+            const recipeIds = filtered.map((r: any) => r.id);
+            const { data: likesData } = await supabase
+              .from('recipe_likes')
+              .select('recipe_id')
+              .in('recipe_id', recipeIds);
+            
+            // Count likes per recipe
+            const likesCountMap = new Map<string, number>();
+            likesData?.forEach((like: any) => {
+              likesCountMap.set(like.recipe_id, (likesCountMap.get(like.recipe_id) || 0) + 1);
+            });
+            
+            // Add likes_count to recipes
+            const recipesWithLikes = filtered.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: likesCountMap.get(r.id) || 0,
+            }));
+            
+            // Sort by likes_count descending (most liked first)
+            recipesWithLikes.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+            
             let curated = dedupeRecipes(
-              shuffled.slice(0, 40).map((r: any) => ({
-                ...r,
-                recipe_id: r.id,
-                likes_count: 0,
-              }))
+              recipesWithLikes.slice(0, 40)
             ).map(attachRecipeImage);
 
             if (curated.length === 0) {
-              curated = filtered.map((r: any) => ({
+              curated = recipesWithLikes.map((r: any) => ({
                 ...r,
                 recipe_id: r.id,
-                likes_count: 0,
+                likes_count: r.likes_count || 0,
               })).map(attachRecipeImage);
             }
             setTrendingRecipes(curated as Recipe[]);
@@ -388,6 +406,10 @@ export default function RecipesScreen() {
               likes_count: r.likes_count || 0,
             })).map(attachRecipeImage);
           }
+          
+          // Sort by likes_count descending (most liked first) for Trending Recepten
+          curated.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+          
           const filteredCurated = activeFilter === 'Alles'
             ? curated
             : curated.filter((recipe) => matchesCategoryFilter(recipe, activeFilter));
@@ -424,6 +446,7 @@ export default function RecipesScreen() {
           if (filtered.length === 0 && activeFilter !== 'Alles') {
             setQuickRecipes([]);
           } else {
+            // Random shuffle for "Klaar in 30 minuten" category
             const shuffled = [...filtered].sort(() => Math.random() - 0.5);
             let curated = dedupeRecipes(
               shuffled.map((r: any) => ({
@@ -471,6 +494,10 @@ export default function RecipesScreen() {
               likes_count: r.likes_count || 0,
             })).map(attachRecipeImage);
           }
+          
+          // Random shuffle for "Klaar in 30 minuten" category
+          curated.sort(() => Math.random() - 0.5);
+          
           const filteredCurated = activeFilter === 'Alles'
             ? curated
             : curated.filter((recipe) => matchesCategoryFilter(recipe, activeFilter));
@@ -507,6 +534,7 @@ export default function RecipesScreen() {
         
         if (catRecipes && catRecipes.length > 0) {
           const filtered = catRecipes.filter((r: any) => canonicalCategory(r) === target);
+          // Random shuffle for all category recipes
           const shuffled = [...filtered].sort(() => Math.random() - 0.5);
           let curated = dedupeRecipes(
             shuffled.slice(0, 60).map((r: any) => ({
@@ -564,6 +592,10 @@ export default function RecipesScreen() {
               likes_count: r.likes_count || 0,
             })).map(attachRecipeImage);
           }
+          
+          // Random shuffle for all category recipes
+          curated.sort(() => Math.random() - 0.5);
+          
           setCategoryRecipes((prev) => ({
             ...prev,
             [categoryName]: curated as Recipe[],
@@ -959,7 +991,7 @@ export default function RecipesScreen() {
                 Geen voorraad gevonden. Upload een shelf shot in Stockpit Mode om Chef Radar te activeren.
               </Text>
             ) : chefRadarLoading ? (
-              <StockpitLoader variant="chef-radar" />
+              <StockpitLoader variant="inline" message={chefRadarLoadingMessage} />
             ) : chefRadarRecipes.length === 0 ? (
               <Text style={styles.emptyText}>
                 Geen directe match gevonden. Probeer de AI-toggle of voeg producten toe aan je voorraad.
