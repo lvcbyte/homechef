@@ -1238,6 +1238,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 24,
   },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  loadingText: {
+    color: '#64748b',
+    fontSize: 14,
+  },
   verticalList: {
     gap: 16,
   },
