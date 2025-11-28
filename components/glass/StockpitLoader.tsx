@@ -87,10 +87,10 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
   const [displayMessage, setDisplayMessage] = useState(message || LOADING_MESSAGES[0]);
 
-  // Rotate messages for recipes variant
+  // Rotate messages for recipes and chef-radar variants
   useEffect(() => {
-    if (variant === 'recipes' && !message) {
-      const messages = RECIPES_LOADING_MESSAGES;
+    if ((variant === 'recipes' || variant === 'chef-radar') && !message) {
+      const messages = variant === 'chef-radar' ? CHEF_RADAR_LOADING_MESSAGES : RECIPES_LOADING_MESSAGES;
       let index = 0;
       
       const interval = setInterval(() => {
@@ -169,7 +169,7 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
   }, [pulseAnim]);
 
   useEffect(() => {
-    if (variant === 'recipes') {
+    if (variant === 'recipes' || variant === 'chef-radar') {
       const rotate = Animated.loop(
         Animated.timing(rotateAnim, {
           toValue: 1,
@@ -193,14 +193,16 @@ export function StockpitLoader({ message, progress, variant = 'inline' }: Stockp
     );
   }
 
-  if (variant === 'recipes') {
+  if (variant === 'recipes' || variant === 'chef-radar') {
     const rotateInterpolation = rotateAnim.interpolate({
       inputRange: [0, 1],
       outputRange: ['0deg', '360deg'],
     });
 
+    const isChefRadar = variant === 'chef-radar';
+
     return (
-      <View style={styles.recipesContainer}>
+      <View style={isChefRadar ? styles.chefRadarContainer : styles.recipesContainer}>
         <BlurView intensity={90} tint="light" style={isChefRadar ? styles.chefRadarBlur : styles.recipesBlur}>
           <View style={isChefRadar ? styles.chefRadarContent : styles.recipesContent}>
             {/* Animated Logo with rotation */}
