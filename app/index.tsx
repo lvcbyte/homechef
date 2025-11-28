@@ -265,42 +265,110 @@ export default function Home() {
         .order('created_at', { ascending: false })
         .limit(50);
 
+      // Try AI generation if user has inventory
       if (inventory && inventory.length > 0) {
-        const aiRecipes = await generateRecipesWithAI(
-          inventory.map((item: any) => ({
-            name: item.name,
-            quantity_approx: item.quantity_approx,
-            expires_at: item.expires_at,
-            category: item.category,
-          })),
-          {
-            archetype: profile.archetype || undefined,
-            cooking_skill: profile.cooking_skill || undefined,
-            dietary_restrictions: (profile.dietary_restrictions as string[]) || undefined,
-          }
-        );
+        try {
+          const aiRecipes = await generateRecipesWithAI(
+            inventory.map((item: any) => ({
+              name: item.name,
+              quantity_approx: item.quantity_approx,
+              expires_at: item.expires_at,
+              category: item.category,
+            })),
+            {
+              archetype: profile.archetype || undefined,
+              cooking_skill: profile.cooking_skill || undefined,
+              dietary_restrictions: (profile.dietary_restrictions as string[]) || undefined,
+            }
+          );
 
-        if (aiRecipes && aiRecipes.length > 0) {
-          const recipe = aiRecipes[0]; // Take the first (best) recipe
-          
-          // Save to database
+          if (aiRecipes && aiRecipes.length > 0) {
+            const recipe = aiRecipes[0]; // Take the first (best) recipe
+            
+            // Save to database
+            const { data: saved } = await supabase
+              .from('daily_ai_recipes')
+              .insert({
+                user_id: user.id,
+                title: recipe.name,
+                description: recipe.description || null,
+                ingredients: recipe.ingredients || [],
+                instructions: recipe.steps || [],
+                prep_time_minutes: recipe.prepTime || null,
+                cook_time_minutes: recipe.cookTime || null,
+                total_time_minutes: recipe.totalTime || 30,
+                difficulty: recipe.difficulty || 'Gemiddeld',
+                servings: recipe.servings || 4,
+                nutrition: recipe.macros || null,
+                tags: recipe.tags || [],
+                category: null,
+                image_url: null,
+                recipe_date: today,
+              })
+              .select()
+              .single();
+
+            if (saved) {
+              const recipeDetail: RecipeDetail = {
+                recipe_id: saved.id,
+                title: saved.title,
+                description: saved.description,
+                author: 'Stockpit AI',
+                image_url: saved.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+                total_time_minutes: saved.total_time_minutes,
+                difficulty: saved.difficulty || 'Gemiddeld',
+                servings: saved.servings,
+                prep_time_minutes: saved.prep_time_minutes || 0,
+                cook_time_minutes: saved.cook_time_minutes,
+                ingredients: saved.ingredients,
+                instructions: saved.instructions,
+                nutrition: saved.nutrition,
+                tags: saved.tags,
+                category: saved.category,
+                likes_count: 0,
+              };
+              setDailyAIRecipe(recipeDetail);
+              setLoadingDailyAI(false);
+              return;
+            }
+          }
+        } catch (aiError) {
+          console.error('AI generation failed, using fallback:', aiError);
+          // Fall through to fallback logic
+        }
+      }
+
+      // Fallback: Use a recipe from database based on user profile
+      const { data: fallbackRecipeId } = await supabase.rpc('get_fallback_recipe_for_user', {
+        p_user_id: user.id,
+      });
+
+      if (fallbackRecipeId) {
+        const { data: fallbackRecipe } = await supabase
+          .from('recipes')
+          .select('*')
+          .eq('id', fallbackRecipeId)
+          .single();
+
+        if (fallbackRecipe) {
+          // Save as daily AI recipe for consistency
           const { data: saved } = await supabase
             .from('daily_ai_recipes')
             .insert({
               user_id: user.id,
-              title: recipe.name,
-              description: recipe.description || null,
-              ingredients: recipe.steps || [],
-              instructions: recipe.steps || [],
-              prep_time_minutes: recipe.prepTime || null,
-              cook_time_minutes: recipe.cookTime || null,
-              total_time_minutes: recipe.totalTime || 30,
-              difficulty: recipe.difficulty || 'Gemiddeld',
-              servings: recipe.servings || 4,
-              nutrition: recipe.macros || null,
-              tags: recipe.tags || [],
-              category: null,
-              image_url: null,
+              title: fallbackRecipe.title,
+              description: fallbackRecipe.description || 'Een heerlijk recept speciaal voor jou geselecteerd.',
+              ingredients: fallbackRecipe.ingredients || [],
+              instructions: fallbackRecipe.instructions || [],
+              prep_time_minutes: fallbackRecipe.prep_time_minutes || null,
+              cook_time_minutes: fallbackRecipe.cook_time_minutes || null,
+              total_time_minutes: fallbackRecipe.total_time_minutes,
+              difficulty: fallbackRecipe.difficulty || 'Gemiddeld',
+              servings: fallbackRecipe.servings,
+              nutrition: fallbackRecipe.nutrition || null,
+              tags: fallbackRecipe.tags || [],
+              category: fallbackRecipe.category,
+              image_url: fallbackRecipe.image_url,
               recipe_date: today,
             })
             .select()
