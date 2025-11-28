@@ -114,7 +114,7 @@ export default function RecipesScreen() {
               p_limit: 100,
               p_category: category,
             }),
-        // Quick recipes (non-blocking)
+        // Quick recipes (non-blocking) - always show all recipes <= 30 minutes, not filtered by category
         profile?.archetype === 'None'
           ? supabase.from('recipes').select('*').lte('total_time_minutes', 30).limit(100)
           : supabase.rpc('get_quick_recipes', {
