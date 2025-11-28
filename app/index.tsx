@@ -692,9 +692,6 @@ export default function Home() {
                     />
                   </TouchableOpacity>
                   <View style={styles.recipeBody}>
-                    <Text style={styles.socialProof}>
-                      {recipe.likes_count}x bewaard deze week
-                    </Text>
                     <Text style={styles.recipeTitle}>{recipe.title}</Text>
                   </View>
                 </TouchableOpacity>
