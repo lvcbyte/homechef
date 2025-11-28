@@ -123,7 +123,7 @@ export default function RecipesScreen() {
               p_category: category,
               p_archetype: profile?.archetype || null,
               p_cooking_skill: profile?.cooking_skill || null,
-              p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+              p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
             }),
         // User's liked recipes
         supabase
@@ -385,13 +385,20 @@ export default function RecipesScreen() {
           }));
         }
       } else {
+        // Convert dietary_restrictions from JSONB to text array
+        const dietaryRestrictions = profile?.dietary_restrictions 
+          ? (Array.isArray(profile.dietary_restrictions) 
+              ? profile.dietary_restrictions as string[]
+              : [])
+          : null;
+
         const { data: catRecipes, error } = await supabase.rpc('get_recipes_by_category', {
           p_category: categoryName,
           p_limit: 100,
           p_user_id: user?.id || null,
           p_archetype: profile?.archetype || null,
           p_cooking_skill: profile?.cooking_skill || null,
-          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+          p_dietary_restrictions: dietaryRestrictions,
         });
         
         if (error) {
