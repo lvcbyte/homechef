@@ -266,6 +266,149 @@ export default function RecipesScreen() {
     }
   };
 
+  // Lazy load functions for trending, quick, and category recipes
+  const fetchTrendingRecipes = async () => {
+    if (!user) return;
+    try {
+      const category = activeFilter === 'Alles' ? null : activeFilter;
+      if (profile?.archetype === 'None') {
+        const { data: allRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .limit(30);
+        
+        if (allRecipes && allRecipes.length > 0) {
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          setTrendingRecipes(
+            shuffled.slice(0, 30).map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })) as Recipe[]
+          );
+        }
+      } else {
+        const { data: trending } = await supabase.rpc('get_trending_recipes', {
+          p_limit: 100,
+          p_category: category,
+        });
+        if (trending && trending.length > 0) {
+          setTrendingRecipes(
+            trending.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })) as Recipe[]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching trending recipes:', error);
+    }
+  };
+
+  const fetchQuickRecipes = async () => {
+    if (!user) return;
+    try {
+      const category = activeFilter === 'Alles' ? null : activeFilter;
+      if (profile?.archetype === 'None') {
+        const { data: allRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .lte('total_time_minutes', 30)
+          .limit(100);
+        
+        if (allRecipes && allRecipes.length > 0) {
+          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+          setQuickRecipes(
+            shuffled.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })) as Recipe[]
+          );
+        }
+      } else {
+        const { data: quick } = await supabase.rpc('get_quick_recipes', {
+          p_limit: 100,
+          p_user_id: user?.id || null,
+          p_category: category,
+          p_archetype: profile?.archetype || null,
+          p_cooking_skill: profile?.cooking_skill || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+        });
+        if (quick && quick.length > 0) {
+          setQuickRecipes(
+            quick.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })) as Recipe[]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching quick recipes:', error);
+    }
+  };
+
+  const fetchCategoryRecipes = async (categoryName: string) => {
+    if (!user || loadingCategories[categoryName]) return;
+    
+    setLoadingCategories((prev) => ({ ...prev, [categoryName]: true }));
+    
+    try {
+      if (profile?.archetype === 'None') {
+        const { data: catRecipes } = await supabase
+          .from('recipes')
+          .select('*')
+          .limit(100);
+        
+        if (catRecipes && catRecipes.length > 0) {
+          const filtered = catRecipes.filter((r: any) => 
+            r.category === categoryName || 
+            (r.tags && Array.isArray(r.tags) && r.tags.includes(categoryName))
+          );
+          const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+          setCategoryRecipes((prev) => ({
+            ...prev,
+            [categoryName]: shuffled.slice(0, 100).map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })) as Recipe[]
+          }));
+        }
+      } else {
+        const { data: catRecipes, error } = await supabase.rpc('get_recipes_by_category', {
+          p_category: categoryName,
+          p_limit: 100,
+          p_user_id: user?.id || null,
+          p_archetype: profile?.archetype || null,
+          p_cooking_skill: profile?.cooking_skill || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+        });
+        
+        if (error) {
+          console.error(`Error fetching recipes for category ${categoryName}:`, error);
+        } else if (catRecipes && catRecipes.length > 0) {
+          setCategoryRecipes((prev) => ({
+            ...prev,
+            [categoryName]: catRecipes.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })) as Recipe[]
+          }));
+        }
+      }
+    } catch (err) {
+      console.error(`Error processing category ${categoryName}:`, err);
+    } finally {
+      setLoadingCategories((prev) => ({ ...prev, [categoryName]: false }));
+    }
+  };
+
   const generateAIChefRadarRecipes = async () => {
     if (!user || !profile) return;
 
