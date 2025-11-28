@@ -4,17 +4,17 @@
 create or replace function public.create_recipe(
     p_title text,
     p_description text,
-    p_image_url text default null,
+    p_image_url text,
     p_prep_time_minutes integer,
-    p_cook_time_minutes integer default null,
+    p_cook_time_minutes integer,
     p_total_time_minutes integer,
     p_difficulty text,
-    p_servings integer default null,
+    p_servings integer,
     p_ingredients jsonb,
     p_instructions jsonb,
-    p_tags text[] default '{}',
+    p_tags text[],
     p_category text,
-    p_author text default null
+    p_author text
 )
 returns uuid
 language plpgsql

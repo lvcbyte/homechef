@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import type { InventoryRecord } from '../types/app';
+import type { InventoryRecord, InventoryItem } from '../types/app';
+import { runInventoryScan } from '../services/ai';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
 
 const categoryFilters = [{ id: 'all', label: 'All' }, ...CATEGORY_OPTIONS];
@@ -158,6 +159,13 @@ const valueFeatures = [
   },
 ];
 
+interface ShelfPhoto {
+  id: string;
+  storage_path: string;
+  url: string;
+  created_at: string;
+}
+
 export default function InventoryScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -172,6 +180,9 @@ export default function InventoryScreen() {
   const [editExpiry, setEditExpiry] = useState<Date | null>(null);
   const [editExpiryMonthOffset, setEditExpiryMonthOffset] = useState(0);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [shelfPhotos, setShelfPhotos] = useState<ShelfPhoto[]>([]);
+  const [shelfLoading, setShelfLoading] = useState(false);
+  const [processingPhotoId, setProcessingPhotoId] = useState<string | null>(null);
 
   const visibleMonthCalendar = useMemo(
     () => getMonthCalendar(editExpiryMonthOffset),
@@ -192,9 +203,11 @@ export default function InventoryScreen() {
   useEffect(() => {
     if (!user) {
       setInventory([]);
+      setShelfPhotos([]);
       return;
     }
     fetchInventory();
+    fetchShelfPhotos();
   }, [user]);
 
   const fetchInventory = async () => {
@@ -221,6 +234,108 @@ export default function InventoryScreen() {
     
     setInventory(flattened as InventoryRecord[]);
     setLoadingInventory(false);
+  };
+
+  const fetchShelfPhotos = async () => {
+    if (!user) return;
+    setShelfLoading(true);
+    try {
+      const { data: sessions } = await supabase
+        .from('scan_sessions')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!sessions || sessions.length === 0) {
+        setShelfPhotos([]);
+        return;
+      }
+
+      const sessionIds = sessions.map((session) => session.id);
+      const { data: photos } = await supabase
+        .from('scan_photos')
+        .select('id, storage_path, created_at, session_id')
+        .in('session_id', sessionIds)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!photos) {
+        setShelfPhotos([]);
+        return;
+      }
+
+      const mapped = photos
+        .map((photo: any) => {
+          const { data: publicUrlData } = supabase.storage
+            .from('inventory-scans')
+            .getPublicUrl(photo.storage_path);
+          const url = publicUrlData?.publicUrl;
+          if (!url) return null;
+          return {
+            id: photo.id,
+            storage_path: photo.storage_path,
+            created_at: photo.created_at,
+            url,
+          } as ShelfPhoto;
+        })
+        .filter(Boolean) as ShelfPhoto[];
+
+      setShelfPhotos(mapped);
+    } catch (error) {
+      console.error('Error fetching shelf photos:', error);
+      setShelfPhotos([]);
+    } finally {
+      setShelfLoading(false);
+    }
+  };
+
+  const insertDetectedShelfItems = async (items: InventoryItem[], contextLabel: string) => {
+    if (!user || !items.length) return 0;
+    let successCount = 0;
+
+    for (const item of items) {
+      try {
+        const { data: detection } = await supabase.rpc('detect_category', { item_name: item.name });
+        const suggestion = detection?.[0];
+        const expiresAt = item.daysUntilExpiry
+          ? new Date(Date.now() + item.daysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+        const { error } = await supabase.from('inventory').insert({
+          user_id: user.id,
+          name: item.name,
+          category: suggestion?.category ?? 'pantry',
+          quantity_approx: item.quantityEstimate || null,
+          expires_at: expiresAt,
+          confidence_score: 0.8,
+        });
+        if (!error) successCount += 1;
+      } catch (error) {
+        console.error(`Error inserting shelf item (${contextLabel}):`, error);
+      }
+    }
+
+    if (successCount > 0) {
+      Alert.alert('Shelf scan', `${successCount} items toegevoegd uit je foto.`);
+    } else {
+      Alert.alert('Shelf scan', 'Geen items gedetecteerd op deze foto.');
+    }
+    return successCount;
+  };
+
+  const processShelfPhoto = async (photo: ShelfPhoto) => {
+    if (!requireAuth() || !user) return;
+    setProcessingPhotoId(photo.id);
+    try {
+      const detectedItems = await runInventoryScan([photo.url]);
+      await insertDetectedShelfItems(detectedItems, photo.storage_path);
+      fetchInventory();
+    } catch (error) {
+      console.error('Error processing shelf photo:', error);
+      Alert.alert('Fout', 'Kon deze foto niet verwerken. Probeer het later opnieuw.');
+    } finally {
+      setProcessingPhotoId(null);
+    }
   };
 
   const requireAuth = () => {
@@ -391,6 +506,53 @@ export default function InventoryScreen() {
 
           {user ? (
             <>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>My Shelf</Text>
+                <TouchableOpacity onPress={() => router.push('/scan')}>
+                  <Text style={styles.sectionLink}>Open Stockpit</Text>
+                </TouchableOpacity>
+              </View>
+              {shelfLoading ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color="#047857" />
+                  <Text style={styles.loadingText}>Shelf shots laden...</Text>
+                </View>
+              ) : shelfPhotos.length === 0 ? (
+                <Text style={styles.emptyShelfText}>
+                  Maak een shelf shot in Stockpit mode om een visueel archief op te bouwen.
+                </Text>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.shelfScroll}>
+                  {shelfPhotos.map((photo) => (
+                    <View key={photo.id} style={styles.shelfCard}>
+                      <Image source={{ uri: photo.url }} style={styles.shelfImage} />
+                      <Text style={styles.shelfTimestamp}>
+                        {new Date(photo.created_at).toLocaleDateString('nl-NL', {
+                          day: 'numeric',
+                          month: 'long',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.shelfButton,
+                          processingPhotoId === photo.id && { opacity: 0.6 },
+                        ]}
+                        disabled={processingPhotoId === photo.id}
+                        onPress={() => processShelfPhoto(photo)}
+                      >
+                        {processingPhotoId === photo.id ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.shelfButtonText}>Detecteer opnieuw</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+
               <View style={styles.inventoryHeaderRow}>
                 <Text style={styles.sectionTitle}>
                   {viewMode === 'items'
@@ -945,6 +1107,64 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: '#047857',
     fontWeight: '800',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  sectionLink: {
+    fontSize: 14,
+    color: '#047857',
+    fontWeight: '600',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  loadingText: {
+    color: '#047857',
+    fontWeight: '600',
+  },
+  emptyShelfText: {
+    color: '#94a3b8',
+    fontSize: 14,
+  },
+  shelfScroll: {
+    paddingVertical: 8,
+  },
+  shelfCard: {
+    width: 220,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    padding: 12,
+    backgroundColor: '#fff',
+    marginRight: 12,
+    gap: 8,
+  },
+  shelfImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: 16,
+  },
+  shelfTimestamp: {
+    fontSize: 12,
+    color: '#475569',
+  },
+  shelfButton: {
+    backgroundColor: '#047857',
+    borderRadius: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  shelfButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
   },
   inventoryList: {
     gap: 12,

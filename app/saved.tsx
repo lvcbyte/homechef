@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { generateShoppingListFromInventory } from '../services/ai';
 
 interface SavedRecipe {
   id: string;
@@ -48,6 +49,15 @@ export default function SavedScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [listModalVisible, setListModalVisible] = useState(false);
+  const [listName, setListName] = useState('');
+  const [listFocus, setListFocus] = useState('');
+  const [listItemsDraft, setListItemsDraft] = useState<Array<{ id: string; name: string; quantity: string; reason?: string }>>([]);
+  const [manualItemName, setManualItemName] = useState('');
+  const [manualItemQuantity, setManualItemQuantity] = useState('');
+  const [listGenerating, setListGenerating] = useState(false);
+  const [inventoryPreview, setInventoryPreview] = useState<Array<{ id: string; name: string; quantity_approx?: string; category?: string }>>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -59,6 +69,12 @@ export default function SavedScreen() {
 
     fetchData();
   }, [user]);
+
+  useEffect(() => {
+    if (listModalVisible && user) {
+      fetchInventoryPreview();
+    }
+  }, [listModalVisible, user]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -119,12 +135,161 @@ export default function SavedScreen() {
         .eq('user_id', user!.id)
         .order('updated_at', { ascending: false });
       
-      if (shoppingLists) setLists(shoppingLists as ShoppingList[]);
+      if (shoppingLists && shoppingLists.length > 0) {
+        const listIds = shoppingLists.map((list: any) => list.id);
+        let countMap: Record<string, number> = {};
+        if (listIds.length > 0) {
+          const { data: counts } = await supabase
+            .from('shopping_list_items')
+            .select('list_id')
+            .in('list_id', listIds);
+          if (counts) {
+            counts.forEach((item: any) => {
+              countMap[item.list_id] = (countMap[item.list_id] || 0) + 1;
+            });
+          }
+        }
+
+        const enriched = shoppingLists.map((list: any) => ({
+          ...list,
+          items_count: countMap[list.id] || 0,
+        }));
+
+        setLists(enriched as ShoppingList[]);
+      } else {
+        setLists([]);
+      }
     } catch (error) {
       console.error('Error fetching saved data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchInventoryPreview = async () => {
+    if (!user) return;
+    setInventoryLoading(true);
+    try {
+      const { data } = await supabase
+        .from('inventory')
+        .select('id, name, quantity_approx, category, expires_at')
+        .eq('user_id', user.id)
+        .order('expires_at', { ascending: true })
+        .limit(20);
+      setInventoryPreview(data || []);
+    } catch (error) {
+      console.error('Error fetching inventory preview:', error);
+      setInventoryPreview([]);
+    } finally {
+      setInventoryLoading(false);
+    }
+  };
+
+  const handleGenerateShoppingList = async () => {
+    setListGenerating(true);
+    try {
+      const suggestions = await generateShoppingListFromInventory(
+        inventoryPreview.map((item) => ({
+          name: item.name,
+          quantity_approx: item.quantity_approx,
+          category: item.category,
+        })),
+        listFocus
+      );
+      if (suggestions.length === 0) {
+        Alert.alert('Geen suggesties', 'AI kon geen lijst genereren. Probeer het opnieuw of vul handmatig aan.');
+        return;
+      }
+      setListItemsDraft(
+        suggestions.map((item, index) => ({
+          id: `${Date.now()}-${index}`,
+          name: item.name,
+          quantity: item.quantity || '',
+          reason: item.reason,
+        }))
+      );
+    } catch (error) {
+      console.error('Error generating shopping list:', error);
+      Alert.alert('Fout', 'AI kon geen lijst genereren. Probeer later opnieuw.');
+    } finally {
+      setListGenerating(false);
+    }
+  };
+
+  const handleAddManualListItem = () => {
+    if (!manualItemName.trim()) {
+      Alert.alert('Fout', 'Vul een itemnaam in');
+      return;
+    }
+    setListItemsDraft((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${prev.length}`,
+        name: manualItemName.trim(),
+        quantity: manualItemQuantity.trim(),
+      },
+    ]);
+    setManualItemName('');
+    setManualItemQuantity('');
+  };
+
+  const handleSaveShoppingList = async () => {
+    if (!user) return;
+    if (!listName.trim()) {
+      Alert.alert('Fout', 'Geef je lijst een naam');
+      return;
+    }
+    if (listItemsDraft.length === 0) {
+      Alert.alert('Fout', 'Voeg minstens één item toe');
+      return;
+    }
+
+    try {
+      const { data: newList, error } = await supabase
+        .from('shopping_lists')
+        .insert({
+          user_id: user.id,
+          name: listName.trim(),
+        })
+        .select()
+        .single();
+
+      if (error) {
+        Alert.alert('Fout', `Kon lijst niet opslaan: ${error.message}`);
+        return;
+      }
+
+      await supabase.from('shopping_list_items').insert(
+        listItemsDraft.map((item) => ({
+          list_id: newList.id,
+          name: item.name,
+          quantity: item.quantity || null,
+        }))
+      );
+
+      setLists((prev) => [
+        {
+          ...newList,
+          items_count: listItemsDraft.length,
+        },
+        ...prev,
+      ]);
+
+      resetListModal();
+      fetchData();
+    } catch (error) {
+      console.error('Error saving shopping list:', error);
+      Alert.alert('Fout', 'Kon de lijst niet opslaan. Probeer opnieuw.');
+    }
+  };
+
+  const resetListModal = () => {
+    setListModalVisible(false);
+    setListName('');
+    setListFocus('');
+    setListItemsDraft([]);
+    setManualItemName('');
+    setManualItemQuantity('');
   };
 
   const handleRecipePress = async (recipe: SavedRecipe) => {
@@ -336,7 +501,7 @@ export default function SavedScreen() {
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Boodschappenlijsten</Text>
-                  <TouchableOpacity onPress={() => router.push('/inventory')}>
+                  <TouchableOpacity onPress={() => setListModalVisible(true)}>
                     <Text style={styles.sectionLink}>Nieuwe lijst</Text>
                   </TouchableOpacity>
                 </View>
@@ -497,6 +662,127 @@ export default function SavedScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Shopping list modal */}
+      <Modal
+        visible={listModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={resetListModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.listModalCard}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalSectionTitle}>Nieuwe boodschappenlijst</Text>
+              <Text style={styles.modalSectionText}>
+                Laat AI je lijst voorstellen op basis van je voorraad of voeg snel items toe.
+              </Text>
+
+              <View style={{ gap: 12, marginTop: 12 }}>
+                <TextInput
+                  value={listName}
+                  onChangeText={setListName}
+                  placeholder="Naam van de lijst (bv. Weekend brunch)"
+                  placeholderTextColor="#94a3b8"
+                  style={styles.listInput}
+                />
+                <TextInput
+                  value={listFocus}
+                  onChangeText={setListFocus}
+                  placeholder="Focus of context (bv. tapasavond, meal prep)"
+                  placeholderTextColor="#94a3b8"
+                  style={styles.listInput}
+                />
+              </View>
+
+              <View style={{ marginTop: 16, gap: 8 }}>
+                <Text style={styles.modalSectionTitle}>Voorraad snapshot</Text>
+                {inventoryLoading ? (
+                  <ActivityIndicator color="#047857" />
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                    <View style={styles.inventoryChips}>
+                      {inventoryPreview.length === 0 ? (
+                        <Text style={{ color: '#94a3b8' }}>Geen voorraad gevonden.</Text>
+                      ) : (
+                        inventoryPreview.map((item) => (
+                          <View key={item.id} style={styles.inventoryChip}>
+                            <Text style={styles.inventoryChipName}>{item.name}</Text>
+                            <Text style={styles.inventoryChipMeta}>
+                              {item.quantity_approx || '–'} • {item.category || 'Onbekend'}
+                            </Text>
+                          </View>
+                        ))
+                      )}
+                    </View>
+                  </ScrollView>
+                )}
+              </View>
+
+              <View style={{ marginTop: 16, gap: 8 }}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.modalSectionTitle}>Items</Text>
+                  <TouchableOpacity style={styles.sectionLinkButton} onPress={handleGenerateShoppingList} disabled={listGenerating}>
+                    {listGenerating ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.sectionLinkButtonText}>AI suggesties</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {listItemsDraft.length === 0 ? (
+                  <Text style={{ color: '#94a3b8' }}>Nog geen items. Laat AI starten of voeg manueel toe.</Text>
+                ) : (
+                  listItemsDraft.map((item) => (
+                    <View key={item.id} style={styles.listDraftItem}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.listDraftName}>{item.name}</Text>
+                        {item.reason ? (
+                          <Text style={styles.listDraftReason}>{item.reason}</Text>
+                        ) : null}
+                      </View>
+                      {item.quantity ? (
+                        <Text style={styles.listDraftQuantity}>{item.quantity}</Text>
+                      ) : null}
+                      <TouchableOpacity onPress={() => setListItemsDraft((prev) => prev.filter((entry) => entry.id !== item.id))}>
+                        <Ionicons name="close" size={18} color="#94a3b8" />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              <View style={styles.manualRow}>
+                <TextInput
+                  value={manualItemName}
+                  onChangeText={setManualItemName}
+                  placeholder="Item"
+                  placeholderTextColor="#94a3b8"
+                  style={[styles.listInput, { flex: 1 }]}
+                />
+                <TextInput
+                  value={manualItemQuantity}
+                  onChangeText={setManualItemQuantity}
+                  placeholder="Hoeveelheid"
+                  placeholderTextColor="#94a3b8"
+                  style={[styles.listInput, { flex: 1 }]}
+                />
+                <TouchableOpacity style={styles.addItemButton} onPress={handleAddManualListItem}>
+                  <Ionicons name="add" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity style={styles.modalButton} onPress={handleSaveShoppingList}>
+                <Text style={styles.modalButtonText}>Lijst opslaan</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, { backgroundColor: 'transparent', marginTop: 8 }]} onPress={resetListModal}>
+                <Text style={[styles.modalButtonText, { color: '#047857' }]}>Annuleren</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -603,6 +889,16 @@ const styles = StyleSheet.create({
   sectionLink: {
     fontSize: 14,
     color: '#047857',
+    fontWeight: '600',
+  },
+  sectionLinkButton: {
+    backgroundColor: '#047857',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  sectionLinkButtonText: {
+    color: '#fff',
     fontWeight: '600',
   },
   recipeCard: {
@@ -864,6 +1160,78 @@ const styles = StyleSheet.create({
     color: '#1f2937',
     flex: 1,
     lineHeight: 22,
+  },
+  listModalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '92%',
+    padding: 24,
+  },
+  listInput: {
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.1)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#0f172a',
+  },
+  inventoryChips: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inventoryChip: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    padding: 12,
+    backgroundColor: '#f8fafc',
+    minWidth: 140,
+  },
+  inventoryChipName: {
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  inventoryChipMeta: {
+    color: '#64748b',
+    fontSize: 12,
+  },
+  listDraftItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    backgroundColor: '#fff',
+    marginTop: 8,
+  },
+  listDraftName: {
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  listDraftReason: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  listDraftQuantity: {
+    fontWeight: '600',
+    color: '#047857',
+  },
+  manualRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  addItemButton: {
+    backgroundColor: '#047857',
+    borderRadius: 14,
+    padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

@@ -41,6 +41,41 @@ interface Category {
   count: number;
 }
 
+const buildRecipeImage = (title?: string, seed?: string) => {
+  const base = title?.replace(/\s+/g, ',').toLowerCase() || 'stockpit,recipe';
+  return `https://source.unsplash.com/featured/?${encodeURIComponent(base)},food,recipe&w=1200&q=80&sig=${seed || Date.now()}`;
+};
+
+const canonicalCategory = (recipe: any) => {
+  if (recipe?.category) return String(recipe.category).toLowerCase();
+  if (Array.isArray(recipe?.tags) && recipe.tags.length > 0) {
+    return String(recipe.tags[0]).toLowerCase();
+  }
+  return '';
+};
+
+const dedupeRecipes = (recipes: any[]): any[] => {
+  const map = new Map<string, any>();
+  recipes.forEach((recipe) => {
+    const id = recipe.recipe_id || recipe.id;
+    if (!id || map.has(id)) return;
+    map.set(id, { ...recipe, recipe_id: id });
+  });
+  return Array.from(map.values());
+};
+
+const attachRecipeImage = (recipe: any) => ({
+  ...recipe,
+  recipe_id: recipe.recipe_id || recipe.id,
+  image_url: recipe.image_url || buildRecipeImage(recipe.title, recipe.recipe_id || recipe.id),
+});
+
+const CHEF_RADAR_LOADING_MESSAGES = [
+  'Deciding your meals...',
+  'Chef Radar scant je voorraad...',
+  'Zoekt naar inspiratie voor vanavond...',
+];
+
 export default function RecipesScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -62,6 +97,9 @@ export default function RecipesScreen() {
   const [loadingTrending, setLoadingTrending] = useState(false);
   const [loadingQuick, setLoadingQuick] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState<Record<string, boolean>>({});
+  const [chefRadarLoading, setChefRadarLoading] = useState(false);
+  const [chefRadarLoadingMessage, setChefRadarLoadingMessage] = useState(CHEF_RADAR_LOADING_MESSAGES[0]);
+  const [inventoryCount, setInventoryCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -75,15 +113,36 @@ export default function RecipesScreen() {
 
   // Remove auto-rotation for quick recipes - make it infinite scroll instead
 
+  useEffect(() => {
+    if (!chefRadarLoading) {
+      setChefRadarLoadingMessage(CHEF_RADAR_LOADING_MESSAGES[0]);
+      return;
+    }
+    const pickMessage = () =>
+      setChefRadarLoadingMessage(
+        CHEF_RADAR_LOADING_MESSAGES[Math.floor(Math.random() * CHEF_RADAR_LOADING_MESSAGES.length)]
+      );
+    pickMessage();
+    const interval = setInterval(pickMessage, 2000);
+    return () => clearInterval(interval);
+  }, [chefRadarLoading]);
+
   const fetchData = async () => {
     if (!user) {
       setLoading(false);
+      setInventoryCount(null);
       return;
     }
 
     setLoading(true);
     try {
       const category = activeFilter === 'Alles' ? null : activeFilter;
+
+      const { count: inventoryCountResult } = await supabase
+        .from('inventory')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      setInventoryCount(inventoryCountResult ?? 0);
 
       // Fetch critical data in parallel (recipe of the day, categories, trending, quick)
       const [
@@ -204,6 +263,7 @@ export default function RecipesScreen() {
       }
 
       // Fetch Chef Radar recipes (non-blocking, can load after page is visible)
+      setChefRadarLoading(true);
       // If archetype is "None", get random recipes
       if (profile?.archetype === 'None') {
         const { data: allRecipes } = await supabase
@@ -220,10 +280,12 @@ export default function RecipesScreen() {
             matched_ingredients_count: 0,
             total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
             likes_count: 0,
+            image_url: r.image_url || buildRecipeImage(r.title, r.id),
           }));
           setChefRadarRecipes(randomRecipes as Recipe[]);
           setChefRadarCarouselData([]);
         }
+        setChefRadarLoading(false);
       } else {
         const { data: matched, error: matchError } = await supabase.rpc('match_recipes_with_inventory', {
           p_user_id: user.id,
@@ -238,7 +300,7 @@ export default function RecipesScreen() {
         if (matchError) {
           console.error('Error matching recipes with inventory:', matchError);
           // On error, try AI generation (non-blocking)
-          generateAIChefRadarRecipes().catch(console.error);
+          await generateAIChefRadarRecipes();
         } else if (matched && matched.length > 0) {
           const goodMatches = (matched as Recipe[]).filter((r) => {
             return (r.matched_ingredients_count || 0) >= 1;
@@ -246,15 +308,20 @@ export default function RecipesScreen() {
           
           if (goodMatches.length > 0) {
             const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-            setChefRadarRecipes(sorted.slice(0, 3));
+            const enriched = sorted.slice(0, 3).map((recipe) => ({
+              ...recipe,
+              image_url: recipe.image_url || buildRecipeImage(recipe.title, recipe.recipe_id),
+            }));
+            setChefRadarRecipes(enriched as Recipe[]);
             setChefRadarCarouselData([]);
+            setChefRadarLoading(false);
           } else {
             // No good matches, generate AI recipes (non-blocking)
-            generateAIChefRadarRecipes().catch(console.error);
+            await generateAIChefRadarRecipes();
           }
         } else {
           // No matches, generate AI recipes (non-blocking)
-          generateAIChefRadarRecipes().catch(console.error);
+          await generateAIChefRadarRecipes();
         }
       }
 
@@ -269,23 +336,33 @@ export default function RecipesScreen() {
   // Lazy load functions for trending, quick, and category recipes
   const fetchTrendingRecipes = async () => {
     if (!user) return;
+    setLoadingTrending(true);
     try {
       const category = activeFilter === 'Alles' ? null : activeFilter;
       if (profile?.archetype === 'None') {
         const { data: allRecipes } = await supabase
           .from('recipes')
           .select('*')
-          .limit(30);
+          .limit(60);
         
         if (allRecipes && allRecipes.length > 0) {
           const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          setTrendingRecipes(
-            shuffled.slice(0, 30).map((r: any) => ({
+          let curated = dedupeRecipes(
+            shuffled.slice(0, 40).map((r: any) => ({
               ...r,
               recipe_id: r.id,
               likes_count: 0,
-            })) as Recipe[]
-          );
+            }))
+          ).map(attachRecipeImage);
+
+          if (curated.length === 0) {
+            curated = shuffled.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })).map(attachRecipeImage);
+          }
+          setTrendingRecipes(curated as Recipe[]);
         }
       } else {
         const { data: trending } = await supabase.rpc('get_trending_recipes', {
@@ -293,22 +370,34 @@ export default function RecipesScreen() {
           p_category: category,
         });
         if (trending && trending.length > 0) {
-          setTrendingRecipes(
+          let curated = dedupeRecipes(
             trending.map((r: any) => ({
               ...r,
               recipe_id: r.id || r.recipe_id,
               likes_count: r.likes_count || 0,
-            })) as Recipe[]
-          );
+            }))
+          ).map(attachRecipeImage);
+
+          if (curated.length === 0) {
+            curated = trending.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })).map(attachRecipeImage);
+          }
+          setTrendingRecipes(curated as Recipe[]);
         }
       }
     } catch (error) {
       console.error('Error fetching trending recipes:', error);
+    } finally {
+      setLoadingTrending(false);
     }
   };
 
   const fetchQuickRecipes = async () => {
     if (!user) return;
+    setLoadingQuick(true);
     try {
       // "Klaar in 30 minuten" should ALWAYS show recipes <= 30 minutes, regardless of category filter
       // So we pass null for category to get all quick recipes
@@ -321,13 +410,22 @@ export default function RecipesScreen() {
         
         if (allRecipes && allRecipes.length > 0) {
           const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          setQuickRecipes(
+          let curated = dedupeRecipes(
             shuffled.map((r: any) => ({
               ...r,
               recipe_id: r.id,
               likes_count: 0,
-            })) as Recipe[]
-          );
+            }))
+          ).map(attachRecipeImage);
+
+          if (curated.length === 0) {
+            curated = shuffled.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })).map(attachRecipeImage);
+          }
+          setQuickRecipes(curated as Recipe[]);
         }
       } else {
         // Always pass null for category - we want ALL recipes <= 30 minutes
@@ -340,17 +438,28 @@ export default function RecipesScreen() {
           p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
         });
         if (quick && quick.length > 0) {
-          setQuickRecipes(
+          let curated = dedupeRecipes(
             quick.map((r: any) => ({
               ...r,
               recipe_id: r.id || r.recipe_id,
               likes_count: r.likes_count || 0,
-            })) as Recipe[]
-          );
+            }))
+          ).map(attachRecipeImage);
+
+          if (curated.length === 0) {
+            curated = quick.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })).map(attachRecipeImage);
+          }
+          setQuickRecipes(curated as Recipe[]);
         }
       }
     } catch (error) {
       console.error('Error fetching quick recipes:', error);
+    } finally {
+      setLoadingQuick(false);
     }
   };
 
@@ -365,6 +474,8 @@ export default function RecipesScreen() {
     });
     
     try {
+      const target = categoryName.toLowerCase();
+
       if (profile?.archetype === 'None') {
         const { data: catRecipes } = await supabase
           .from('recipes')
@@ -372,18 +483,26 @@ export default function RecipesScreen() {
           .limit(100);
         
         if (catRecipes && catRecipes.length > 0) {
-          const filtered = catRecipes.filter((r: any) => 
-            r.category === categoryName || 
-            (r.tags && Array.isArray(r.tags) && r.tags.includes(categoryName))
-          );
+          const filtered = catRecipes.filter((r: any) => canonicalCategory(r) === target);
           const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-          setCategoryRecipes((prev) => ({
-            ...prev,
-            [categoryName]: shuffled.slice(0, 100).map((r: any) => ({
+          let curated = dedupeRecipes(
+            shuffled.slice(0, 60).map((r: any) => ({
               ...r,
               recipe_id: r.id,
               likes_count: 0,
-            })) as Recipe[]
+            }))
+          ).map(attachRecipeImage);
+
+          if (curated.length === 0) {
+            curated = catRecipes.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })).map(attachRecipeImage);
+          }
+          setCategoryRecipes((prev) => ({
+            ...prev,
+            [categoryName]: curated as Recipe[],
           }));
         }
       } else {
@@ -406,13 +525,25 @@ export default function RecipesScreen() {
         if (error) {
           console.error(`Error fetching recipes for category ${categoryName}:`, error);
         } else if (catRecipes && catRecipes.length > 0) {
-          setCategoryRecipes((prev) => ({
-            ...prev,
-            [categoryName]: catRecipes.map((r: any) => ({
+          const filtered = catRecipes.filter((r: any) => canonicalCategory(r) === target);
+          let curated = dedupeRecipes(
+            filtered.map((r: any) => ({
               ...r,
               recipe_id: r.id || r.recipe_id,
               likes_count: r.likes_count || 0,
-            })) as Recipe[]
+            }))
+          ).map(attachRecipeImage);
+
+          if (curated.length === 0) {
+            curated = catRecipes.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })).map(attachRecipeImage);
+          }
+          setCategoryRecipes((prev) => ({
+            ...prev,
+            [categoryName]: curated as Recipe[],
           }));
         }
       }
@@ -427,6 +558,7 @@ export default function RecipesScreen() {
     if (!user || !profile) return;
 
     try {
+      setChefRadarLoading(true);
       // Get user inventory
       const { data: inventory } = await supabase
         .from('inventory')
@@ -551,6 +683,8 @@ export default function RecipesScreen() {
         setChefRadarRecipes(fallbackRecipes as Recipe[]);
         setChefRadarCarouselData([]);
       }
+    } finally {
+      setChefRadarLoading(false);
     }
   };
 
@@ -794,8 +928,24 @@ export default function RecipesScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Chef Radar Picks</Text>
-            {chefRadarRecipes.length === 0 ? (
-              <Text style={styles.emptyText}>Geen recepten gevonden. Voeg items toe aan je voorraad!</Text>
+            {inventoryCount === null ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color="#047857" />
+                <Text style={styles.loadingText}>Chef Radar voorbereiden...</Text>
+              </View>
+            ) : inventoryCount === 0 ? (
+              <Text style={styles.emptyText}>
+                Geen voorraad gevonden. Upload een shelf shot in Stockpit Mode om Chef Radar te activeren.
+              </Text>
+            ) : chefRadarLoading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color="#047857" />
+                <Text style={styles.loadingText}>{chefRadarLoadingMessage}</Text>
+              </View>
+            ) : chefRadarRecipes.length === 0 ? (
+              <Text style={styles.emptyText}>
+                Geen directe match gevonden. Probeer de AI-toggle of voeg producten toe aan je voorraad.
+              </Text>
             ) : (
               <View style={styles.verticalList}>
                 {(showAIGenerated && aiGeneratedRecipes.length > 0
@@ -851,7 +1001,12 @@ export default function RecipesScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Trending Recepten</Text>
             <Text style={styles.sectionSubtitle}>Meest gelikete recepten deze week</Text>
-            {trendingRecipes.length === 0 ? (
+            {loadingTrending ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color="#047857" />
+                <Text style={styles.loadingText}>Trending recepten laden...</Text>
+              </View>
+            ) : trendingRecipes.length === 0 ? (
               <Text style={styles.emptyText}>Geen trending recepten gevonden.</Text>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -897,8 +1052,7 @@ export default function RecipesScreen() {
             onLayout={() => {
               // Lazy load quick recipes when section comes into view
               if (quickRecipes.length === 0 && !loadingQuick) {
-                setLoadingQuick(true);
-                fetchQuickRecipes().finally(() => setLoadingQuick(false));
+                fetchQuickRecipes();
               }
             }}
           >

@@ -402,12 +402,33 @@ Antwoord ALLEEN met geldig JSON, geen andere tekst.`;
     const recipeNameForImage = recipeData.title?.replace(/\s+/g, ',').toLowerCase() || 'recipe';
     const imageUrl = `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80`;
 
+    const normalizedIngredients = (recipeData.ingredients || []).map((ing: any) => {
+      if (typeof ing === 'string') {
+        return { name: ing, quantity: '', unit: '' };
+      }
+      return {
+        name: ing.name || '',
+        quantity: ing.quantity || '',
+        unit: ing.unit || '',
+      };
+    });
+
+    const normalizedInstructions = (recipeData.instructions || []).map((step: any, index: number) => {
+      if (typeof step === 'string') {
+        return { step: index + 1, instruction: step };
+      }
+      return {
+        step: step.step || index + 1,
+        instruction: step.instruction || '',
+      };
+    });
+
     return {
       name: recipeData.title || 'Nieuw Recept',
       description: recipeData.description || null,
       image_url: imageUrl,
-      ingredients: recipeData.ingredients || [],
-      steps: recipeData.instructions?.map((inst: any) => inst.instruction || inst) || [],
+      ingredients: normalizedIngredients,
+      steps: normalizedInstructions.map((s: any) => s.instruction),
       prepTime: recipeData.prep_time_minutes || 0,
       cookTime: recipeData.cook_time_minutes || 0,
       totalTime: recipeData.total_time_minutes || 30,
@@ -421,6 +442,85 @@ Antwoord ALLEEN met geldig JSON, geen andere tekst.`;
   } catch (error) {
     console.error('Error generating recipe from description:', error);
     return null;
+  }
+}
+
+export async function generateShoppingListFromInventory(
+  inventory: Array<{ name: string; quantity_approx?: string; category?: string; expires_at?: string }>,
+  focus?: string
+): Promise<Array<{ name: string; quantity?: string; reason?: string }>> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return [];
+  }
+
+  const inventoryList = inventory
+    .map((item) => `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''}`)
+    .join('\n')
+    || 'Geen voorraad beschikbaar';
+
+  const prompt = `Je bent de Stockpit boodschappenplanner.
+
+Huidige voorraad:
+${inventoryList}
+
+Focus of context voor deze lijst: ${focus || 'Algemene weekboodschappen'}
+
+Genereer een boodschappenlijst in JSON:
+{
+  "items": [
+    { "name": "item", "quantity": "hoeveelheid", "reason": "waarom het nodig is" }
+  ]
+}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'Stockpit',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een slimme boodschappenplanner. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.5,
+        max_tokens: 1200,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for shopping list:', response.status);
+      return [];
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const listData = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!listData?.items || !Array.isArray(listData.items)) {
+      return [];
+    }
+
+    return listData.items.map((item: any) => ({
+      name: item.name || '',
+      quantity: item.quantity || '',
+      reason: item.reason || '',
+    })).filter((item: any) => item.name);
+  } catch (error) {
+    console.error('Error generating shopping list from description:', error);
+    return [];
   }
 }
 

@@ -24,7 +24,8 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
-import { generateRecipeFromDescription } from '../services/ai';
+import { generateRecipeFromDescription, runInventoryScan } from '../services/ai';
+import type { InventoryItem } from '../types/app';
 
 interface LocalPhoto {
   id: string;
@@ -185,6 +186,7 @@ export default function ScanScreen() {
   const [recipeDescriptionText, setRecipeDescriptionText] = useState('');
   const [recipeGenerating, setRecipeGenerating] = useState(false);
   const [recipeGenerated, setRecipeGenerated] = useState<any>(null);
+  const [savingRecipe, setSavingRecipe] = useState(false);
   const visibleMonthCalendar = useMemo(
     () => getMonthCalendar(expiryMonthOffset),
     [expiryMonthOffset]
@@ -304,7 +306,21 @@ export default function ScanScreen() {
         session_id: session,
         storage_path: filePath,
       });
+      const { data: publicUrlData } = supabase.storage
+        .from('inventory-scans')
+        .getPublicUrl(filePath);
+      const publicUrl = publicUrlData?.publicUrl;
+
       setCapturedPhotos((prev) => [...prev, { id: filePath, preview: asset.uri }]);
+
+      if (publicUrl) {
+        try {
+          const detectedItems = await runInventoryScan([publicUrl]);
+          await insertDetectedInventoryItems(detectedItems, 'shelf-scan');
+        } catch (scanError) {
+          console.error('Error running shelf scan AI:', scanError);
+        }
+      }
     }
     setUploading(false);
   };
@@ -316,6 +332,42 @@ export default function ScanScreen() {
       setManualCategory(suggestion?.category ?? 'pantry');
     }
     setManualIsFood(suggestion?.is_food ?? true);
+  };
+
+  const insertDetectedInventoryItems = async (items: InventoryItem[], contextLabel: string) => {
+    if (!user || !items.length) return 0;
+
+    let successCount = 0;
+    for (const item of items) {
+      try {
+        const { data: detection } = await supabase.rpc('detect_category', { item_name: item.name });
+        const suggestion = detection?.[0];
+        const expiresAt = item.daysUntilExpiry
+          ? new Date(Date.now() + item.daysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+        const { error } = await supabase.from('inventory').insert({
+          user_id: user.id,
+          name: item.name,
+          category: suggestion?.category ?? 'pantry',
+          quantity_approx: item.quantityEstimate || null,
+          confidence_score: 0.8,
+          expires_at: expiresAt,
+        });
+        if (!error) {
+          successCount += 1;
+        }
+      } catch (error) {
+        console.error(`Error inserting detected item (${contextLabel}):`, error);
+      }
+    }
+
+    if (successCount > 0) {
+      Alert.alert('Shelf scan', `${successCount} items toegevoegd aan je voorraad.`);
+    } else {
+      Alert.alert('Shelf scan', 'Geen nieuwe items gedetecteerd. Probeer een duidelijke foto.');
+    }
+
+    return successCount;
   };
 
   const startManualWizard = async () => {
@@ -1015,6 +1067,35 @@ export default function ScanScreen() {
                 </>
               ) : (
                 <>
+                  {recipeGenerated.image_url && (
+                    <Image
+                      source={{ uri: recipeGenerated.image_url }}
+                      style={{ width: '100%', height: 180, borderRadius: 20, marginBottom: 16 }}
+                    />
+                  )}
+                  <View style={{ gap: 6, marginBottom: 16 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }}>
+                      {recipeGenerated.name}
+                    </Text>
+                    <Text style={{ color: '#475569' }}>{recipeGenerated.description}</Text>
+                    <Text style={{ color: '#047857', fontWeight: '600' }}>
+                      {recipeGenerated.totalTime || 30} min • {recipeGenerated.difficulty || 'Gemiddeld'}
+                    </Text>
+                    {recipeGenerated.ingredients && recipeGenerated.ingredients.length > 0 && (
+                      <View style={{ marginTop: 6, gap: 4 }}>
+                        {recipeGenerated.ingredients.slice(0, 5).map((ing: any, idx: number) => (
+                          <Text key={idx} style={{ color: '#475569' }}>
+                            • {ing.quantity ? `${ing.quantity} ` : ''}{ing.unit ? `${ing.unit} ` : ''}{ing.name}
+                          </Text>
+                        ))}
+                        {recipeGenerated.ingredients.length > 5 && (
+                          <Text style={{ color: '#94a3b8' }}>
+                            +{recipeGenerated.ingredients.length - 5} extra ingrediënten
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  </View>
                   <TextInput
                     value={recipeTitle}
                     onChangeText={setRecipeTitle}
@@ -1033,7 +1114,8 @@ export default function ScanScreen() {
                   />
                   
                   <TouchableOpacity
-                    style={styles.modalButton}
+                    style={[styles.modalButton, savingRecipe && { opacity: 0.6 }]}
+                    disabled={savingRecipe}
                     onPress={async () => {
                       if (!recipeTitle.trim()) {
                         Alert.alert('Fout', 'Vul een recept naam in');
@@ -1044,12 +1126,17 @@ export default function ScanScreen() {
                         Alert.alert('Fout', 'Je moet ingelogd zijn om recepten toe te voegen');
                         return;
                       }
+                      if (savingRecipe) return;
+                      setSavingRecipe(true);
                       
                       try {
                         const ingredients = recipeGenerated.ingredients || [];
-                        const instructions = recipeGenerated.steps || [];
+                        const instructions = (recipeGenerated.steps || []).map((inst: string, idx: number) => ({
+                          step: idx + 1,
+                          instruction: inst,
+                        }));
                         
-                        const { data, error } = await supabase.rpc('create_recipe', {
+                        const { data: newRecipeId, error } = await supabase.rpc('create_recipe', {
                           p_title: recipeTitle,
                           p_description: recipeDescription || null,
                           p_image_url: recipeGenerated.image_url || null,
@@ -1059,10 +1146,7 @@ export default function ScanScreen() {
                           p_difficulty: recipeGenerated.difficulty || 'Gemiddeld',
                           p_servings: recipeGenerated.servings || 4,
                           p_ingredients: JSON.stringify(ingredients),
-                          p_instructions: JSON.stringify(instructions.map((inst: string, idx: number) => ({
-                            step: idx + 1,
-                            instruction: inst,
-                          }))),
+                          p_instructions: JSON.stringify(instructions),
                           p_tags: recipeGenerated.tags || [recipeCategory],
                           p_category: recipeCategory,
                         });
@@ -1071,22 +1155,48 @@ export default function ScanScreen() {
                           console.error('Error creating recipe:', error);
                           Alert.alert('Fout', `Kon recept niet opslaan: ${error.message}`);
                         } else {
-                          Alert.alert('Succes', 'Recept is toegevoegd!');
+                          const recipePayload = {
+                            id: newRecipeId,
+                            title: recipeTitle,
+                            description: recipeDescription,
+                            image_url: recipeGenerated.image_url,
+                            total_time_minutes: recipeGenerated.totalTime || 30,
+                            difficulty: recipeGenerated.difficulty || 'Gemiddeld',
+                            servings: recipeGenerated.servings || 4,
+                            ingredients,
+                            instructions,
+                            tags: recipeGenerated.tags || [recipeCategory],
+                            category: recipeCategory,
+                          };
+
+                          await supabase.from('saved_recipes').insert({
+                            user_id: user.id,
+                            recipe_name: recipeTitle,
+                            recipe_payload: recipePayload,
+                          });
+
+                          Alert.alert('Succes', 'Recept is toegevoegd en bewaard!');
                           setRecipeModalVisible(false);
                           setRecipeTitle('');
                           setRecipeDescription('');
                           setRecipeDescriptionText('');
                           setRecipeGenerated(null);
                           setRecipeCategory('Comfort Food');
-                          router.push('/recipes');
+                          router.push('/saved');
                         }
                       } catch (error: any) {
                         console.error('Error saving recipe:', error);
                         Alert.alert('Fout', 'Er is een fout opgetreden bij het opslaan van het recept.');
+                      } finally {
+                        setSavingRecipe(false);
                       }
                     }}
                   >
-                    <Text style={styles.modalButtonText}>Recept opslaan</Text>
+                    {savingRecipe ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.modalButtonText}>Recept opslaan</Text>
+                    )}
                   </TouchableOpacity>
                   
                   <TouchableOpacity
