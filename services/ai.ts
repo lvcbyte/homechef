@@ -300,6 +300,7 @@ Antwoord in JSON formaat:
         name: recipe.title,
         description: recipe.description,
         image_url: imageUrl,
+        ingredients: recipe.ingredients || [],
         steps: recipe.instructions || [],
         prepTime: recipe.prep_time_minutes || 0,
         cookTime: recipe.cook_time_minutes || 0,
@@ -309,11 +310,6 @@ Antwoord in JSON formaat:
         macros: recipe.nutrition || { protein: 0, carbs: 0, fat: 0 },
         missingIngredients: [],
         relevanceScore,
-        prepTime: recipe.prep_time_minutes || 0,
-        cookTime: recipe.cook_time_minutes || 0,
-        totalTime: recipe.total_time_minutes || 0,
-        difficulty: recipe.difficulty || 'Gemiddeld',
-        servings: recipe.servings || 4,
         tags: recipe.tags || [],
       } as GeneratedRecipe;
     });
