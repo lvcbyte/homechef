@@ -3,10 +3,36 @@ import OpenAI from 'openai';
 
 import type { InventoryItem, RecipeEngineInput, GeneratedRecipe } from '../types/app';
 
-const OPENAI_KEY =
-  Constants.expoConfig?.extra?.openaiKey || process.env.EXPO_PUBLIC_OPENAI_KEY;
-const OPENROUTER_KEY =
-  Constants.expoConfig?.extra?.openrouterKey || process.env.EXPO_PUBLIC_OPENROUTER_KEY;
+// Helper function to get environment variables (works for both local and Vercel)
+const getEnvVar = (key: string): string | undefined => {
+  // Check Constants.extra (build-time, from app.config.js)
+  if (Constants.expoConfig?.extra?.[key]) {
+    return Constants.expoConfig.extra[key] as string;
+  }
+  // Check process.env (build-time and runtime)
+  if (typeof process !== 'undefined' && process.env[key]) {
+    return process.env[key];
+  }
+  // Check window.__EXPO_ENV__ (runtime, for Vercel)
+  if (typeof window !== 'undefined' && (window as any).__EXPO_ENV__?.[key]) {
+    return (window as any).__EXPO_ENV__[key];
+  }
+  // Check window.location for Vercel environment variables injected at runtime
+  if (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.env?.[key]) {
+    return (window as any).__NEXT_DATA__.env[key];
+  }
+  return undefined;
+};
+
+const OPENAI_KEY = 
+  getEnvVar('openaiKey') || 
+  getEnvVar('EXPO_PUBLIC_OPENAI_KEY') ||
+  getEnvVar('OPENAI_KEY');
+  
+const OPENROUTER_KEY = 
+  getEnvVar('openrouterKey') || 
+  getEnvVar('EXPO_PUBLIC_OPENROUTER_KEY') ||
+  getEnvVar('OPENROUTER_KEY');
 
 // Only initialize OpenAI client if key is available
 // Note: dangerouslyAllowBrowser is needed for web/PWA usage

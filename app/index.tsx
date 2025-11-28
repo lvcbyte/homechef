@@ -54,6 +54,8 @@ export default function Home() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
+  const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
+  const [loadingDailyAI, setLoadingDailyAI] = useState(false);
   const [trendingRecipes, setTrendingRecipes] = useState<Recipe[]>([]);
   const [quickRecipes, setQuickRecipes] = useState<Recipe[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
