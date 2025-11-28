@@ -16,10 +16,21 @@ BEGIN
         RAISE EXCEPTION 'User with email % not found in auth.users. Please check the email address.', v_email;
     END IF;
 
-    -- Ensure profile exists and set admin permissions (without email column)
-    INSERT INTO public.profiles (id, is_admin, admin_role, admin_permissions)
+    -- Ensure profile exists and set admin permissions (with required columns)
+    INSERT INTO public.profiles (
+        id, 
+        archetype, 
+        dietary_restrictions, 
+        cooking_skill,
+        is_admin, 
+        admin_role, 
+        admin_permissions
+    )
     VALUES (
         v_user_id,
+        'None', -- Default archetype
+        '[]'::jsonb, -- Default dietary restrictions
+        'Advanced', -- Default cooking skill
         true,
         'owner',
         jsonb_build_object(

@@ -147,8 +147,19 @@ export default function AdminPage() {
             .from('profiles')
             .insert({
               id: data.user.id,
+              archetype: 'None',
+              dietary_restrictions: [],
+              cooking_skill: 'Advanced',
               is_admin: true,
               admin_role: 'owner',
+              admin_permissions: {
+                can_manage_users: true,
+                can_manage_recipes: true,
+                can_manage_inventory: true,
+                can_view_logs: true,
+                can_modify_database: true,
+                can_access_api: true,
+              },
             });
           
           if (insertError) {
