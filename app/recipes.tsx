@@ -950,12 +950,12 @@ export default function RecipesScreen() {
                 onLayout={() => {
                   // Lazy load category recipes when section comes into view
                   if (recipes.length === 0 && !isLoading) {
-                    // Use window.setTimeout to ensure function is available
-                    setTimeout(() => {
-                      if (typeof fetchCategoryRecipes === 'function') {
-                        fetchCategoryRecipes(categoryName);
-                      }
-                    }, 0);
+                    // Directly call the function - it should be available in scope
+                    try {
+                      fetchCategoryRecipes(categoryName);
+                    } catch (error) {
+                      console.error('Error calling fetchCategoryRecipes:', error);
+                    }
                   }
                 }}
               >
