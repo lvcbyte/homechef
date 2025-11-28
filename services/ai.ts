@@ -149,7 +149,7 @@ export async function generateRecipesWithAI(
   profile: { archetype?: string; cooking_skill?: string; dietary_restrictions?: string[] },
   mood?: string
 ): Promise<GeneratedRecipe[]> {
-  if (!openRouterClient) {
+  if (!OPENROUTER_KEY) {
     console.warn('OpenRouter not configured, falling back to database recipes');
     return [];
   }
@@ -211,23 +211,44 @@ Antwoord in JSON formaat:
 }`;
 
   try {
-    const response = await openRouterClient.chat.completions.create({
-      model: FREE_LLM_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'Je bent een professionele chef en receptengenerator. Antwoord altijd in geldig JSON formaat.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
+    // Use direct fetch for Grok 4.1 free model
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'Stockpit',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een professionele chef en receptengenerator. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
     });
 
-    const content = response.choices[0]?.message?.content || '{"recipes": []}';
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('OpenRouter API error for recipe generation:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData,
+      });
+      throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{"recipes": []}';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     const payload = jsonMatch ? JSON.parse(jsonMatch[0]) : { recipes: [] };
 
@@ -275,8 +296,8 @@ export async function chatWithAI(
     recentRecipes?: Array<{ title: string; total_time_minutes: number }>;
   }
 ): Promise<string> {
-  if (!openRouterClient) {
-    return 'AI-assistentie is momenteel niet beschikbaar. Controleer je OpenRouter API key.';
+  if (!OPENROUTER_KEY) {
+    return 'AI-assistentie is momenteel niet beschikbaar. Controleer je OpenRouter API key in .env.local';
   }
 
   const inventoryList = context.inventory?.map(item => 
@@ -301,26 +322,60 @@ Gebruikersprofiel:
 Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands. Houd antwoorden beknopt maar informatief.`;
 
   try {
-    console.log('Sending message to OpenRouter:', message.substring(0, 50) + '...');
-    const response = await openRouterClient.chat.completions.create({
-      model: FREE_LLM_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 500,
+    console.log('Sending message to OpenRouter (Grok 4.1 free):', message.substring(0, 50) + '...');
+    
+    // Use direct fetch for Grok 4.1 free model
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'Stockpit',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: message,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
     });
 
-    const content = response.choices[0]?.message?.content;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('OpenRouter API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData,
+      });
+      
+      if (response.status === 401) {
+        return 'API key is ongeldig. Controleer je OpenRouter API key in .env.local';
+      }
+      if (response.status === 402) {
+        return 'Onvoldoende credits. Zorg ervoor dat je een gratis account hebt en dat je de juiste gratis model gebruikt (x-ai/grok-4.1-fast:free). Check https://openrouter.ai/settings/credits';
+      }
+      if (response.status === 429) {
+        return 'Te veel verzoeken. Wacht even en probeer het later opnieuw.';
+      }
+      
+      throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content;
+    
     if (!content) {
-      console.warn('No content in OpenRouter response:', response);
+      console.warn('No content in OpenRouter response:', result);
       return 'Sorry, ik kon geen antwoord genereren. Probeer het opnieuw.';
     }
 
@@ -330,19 +385,17 @@ Wees vriendelijk, professioneel en praktisch. Antwoord altijd in het Nederlands.
     console.error('Error chatting with AI:', error);
     console.error('Error details:', {
       message: error?.message,
-      status: error?.status,
-      code: error?.code,
-      response: error?.response,
+      stack: error?.stack,
     });
     
     // Provide more specific error messages
-    if (error?.status === 401) {
+    if (error?.message?.includes('401')) {
       return 'API key is ongeldig. Controleer je OpenRouter API key in .env.local';
     }
-    if (error?.status === 429) {
-      return 'Te veel verzoeken. Wacht even en probeer het later opnieuw.';
+    if (error?.message?.includes('402')) {
+      return 'Onvoldoende credits. Zorg ervoor dat je een gratis account hebt en dat je de juiste gratis model gebruikt (x-ai/grok-4.1-fast:free).';
     }
-    if (error?.message?.includes('rate limit')) {
+    if (error?.message?.includes('429') || error?.message?.includes('rate limit')) {
       return 'Rate limit bereikt. Wacht even en probeer het later opnieuw.';
     }
     
