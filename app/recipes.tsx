@@ -120,7 +120,7 @@ export default function RecipesScreen() {
           : supabase.rpc('get_quick_recipes', {
               p_limit: 100,
               p_user_id: user?.id || null,
-              p_category: category,
+              p_category: null, // Always null - show all quick recipes regardless of active filter
               p_archetype: profile?.archetype || null,
               p_cooking_skill: profile?.cooking_skill || null,
               p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
@@ -310,7 +310,8 @@ export default function RecipesScreen() {
   const fetchQuickRecipes = async () => {
     if (!user) return;
     try {
-      const category = activeFilter === 'Alles' ? null : activeFilter;
+      // "Klaar in 30 minuten" should ALWAYS show recipes <= 30 minutes, regardless of category filter
+      // So we pass null for category to get all quick recipes
       if (profile?.archetype === 'None') {
         const { data: allRecipes } = await supabase
           .from('recipes')
@@ -329,10 +330,11 @@ export default function RecipesScreen() {
           );
         }
       } else {
+        // Always pass null for category - we want ALL recipes <= 30 minutes
         const { data: quick } = await supabase.rpc('get_quick_recipes', {
           p_limit: 100,
           p_user_id: user?.id || null,
-          p_category: category,
+          p_category: null, // Always null - show all quick recipes regardless of active filter
           p_archetype: profile?.archetype || null,
           p_cooking_skill: profile?.cooking_skill || null,
           p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
