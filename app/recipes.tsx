@@ -80,20 +80,112 @@ export default function RecipesScreen() {
 
     setLoading(true);
     try {
-      // Fetch recipe of the day
-      const { data: rodId } = await supabase.rpc('get_recipe_of_the_day');
-      if (rodId) {
-        const { data: rod } = await supabase
-          .from('recipes')
-          .select('*')
-          .eq('id', rodId)
-          .single();
-        if (rod) setRecipeOfTheDay(rod as RecipeDetail);
+      const category = activeFilter === 'Alles' ? null : activeFilter;
+
+      // Fetch critical data in parallel (recipe of the day, categories, trending, quick)
+      const [
+        rodResult,
+        categoriesResult,
+        trendingResult,
+        quickResult,
+        likesResult,
+      ] = await Promise.all([
+        // Recipe of the day
+        supabase.rpc('get_recipe_of_the_day').then(async (result) => {
+          if (result.data) {
+            const { data: rod } = await supabase
+              .from('recipes')
+              .select('*')
+              .eq('id', result.data)
+              .single();
+            return rod;
+          }
+          return null;
+        }),
+        // Categories
+        supabase.rpc('get_recipe_categories'),
+        // Trending recipes (non-blocking, can show loading state)
+        profile?.archetype === 'None'
+          ? supabase.from('recipes').select('*').limit(30)
+          : supabase.rpc('get_trending_recipes', {
+              p_limit: 100,
+              p_category: category,
+            }),
+        // Quick recipes (non-blocking)
+        profile?.archetype === 'None'
+          ? supabase.from('recipes').select('*').lte('total_time_minutes', 30).limit(100)
+          : supabase.rpc('get_quick_recipes', {
+              p_limit: 100,
+              p_user_id: user?.id || null,
+              p_category: category,
+              p_archetype: profile?.archetype || null,
+              p_cooking_skill: profile?.cooking_skill || null,
+              p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+            }),
+        // User's liked recipes
+        supabase
+          .from('recipe_likes')
+          .select('recipe_id')
+          .eq('user_id', user.id),
+      ]);
+
+      // Set recipe of the day
+      if (rodResult) {
+        setRecipeOfTheDay(rodResult as RecipeDetail);
       }
 
-      // Fetch Chef Radar recipes (inventory-matched, loose matching enabled)
-      const category = activeFilter === 'Alles' ? null : activeFilter;
-      
+      // Set categories
+      if (categoriesResult.data) {
+        const allCats: Category[] = [
+          { category: 'Alles', count: 0 },
+          ...(categoriesResult.data as Category[]),
+        ];
+        setCategories(allCats);
+      }
+
+      // Set trending recipes
+      if (trendingResult.data) {
+        if (profile?.archetype === 'None') {
+          const shuffled = [...trendingResult.data].sort(() => Math.random() - 0.5);
+          setTrendingRecipes(
+            shuffled.slice(0, 30).map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })) as Recipe[]
+          );
+        } else {
+          setTrendingRecipes(
+            trendingResult.data.map((r: any) => ({
+              ...r,
+              likes_count: r.likes_count || 0,
+            })) as Recipe[]
+          );
+        }
+      }
+
+      // Set quick recipes
+      if (quickResult.data) {
+        if (profile?.archetype === 'None') {
+          const shuffled = [...quickResult.data].sort(() => Math.random() - 0.5);
+          setQuickRecipes(
+            shuffled.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              likes_count: 0,
+            })) as Recipe[]
+          );
+        } else {
+          setQuickRecipes(quickResult.data as Recipe[]);
+        }
+      }
+
+      // Set liked recipes
+      if (likesResult.data) {
+        setLikedRecipes(new Set(likesResult.data.map((l) => l.recipe_id)));
+      }
+
+      // Fetch Chef Radar recipes (non-blocking, can load after page is visible)
       // If archetype is "None", get random recipes
       if (profile?.archetype === 'None') {
         const { data: allRecipes } = await supabase
@@ -102,7 +194,6 @@ export default function RecipesScreen() {
           .limit(20);
         
         if (allRecipes) {
-          // Shuffle and take 3 random recipes
           const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
           const randomRecipes = shuffled.slice(0, 3).map((r: any) => ({
             ...r,
@@ -114,192 +205,66 @@ export default function RecipesScreen() {
           }));
           setChefRadarRecipes(randomRecipes as Recipe[]);
           setChefRadarCarouselData([]);
-        } else {
-          setChefRadarRecipes([]);
-          setChefRadarCarouselData([]);
         }
       } else {
         const { data: matched, error: matchError } = await supabase.rpc('match_recipes_with_inventory', {
           p_user_id: user.id,
           p_category: category,
-          p_limit: 20, // Get more results to filter from
+          p_limit: 3, // Only get 3 directly, no need for 20
           p_archetype: profile?.archetype || null,
           p_cooking_skill: profile?.cooking_skill || null,
           p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
-          p_loose_matching: true, // Enable loose matching for Chef Radar
+          p_loose_matching: true,
         });
         
         if (matchError) {
           console.error('Error matching recipes with inventory:', matchError);
-          // On error, try AI generation
-          await generateAIChefRadarRecipes();
+          // On error, try AI generation (non-blocking)
+          generateAIChefRadarRecipes().catch(console.error);
         } else if (matched && matched.length > 0) {
-          // Filter: show recipes with at least 1 matched ingredient
           const goodMatches = (matched as Recipe[]).filter((r) => {
-            const matchedCount = r.matched_ingredients_count || 0;
-            return matchedCount >= 1;
+            return (r.matched_ingredients_count || 0) >= 1;
           });
           
-          // Sort by match score descending (best matches first) and take top 3
-          const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-          const topMatches = sorted.slice(0, 3);
-          
-          // If we have good matches, use them
-          if (topMatches.length > 0) {
-            setChefRadarRecipes(topMatches);
+          if (goodMatches.length > 0) {
+            const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+            setChefRadarRecipes(sorted.slice(0, 3));
             setChefRadarCarouselData([]);
           } else {
-            // If no good matches, generate AI recipes
-            await generateAIChefRadarRecipes();
+            // No good matches, generate AI recipes (non-blocking)
+            generateAIChefRadarRecipes().catch(console.error);
           }
         } else {
-          // No matches at all, generate AI recipes
-          await generateAIChefRadarRecipes();
+          // No matches, generate AI recipes (non-blocking)
+          generateAIChefRadarRecipes().catch(console.error);
         }
       }
 
-      // Fetch trending recipes with profile filters
-      if (profile?.archetype === 'None') {
-        // If archetype is "None", get random recipes
-        const { data: allRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .limit(30);
-        
-        if (allRecipes && allRecipes.length > 0) {
-          // Shuffle and take random recipes
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          const withLikes = shuffled.slice(0, 30).map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            likes_count: 0,
-          }));
-          setTrendingRecipes(withLikes as Recipe[]);
-        } else {
-          // Fallback: use trending function
-          const { data: trending } = await supabase.rpc('get_trending_recipes', {
-            p_limit: 30,
-            p_category: category,
-          });
-          if (trending && trending.length > 0) {
-            setTrendingRecipes(trending.map((r: any) => ({
-              ...r,
-              likes_count: r.likes_count || 0,
-            })) as Recipe[]);
-          }
-        }
-      } else {
-        const { data: trending } = await supabase.rpc('get_trending_recipes', {
-          p_limit: 100, // Get many for infinite scroll
-          p_category: category,
-        });
-        if (trending && trending.length > 0) {
-          setTrendingRecipes(trending.map((r: any) => ({
-            ...r,
-            likes_count: r.likes_count || 0,
-          })) as Recipe[]);
-        } else {
-          // Fallback: get any recipes
-          const { data: fallback } = await supabase
-            .from('recipes')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(30);
-          if (fallback && fallback.length > 0) {
-            const withLikes = fallback.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            }));
-            setTrendingRecipes(withLikes as Recipe[]);
-          }
-        }
-      }
-
-      // Fetch quick recipes (<= 30 minutes) with all filters - infinite scroll
-      if (profile?.archetype === 'None') {
-        // If archetype is "None", get random recipes
-        const { data: allRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .lte('total_time_minutes', 30)
-          .limit(100);
-        
-        if (allRecipes && allRecipes.length > 0) {
-          // Shuffle and take recipes
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          const withLikes = shuffled.map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            likes_count: 0,
-          }));
-          setQuickRecipes(withLikes as Recipe[]);
-        }
-      } else {
-        const { data: quick } = await supabase.rpc('get_quick_recipes', {
-          p_limit: 100, // Get many for infinite scroll
-          p_user_id: user?.id || null,
-          p_category: category,
-          p_archetype: profile?.archetype || null,
-          p_cooking_skill: profile?.cooking_skill || null,
-          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
-        });
-        if (quick && quick.length > 0) {
-          setQuickRecipes(quick as Recipe[]);
-        } else {
-          // Fallback: get all recipes <= 30 minutes
-          const { data: fallback } = await supabase
-            .from('recipes')
-            .select('*')
-            .lte('total_time_minutes', 30)
-            .order('created_at', { ascending: false })
-            .limit(100);
-          if (fallback && fallback.length > 0) {
-            const withLikes = fallback.map((r: any) => ({
-              ...r,
-              recipe_id: r.id,
-              likes_count: 0,
-            }));
-            setQuickRecipes(withLikes as Recipe[]);
-          }
-        }
-      }
-
-      // Fetch categories
-      const { data: cats } = await supabase.rpc('get_recipe_categories');
-      let allCats: Category[] = [];
-      if (cats) {
-        allCats = [{ category: 'Alles', count: 0 }, ...(cats as Category[])];
-        setCategories(allCats);
-      }
-      
-      // Fetch recipes for top categories (excluding 'Alles') - separate async calls
-      const topCategories = allCats.length > 1 ? allCats.slice(1, 8) : [];
+      // Fetch category recipes (lazy load, only first 3 categories to speed up initial load)
+      const allCats = categories.length > 0 ? categories : [{ category: 'Alles', count: 0 }];
+      const topCategories = allCats.length > 1 ? allCats.slice(1, 4) : []; // Only 3 categories initially
       const categoryRecipesMap: Record<string, Recipe[]> = {};
       
-      // Fetch recipes for each category in parallel
+      // Fetch recipes for categories in parallel (but only 3 to start)
       const categoryPromises = topCategories.map(async (cat) => {
-        if (cat.category === 'Alles') return;
+        if (cat.category === 'Alles') return null;
         
         try {
           if (profile?.archetype === 'None') {
-            // If archetype is "None", get random recipes for this category
             const { data: catRecipes } = await supabase
               .from('recipes')
               .select('*')
-              .limit(100);
+              .limit(30); // Reduced from 100
             
             if (catRecipes && catRecipes.length > 0) {
-              // Filter by category and shuffle
               const filtered = catRecipes.filter((r: any) => 
                 r.category === cat.category || 
-                (r.tags && Array.isArray(r.tags) && r.tags.includes(cat.category)) ||
-                (r.tags && typeof r.tags === 'string' && r.tags.includes(cat.category))
+                (r.tags && Array.isArray(r.tags) && r.tags.includes(cat.category))
               );
               const shuffled = [...filtered].sort(() => Math.random() - 0.5);
               return {
                 category: cat.category,
-                recipes: shuffled.slice(0, 100).map((r: any) => ({
+                recipes: shuffled.slice(0, 30).map((r: any) => ({
                   ...r,
                   recipe_id: r.id,
                   likes_count: 0,
@@ -309,7 +274,7 @@ export default function RecipesScreen() {
           } else {
             const { data: catRecipes, error } = await supabase.rpc('get_recipes_by_category', {
               p_category: cat.category,
-              p_limit: 100,
+              p_limit: 30, // Reduced from 100
               p_user_id: user?.id || null,
               p_archetype: profile?.archetype || null,
               p_cooking_skill: profile?.cooking_skill || null,
@@ -318,23 +283,7 @@ export default function RecipesScreen() {
             
             if (error) {
               console.error(`Error fetching recipes for category ${cat.category}:`, error);
-              // Fallback: get recipes directly
-              const { data: fallback } = await supabase
-                .from('recipes')
-                .select('*')
-                .or(`category.eq.${cat.category},tags.cs.{${cat.category}})`)
-                .limit(100);
-              
-              if (fallback && fallback.length > 0) {
-                return {
-                  category: cat.category,
-                  recipes: fallback.map((r: any) => ({
-                    ...r,
-                    recipe_id: r.id,
-                    likes_count: 0,
-                  }))
-                };
-              }
+              return null;
             } else if (catRecipes && catRecipes.length > 0) {
               return {
                 category: cat.category,
@@ -355,17 +304,7 @@ export default function RecipesScreen() {
         }
       });
       
-      console.log('Category recipes loaded:', Object.keys(categoryRecipesMap).length, 'categories');
       setCategoryRecipes(categoryRecipesMap);
-
-      // Fetch user's liked recipes
-      const { data: likes } = await supabase
-        .from('recipe_likes')
-        .select('recipe_id')
-        .eq('user_id', user.id);
-      if (likes) {
-        setLikedRecipes(new Set(likes.map((l) => l.recipe_id)));
-      }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -1647,3 +1586,4 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+
