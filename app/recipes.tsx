@@ -231,7 +231,7 @@ export default function RecipesScreen() {
           p_limit: 3, // Only get 3 directly, no need for 20
           p_archetype: profile?.archetype || null,
           p_cooking_skill: profile?.cooking_skill || null,
-          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
           p_loose_matching: true,
         });
         
@@ -335,7 +335,7 @@ export default function RecipesScreen() {
           p_category: category,
           p_archetype: profile?.archetype || null,
           p_cooking_skill: profile?.cooking_skill || null,
-          p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
+          p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
         });
         if (quick && quick.length > 0) {
           setQuickRecipes(
