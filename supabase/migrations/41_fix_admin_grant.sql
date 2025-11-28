@@ -1,4 +1,4 @@
--- Grant Admin Rights to Existing User: diet.je@hotmail.com
+-- Fix: Grant Admin Rights to diet.je@hotmail.com (without email column)
 -- This script gives admin permissions to an existing user
 
 DO $$
@@ -16,7 +16,7 @@ BEGIN
         RAISE EXCEPTION 'User with email % not found in auth.users. Please check the email address.', v_email;
     END IF;
 
-    -- Ensure profile exists and set admin permissions
+    -- Ensure profile exists and set admin permissions (without email column)
     INSERT INTO public.profiles (id, is_admin, admin_role, admin_permissions)
     VALUES (
         v_user_id,
@@ -57,7 +57,4 @@ SELECT
 FROM public.profiles p
 JOIN auth.users u ON u.id = p.id
 WHERE u.email = 'diet.je@hotmail.com';
-
--- Alternative: Use the helper function if it exists
--- SELECT set_admin_by_email('diet.je@hotmail.com', 'owner');
 

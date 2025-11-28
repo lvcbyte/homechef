@@ -91,20 +91,76 @@ export default function AdminPage() {
     setLoggingIn(true);
     try {
       // Try to sign in with Supabase
+      // Support both email format and username format
+      const email = username.includes('@') ? username : `${username}@admin.stockpit.app`;
+      
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: username.includes('@') ? username : `${username}@admin.stockpit.app`,
+        email: email,
         password: password,
       });
 
-      if (error) throw error;
+      if (error) {
+        // If login fails, try with direct email
+        if (!username.includes('@')) {
+          const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+            email: username, // Try as-is (might be full email)
+            password: password,
+          });
+          
+          if (retryError) throw retryError;
+          
+          // Check admin status
+          if (retryData.user) {
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('is_admin')
+              .eq('id', retryData.user.id)
+              .single();
+
+            if (profileData?.is_admin) {
+              setIsAuthenticated(true);
+              setLoginModalVisible(false);
+              fetchDashboardData();
+              return;
+            } else {
+              await supabase.auth.signOut();
+              Alert.alert('Toegang geweigerd', 'Dit account heeft geen admin rechten.');
+              return;
+            }
+          }
+        }
+        throw error;
+      }
 
       // Check if user is admin
       if (data.user) {
-        const { data: profileData } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('is_admin')
           .eq('id', data.user.id)
           .single();
+
+        if (profileError) {
+          console.error('Profile error:', profileError);
+          // If profile doesn't exist, create it as admin
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              id: data.user.id,
+              is_admin: true,
+              admin_role: 'owner',
+            });
+          
+          if (insertError) {
+            console.error('Insert profile error:', insertError);
+            throw new Error('Kon profiel niet aanmaken.');
+          }
+          
+          setIsAuthenticated(true);
+          setLoginModalVisible(false);
+          fetchDashboardData();
+          return;
+        }
 
         if (profileData?.is_admin) {
           setIsAuthenticated(true);
