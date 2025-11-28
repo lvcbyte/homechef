@@ -1149,6 +1149,7 @@ export default function ScanScreen() {
                           p_instructions: JSON.stringify(instructions),
                           p_tags: recipeGenerated.tags || [recipeCategory],
                           p_category: recipeCategory,
+                          p_author: user.email?.split('@')[0] || 'Gebruiker',
                         });
                         
                         if (error) {
@@ -1169,11 +1170,30 @@ export default function ScanScreen() {
                             category: recipeCategory,
                           };
 
-                          await supabase.from('saved_recipes').insert({
-                            user_id: user.id,
-                            recipe_name: recipeTitle,
-                            recipe_payload: recipePayload,
-                          });
+                          // Save to saved_recipes with upsert to avoid duplicates
+                          const { error: saveError } = await supabase
+                            .from('saved_recipes')
+                            .upsert({
+                              user_id: user.id,
+                              recipe_name: recipeTitle,
+                              recipe_payload: recipePayload,
+                            }, {
+                              onConflict: 'user_id,recipe_name',
+                            });
+
+                          if (saveError) {
+                            console.error('Error saving to saved_recipes:', saveError);
+                            // Don't fail the whole operation if saved_recipes insert fails
+                            // The recipe is already created in the recipes table
+                          }
+
+                          // Also like the recipe automatically
+                          try {
+                            await supabase.rpc('toggle_recipe_like', { p_recipe_id: newRecipeId });
+                          } catch (likeError) {
+                            console.error('Error liking recipe:', likeError);
+                            // Non-critical, continue
+                          }
 
                           Alert.alert('Opgeslagen', 'Je AI-recept staat nu bij Saved.');
                           setRecipeModalVisible(false);

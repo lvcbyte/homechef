@@ -149,7 +149,21 @@ export default function RecipesScreen() {
         .eq('user_id', user.id);
       setInventoryCount(inventoryCountResult ?? 0);
 
-      // Fetch critical data in parallel (recipe of the day, categories, trending, quick)
+      // Fetch critical data in parallel with timeout and error handling
+      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T | null> => {
+        try {
+          return await Promise.race([
+            promise,
+            new Promise<T | null>((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+            ),
+          ]);
+        } catch (error) {
+          console.error('Fetch timeout or error:', error);
+          return null;
+        }
+      };
+
       const [
         rodResult,
         categoriesResult,
@@ -158,42 +172,51 @@ export default function RecipesScreen() {
         likesResult,
       ] = await Promise.all([
         // Recipe of the day
-        supabase.rpc('get_recipe_of_the_day').then(async (result) => {
-          if (result.data) {
-            const { data: rod } = await supabase
-              .from('recipes')
-              .select('*')
-              .eq('id', result.data)
-              .single();
-            return rod;
-          }
-          return null;
-        }),
+        fetchWithTimeout(
+          supabase.rpc('get_recipe_of_the_day').then(async (result) => {
+            if (result.data && !result.error) {
+              const { data: rod } = await supabase
+                .from('recipes')
+                .select('*')
+                .eq('id', result.data)
+                .single();
+              return rod;
+            }
+            return null;
+          })
+        ),
         // Categories
-        supabase.rpc('get_recipe_categories'),
+        fetchWithTimeout(supabase.rpc('get_recipe_categories').then(r => r.data || [])),
         // Trending recipes (non-blocking, can show loading state)
-        profile?.archetype === 'None'
-          ? supabase.from('recipes').select('*').limit(30)
-          : supabase.rpc('get_trending_recipes', {
-              p_limit: 100,
-              p_category: category,
-            }),
+        fetchWithTimeout(
+          profile?.archetype === 'None'
+            ? supabase.from('recipes').select('*').limit(30).then(r => r.data || [])
+            : supabase.rpc('get_trending_recipes', {
+                p_limit: 100,
+                p_category: category,
+              }).then(r => r.data || [])
+        ),
         // Quick recipes (non-blocking) - always show all recipes <= 30 minutes, not filtered by category
-        profile?.archetype === 'None'
-          ? supabase.from('recipes').select('*').lte('total_time_minutes', 30).limit(100)
-          : supabase.rpc('get_quick_recipes', {
-              p_limit: 100,
-              p_user_id: user?.id || null,
-              p_category: null, // Always null - show all quick recipes regardless of active filter
-              p_archetype: profile?.archetype || null,
-              p_cooking_skill: profile?.cooking_skill || null,
-              p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
-            }),
+        fetchWithTimeout(
+          profile?.archetype === 'None'
+            ? supabase.from('recipes').select('*').lte('total_time_minutes', 30).limit(100).then(r => r.data || [])
+            : supabase.rpc('get_quick_recipes', {
+                p_limit: 100,
+                p_user_id: user?.id || null,
+                p_category: null, // Always null - show all quick recipes regardless of active filter
+                p_archetype: profile?.archetype || null,
+                p_cooking_skill: profile?.cooking_skill || null,
+                p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
+              }).then(r => r.data || [])
+        ),
         // User's liked recipes
-        supabase
-          .from('recipe_likes')
-          .select('recipe_id')
-          .eq('user_id', user.id),
+        fetchWithTimeout(
+          supabase
+            .from('recipe_likes')
+            .select('recipe_id')
+            .eq('user_id', user.id)
+            .then(r => r.data || [])
+        ),
       ]);
 
       // Set recipe of the day
@@ -202,18 +225,18 @@ export default function RecipesScreen() {
       }
 
       // Set categories
-      if (categoriesResult.data) {
+      if (categoriesResult && Array.isArray(categoriesResult)) {
         const allCats: Category[] = [
           { category: 'Alles', count: 0 },
-          ...(categoriesResult.data as Category[]),
+          ...(categoriesResult as Category[]),
         ];
         setCategories(allCats);
       }
 
       // Set trending recipes - always set, even if empty
-      if (trendingResult.data && trendingResult.data.length > 0) {
+      if (trendingResult && Array.isArray(trendingResult) && trendingResult.length > 0) {
         if (profile?.archetype === 'None') {
-          const shuffled = [...trendingResult.data].sort(() => Math.random() - 0.5);
+          const shuffled = [...trendingResult].sort(() => Math.random() - 0.5);
           setTrendingRecipes(
             shuffled.slice(0, 30).map((r: any) => ({
               ...r,
@@ -223,7 +246,7 @@ export default function RecipesScreen() {
           );
         } else {
           setTrendingRecipes(
-            trendingResult.data.map((r: any) => ({
+            trendingResult.map((r: any) => ({
               ...r,
               recipe_id: r.id || r.recipe_id,
               likes_count: r.likes_count || 0,
@@ -237,9 +260,9 @@ export default function RecipesScreen() {
       }
 
       // Set quick recipes - always set, even if empty
-      if (quickResult.data && quickResult.data.length > 0) {
+      if (quickResult && Array.isArray(quickResult) && quickResult.length > 0) {
         if (profile?.archetype === 'None') {
-          const shuffled = [...quickResult.data].sort(() => Math.random() - 0.5);
+          const shuffled = [...quickResult].sort(() => Math.random() - 0.5);
           setQuickRecipes(
             shuffled.map((r: any) => ({
               ...r,
@@ -249,7 +272,7 @@ export default function RecipesScreen() {
           );
         } else {
           setQuickRecipes(
-            quickResult.data.map((r: any) => ({
+            quickResult.map((r: any) => ({
               ...r,
               recipe_id: r.id || r.recipe_id,
               likes_count: r.likes_count || 0,
@@ -263,8 +286,8 @@ export default function RecipesScreen() {
       }
 
       // Set liked recipes
-      if (likesResult.data) {
-        setLikedRecipes(new Set(likesResult.data.map((l) => l.recipe_id)));
+      if (likesResult && Array.isArray(likesResult)) {
+        setLikedRecipes(new Set(likesResult.map((l: any) => l.recipe_id)));
       }
 
       // Fetch Chef Radar recipes (non-blocking, can load after page is visible)
