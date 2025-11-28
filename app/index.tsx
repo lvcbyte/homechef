@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -8,6 +9,7 @@ import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { generateRecipesWithAI } from '../services/ai';
 
 interface Recipe {
   recipe_id: string;
@@ -88,11 +90,6 @@ export default function Home() {
           .eq('id', rodId)
           .single();
         if (rod) setRecipeOfTheDay(rod as RecipeDetail);
-      }
-
-      // Fetch or generate daily AI recipe for logged-in users
-      if (user && profile) {
-        await fetchDailyAIRecipe();
       }
 
       // Fetch trending recipes with profile filters
@@ -221,7 +218,142 @@ export default function Home() {
     }
   };
 
-  const handleRecipePress = async (recipe: Recipe) => {
+  const fetchDailyAIRecipe = async () => {
+    if (!user || !profile) return;
+    
+    setLoadingDailyAI(true);
+    try {
+      // Check if we have a recipe for today
+      const today = new Date().toISOString().split('T')[0];
+      const { data: existing } = await supabase
+        .from('daily_ai_recipes')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('recipe_date', today)
+        .single();
+
+      if (existing) {
+        // Use existing recipe
+        const recipe: RecipeDetail = {
+          recipe_id: existing.id,
+          title: existing.title,
+          description: existing.description,
+          author: 'Stockpit AI',
+          image_url: existing.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+          total_time_minutes: existing.total_time_minutes,
+          difficulty: existing.difficulty || 'Gemiddeld',
+          servings: existing.servings,
+          prep_time_minutes: existing.prep_time_minutes || 0,
+          cook_time_minutes: existing.cook_time_minutes,
+          ingredients: existing.ingredients,
+          instructions: existing.instructions,
+          nutrition: existing.nutrition,
+          tags: existing.tags,
+          category: existing.category,
+          likes_count: 0,
+        };
+        setDailyAIRecipe(recipe);
+        setLoadingDailyAI(false);
+        return;
+      }
+
+      // Generate new recipe for today
+      const { data: inventory } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (inventory && inventory.length > 0) {
+        const aiRecipes = await generateRecipesWithAI(
+          inventory.map((item: any) => ({
+            name: item.name,
+            quantity_approx: item.quantity_approx,
+            expires_at: item.expires_at,
+            category: item.category,
+          })),
+          {
+            archetype: profile.archetype || undefined,
+            cooking_skill: profile.cooking_skill || undefined,
+            dietary_restrictions: (profile.dietary_restrictions as string[]) || undefined,
+          }
+        );
+
+        if (aiRecipes && aiRecipes.length > 0) {
+          const recipe = aiRecipes[0]; // Take the first (best) recipe
+          
+          // Save to database
+          const { data: saved } = await supabase
+            .from('daily_ai_recipes')
+            .insert({
+              user_id: user.id,
+              title: recipe.name,
+              description: recipe.description || null,
+              ingredients: recipe.steps || [],
+              instructions: recipe.steps || [],
+              prep_time_minutes: recipe.prepTime || null,
+              cook_time_minutes: recipe.cookTime || null,
+              total_time_minutes: recipe.totalTime || 30,
+              difficulty: recipe.difficulty || 'Gemiddeld',
+              servings: recipe.servings || 4,
+              nutrition: recipe.macros || null,
+              tags: recipe.tags || [],
+              category: null,
+              image_url: null,
+              recipe_date: today,
+            })
+            .select()
+            .single();
+
+          if (saved) {
+            const recipeDetail: RecipeDetail = {
+              recipe_id: saved.id,
+              title: saved.title,
+              description: saved.description,
+              author: 'Stockpit AI',
+              image_url: saved.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+              total_time_minutes: saved.total_time_minutes,
+              difficulty: saved.difficulty || 'Gemiddeld',
+              servings: saved.servings,
+              prep_time_minutes: saved.prep_time_minutes || 0,
+              cook_time_minutes: saved.cook_time_minutes,
+              ingredients: saved.ingredients,
+              instructions: saved.instructions,
+              nutrition: saved.nutrition,
+              tags: saved.tags,
+              category: saved.category,
+              likes_count: 0,
+            };
+            setDailyAIRecipe(recipeDetail);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching/generating daily AI recipe:', error);
+      // Don't block the rest of the page if AI recipe fails
+    } finally {
+      setLoadingDailyAI(false);
+    }
+  };
+
+  // Fetch daily AI recipe separately (non-blocking)
+  useEffect(() => {
+    if (user && profile) {
+      fetchDailyAIRecipe();
+    }
+  }, [user, profile]);
+
+  const handleRecipePress = async (recipe: Recipe | RecipeDetail) => {
+    // Check if it's a daily AI recipe (has recipe_id but might not be in recipes table)
+    if ('recipe_id' in recipe && recipe.author === 'Stockpit AI') {
+      // It's a daily AI recipe, use it directly
+      setSelectedRecipe(recipe as RecipeDetail);
+      setModalVisible(true);
+      return;
+    }
+    
+    // Regular recipe from database
     const { data } = await supabase
       .from('recipes')
       .select('*')
@@ -343,6 +475,68 @@ export default function Home() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
+          {/* Daily AI Recipe - Personalized for user */}
+          {user && profile && (
+            <>
+              {loadingDailyAI ? (
+                <View style={styles.dailyAIHeroCard}>
+                  <View style={styles.dailyAIHeroContent}>
+                    <ActivityIndicator size="small" color="#047857" />
+                    <Text style={styles.dailyAIHeroDescription}>Je persoonlijke recept wordt gegenereerd...</Text>
+                  </View>
+                </View>
+              ) : dailyAIRecipe ? (
+                <TouchableOpacity
+                  style={styles.dailyAIHeroCard}
+                  onPress={() => handleRecipePress(dailyAIRecipe)}
+                  activeOpacity={0.9}
+                >
+                  <Image
+                    source={{
+                      uri: dailyAIRecipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+                    }}
+                    style={styles.dailyAIHeroImage}
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.85)']}
+                    locations={[0, 0.5, 1]}
+                    style={styles.dailyAIHeroOverlay}
+                  >
+                    <View style={styles.dailyAIHeroContent}>
+                      <View style={styles.dailyAIHeroHeader}>
+                        <View style={styles.dailyAIHeroTag}>
+                          <Ionicons name="sparkles" size={16} color="#fff" />
+                          <Text style={styles.dailyAIHeroTagText}>JOUW RECEPT VANDAAG</Text>
+                        </View>
+                        <Text style={styles.dailyAIHeroSubtitle}>Persoonlijk voor jou gemaakt</Text>
+                      </View>
+                      <Text style={styles.dailyAIHeroTitle}>{dailyAIRecipe.title}</Text>
+                      <Text style={styles.dailyAIHeroDescription} numberOfLines={2}>
+                        {dailyAIRecipe.description || 'Een speciaal recept op basis van jouw voorraad en voorkeuren.'}
+                      </Text>
+                      <View style={styles.dailyAIHeroMetaRow}>
+                        <View style={styles.dailyAIHeroMetaPill}>
+                          <Ionicons name="time-outline" size={14} color="#fff" />
+                          <Text style={styles.dailyAIHeroMetaText}>{dailyAIRecipe.total_time_minutes} min</Text>
+                        </View>
+                        <View style={styles.dailyAIHeroMetaPill}>
+                          <Ionicons name="restaurant-outline" size={14} color="#fff" />
+                          <Text style={styles.dailyAIHeroMetaText}>{dailyAIRecipe.difficulty}</Text>
+                        </View>
+                        {dailyAIRecipe.servings && (
+                          <View style={styles.dailyAIHeroMetaPill}>
+                            <Ionicons name="people-outline" size={14} color="#fff" />
+                            <Text style={styles.dailyAIHeroMetaText}>{dailyAIRecipe.servings} pers.</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
+
           {/* Recipe of the Day */}
           {recipeOfTheDay && (
             <TouchableOpacity
