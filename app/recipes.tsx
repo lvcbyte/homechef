@@ -849,41 +849,44 @@ export default function RecipesScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Trending Recepten</Text>
             <Text style={styles.sectionSubtitle}>Meest gelikete recepten deze week</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {trendingRecipes.map((recipe) => (
-                <TouchableOpacity
-                  key={recipe.recipe_id}
-                  style={styles.recipeCard}
-                  onPress={() => handleRecipePress(recipe)}
-                >
-                  <Image
-                    source={{
-                      uri: recipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=800&q=80',
-                    }}
-                    style={styles.recipeImage}
-                  />
+            {trendingRecipes.length === 0 ? (
+              <Text style={styles.emptyText}>Geen trending recepten gevonden.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {trendingRecipes.map((recipe) => (
                   <TouchableOpacity
-                    style={styles.heartButtonCard}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleLike(recipe.recipe_id);
-                    }}
+                    key={recipe.recipe_id}
+                    style={styles.recipeCard}
+                    onPress={() => handleRecipePress(recipe)}
                   >
-                    <Ionicons
-                      name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
-                      size={22}
-                      color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#fff'}
+                    <Image
+                      source={{
+                        uri: recipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=800&q=80',
+                      }}
+                      style={styles.recipeImage}
                     />
+                    <TouchableOpacity
+                      style={styles.heartButtonCard}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleLike(recipe.recipe_id);
+                      }}
+                    >
+                      <Ionicons
+                        name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
+                        size={22}
+                        color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#fff'}
+                      />
+                    </TouchableOpacity>
+                    <View style={styles.recipeBody}>
+                      <Text style={styles.socialProof}>
+                        {recipe.likes_count}x bewaard deze week
+                      </Text>
+                      <Text style={styles.recipeName}>{recipe.title}</Text>
+                    </View>
                   </TouchableOpacity>
-                  <View style={styles.recipeBody}>
-                    <Text style={styles.socialProof}>
-                      {recipe.likes_count}x bewaard deze week
-                    </Text>
-                    <Text style={styles.recipeName}>{recipe.title}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                ))}
+              </ScrollView>
             )}
           </View>
 
