@@ -29,6 +29,15 @@ interface SystemMetric {
   active_sessions: number;
 }
 
+interface User {
+  id: string;
+  email: string;
+  created_at: string;
+  is_admin: boolean;
+  admin_role: string | null;
+  archetype: string | null;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
@@ -41,6 +50,7 @@ export default function AdminPage() {
   
   const [metrics, setMetrics] = useState<SystemMetric | null>(null);
   const [recentLogs, setRecentLogs] = useState<AdminLog[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [chatVisible, setChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [chatInput, setChatInput] = useState('');
@@ -202,28 +212,74 @@ export default function AdminPage() {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch metrics
-      const [usersResult, recipesResult, inventoryResult, logsResult] = await Promise.all([
+      // Fetch all data in parallel
+      const [
+        usersResult,
+        recipesResult,
+        inventoryResult,
+        savedRecipesResult,
+        likesResult,
+        logsResult,
+        usersListResult,
+      ] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact', head: true }),
         supabase.from('recipes').select('id', { count: 'exact', head: true }),
         supabase.from('inventory').select('id', { count: 'exact', head: true }),
+        supabase.from('saved_recipes').select('id', { count: 'exact', head: true }),
+        supabase.from('recipe_likes').select('id', { count: 'exact', head: true }),
         supabase
           .from('admin_logs')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(20),
+        // Fetch all users with their profiles
+        supabase
+          .from('profiles')
+          .select(`
+            id,
+            is_admin,
+            admin_role,
+            archetype,
+            created_at,
+            auth_users:auth.users!inner(email)
+          `)
+          .order('created_at', { ascending: false }),
       ]);
 
       setMetrics({
         total_users: usersResult.count || 0,
         total_recipes: recipesResult.count || 0,
         total_inventory_items: inventoryResult.count || 0,
-        total_api_calls: 0, // TODO: Implement API call tracking
-        active_sessions: 0, // TODO: Implement session tracking
+        total_api_calls: savedRecipesResult.count || 0, // Use saved recipes as proxy
+        active_sessions: likesResult.count || 0, // Use likes as proxy for activity
       });
 
       if (logsResult.data) {
         setRecentLogs(logsResult.data as AdminLog[]);
+      }
+
+      // Process users list
+      if (usersListResult.data) {
+        // Fetch emails separately since join might not work
+        const userIds = usersListResult.data.map((u: any) => u.id);
+        const { data: authUsers } = await supabase
+          .from('auth.users')
+          .select('id, email')
+          .in('id', userIds);
+
+        const usersWithEmail = usersListResult.data.map((profile: any) => {
+          const authUser = authUsers?.find((au: any) => au.id === profile.id);
+          return {
+            id: profile.id,
+            email: authUser?.email || 'N/A',
+            created_at: profile.created_at,
+            is_admin: profile.is_admin || false,
+            admin_role: profile.admin_role,
+            archetype: profile.archetype,
+          };
+        });
+
+        setUsers(usersWithEmail as User[]);
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
