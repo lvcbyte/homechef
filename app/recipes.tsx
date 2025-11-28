@@ -227,6 +227,13 @@ export default function RecipesScreen() {
       
       setLoadingProgress(60);
 
+      // Set liked recipes
+      if (likesResult && Array.isArray(likesResult)) {
+        setLikedRecipes(new Set(likesResult.map((l: any) => l.recipe_id)));
+      }
+      
+      setLoadingProgress(80);
+
       // Lazy load trending and quick recipes after initial render
       // This speeds up initial page load
       setTimeout(() => {
@@ -238,11 +245,8 @@ export default function RecipesScreen() {
         setLoadingQuick(true);
         fetchQuickRecipes().finally(() => setLoadingQuick(false));
       }, 200);
-
-      // Set liked recipes
-      if (likesResult && Array.isArray(likesResult)) {
-        setLikedRecipes(new Set(likesResult.map((l: any) => l.recipe_id)));
-      }
+      
+      setLoadingProgress(95);
 
       // Fetch Chef Radar recipes (non-blocking, can load after page is visible)
       setChefRadarLoading(true);
