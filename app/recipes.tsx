@@ -352,10 +352,11 @@ export default function RecipesScreen() {
     }
   };
 
-  const fetchCategoryRecipes = useCallback(async (categoryName: string) => {
+  // Define fetchCategoryRecipes as a regular function (not useCallback) to avoid scope issues
+  const fetchCategoryRecipes = async (categoryName: string) => {
     if (!user) return;
     
-    // Check if already loading using functional update to avoid dependency
+    // Check if already loading using functional update
     setLoadingCategories((prev) => {
       if (prev[categoryName]) return prev; // Already loading
       return { ...prev, [categoryName]: true };
@@ -411,7 +412,7 @@ export default function RecipesScreen() {
     } finally {
       setLoadingCategories((prev) => ({ ...prev, [categoryName]: false }));
     }
-  }, [user, profile?.archetype]);
+  };
 
   const generateAIChefRadarRecipes = async () => {
     if (!user || !profile) return;
