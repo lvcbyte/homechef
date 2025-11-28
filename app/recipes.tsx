@@ -959,7 +959,7 @@ export default function RecipesScreen() {
                 Geen voorraad gevonden. Upload een shelf shot in Stockpit Mode om Chef Radar te activeren.
               </Text>
             ) : chefRadarLoading ? (
-              <StockpitLoader variant="inline" message={chefRadarLoadingMessage} />
+              <StockpitLoader variant="chef-radar" />
             ) : chefRadarRecipes.length === 0 ? (
               <Text style={styles.emptyText}>
                 Geen directe match gevonden. Probeer de AI-toggle of voeg producten toe aan je voorraad.
