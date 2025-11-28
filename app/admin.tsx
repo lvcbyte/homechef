@@ -90,9 +90,19 @@ export default function AdminPage() {
 
     setLoggingIn(true);
     try {
-      // Try to sign in with Supabase
-      // Support both email format and username format
-      const email = username.includes('@') ? username : `${username}@admin.stockpit.app`;
+      // Support multiple login formats
+      let email = username;
+      
+      // If username doesn't contain @, try different formats
+      if (!username.includes('@')) {
+        // Try admin@stockpit.app first (for ADMIN username)
+        if (username.toUpperCase() === 'ADMIN') {
+          email = 'admin@stockpit.app';
+        } else {
+          // Try username@admin.stockpit.app as fallback
+          email = `${username}@admin.stockpit.app`;
+        }
+      }
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email,
@@ -147,7 +157,7 @@ export default function AdminPage() {
             .from('profiles')
             .insert({
               id: data.user.id,
-              archetype: 'None',
+              archetype: 'Minimalist', // Valid archetype value
               dietary_restrictions: [],
               cooking_skill: 'Advanced',
               is_admin: true,
