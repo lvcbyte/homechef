@@ -217,7 +217,6 @@ Geef concrete SQL queries of acties die uitgevoerd moeten worden. Antwoord in he
                     const { data, error } = await supabase.rpc('admin_create_recipe', {
                       p_title: titleMatch[1].trim(),
                       p_description: response.substring(0, 500),
-                      p_author: 'Admin AI',
                       p_image_url: null,
                       p_prep_time_minutes: 15,
                       p_cook_time_minutes: 30,
@@ -228,6 +227,7 @@ Geef concrete SQL queries of acties die uitgevoerd moeten worden. Antwoord in he
                       p_instructions: [],
                       p_tags: [],
                       p_category: null,
+                      p_author: 'Admin AI',
                     });
                     if (error) throw error;
                     Alert.alert('Succes', 'Recept toegevoegd!');

@@ -51,7 +51,6 @@ $$;
 create or replace function admin_create_recipe(
     p_title text,
     p_description text,
-    p_author text default 'Admin',
     p_image_url text,
     p_prep_time_minutes integer,
     p_cook_time_minutes integer,
@@ -61,7 +60,8 @@ create or replace function admin_create_recipe(
     p_ingredients jsonb,
     p_instructions jsonb,
     p_tags text[],
-    p_category text
+    p_category text,
+    p_author text default 'Admin'
 )
 returns uuid
 language plpgsql
@@ -208,7 +208,7 @@ begin
 end;
 $$;
 
-grant execute on function admin_create_recipe(text, text, text, text, integer, integer, integer, text, integer, jsonb, jsonb, text[], text) to authenticated;
+grant execute on function admin_create_recipe(text, text, text, integer, integer, integer, text, integer, jsonb, jsonb, text[], text, text) to authenticated;
 grant execute on function admin_update_recipe(uuid, text, text, text, integer, integer, integer, text, integer, jsonb, jsonb, text[], text) to authenticated;
 grant execute on function admin_delete_recipe(uuid) to authenticated;
 grant execute on function get_admin_stats() to authenticated;
