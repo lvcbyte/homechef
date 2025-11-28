@@ -59,6 +59,9 @@ export default function RecipesScreen() {
   const [loading, setLoading] = useState(true);
   const [aiGeneratedRecipes, setAiGeneratedRecipes] = useState<Recipe[]>([]);
   const [showAIGenerated, setShowAIGenerated] = useState(false);
+  const [loadingTrending, setLoadingTrending] = useState(false);
+  const [loadingQuick, setLoadingQuick] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (user) {
@@ -143,8 +146,8 @@ export default function RecipesScreen() {
         setCategories(allCats);
       }
 
-      // Set trending recipes
-      if (trendingResult.data) {
+      // Set trending recipes - always set, even if empty
+      if (trendingResult.data && trendingResult.data.length > 0) {
         if (profile?.archetype === 'None') {
           const shuffled = [...trendingResult.data].sort(() => Math.random() - 0.5);
           setTrendingRecipes(
@@ -158,14 +161,19 @@ export default function RecipesScreen() {
           setTrendingRecipes(
             trendingResult.data.map((r: any) => ({
               ...r,
+              recipe_id: r.id || r.recipe_id,
               likes_count: r.likes_count || 0,
             })) as Recipe[]
           );
         }
+      } else {
+        // If no data, try to fetch trending recipes separately (lazy load)
+        setLoadingTrending(true);
+        fetchTrendingRecipes().finally(() => setLoadingTrending(false));
       }
 
-      // Set quick recipes
-      if (quickResult.data) {
+      // Set quick recipes - always set, even if empty
+      if (quickResult.data && quickResult.data.length > 0) {
         if (profile?.archetype === 'None') {
           const shuffled = [...quickResult.data].sort(() => Math.random() - 0.5);
           setQuickRecipes(
@@ -176,8 +184,18 @@ export default function RecipesScreen() {
             })) as Recipe[]
           );
         } else {
-          setQuickRecipes(quickResult.data as Recipe[]);
+          setQuickRecipes(
+            quickResult.data.map((r: any) => ({
+              ...r,
+              recipe_id: r.id || r.recipe_id,
+              likes_count: r.likes_count || 0,
+            })) as Recipe[]
+          );
         }
+      } else {
+        // If no data, try to fetch quick recipes separately (lazy load)
+        setLoadingQuick(true);
+        fetchQuickRecipes().finally(() => setLoadingQuick(false));
       }
 
       // Set liked recipes
@@ -240,71 +258,7 @@ export default function RecipesScreen() {
         }
       }
 
-      // Fetch category recipes (lazy load, only first 3 categories to speed up initial load)
-      const allCats = categories.length > 0 ? categories : [{ category: 'Alles', count: 0 }];
-      const topCategories = allCats.length > 1 ? allCats.slice(1, 4) : []; // Only 3 categories initially
-      const categoryRecipesMap: Record<string, Recipe[]> = {};
-      
-      // Fetch recipes for categories in parallel (but only 3 to start)
-      const categoryPromises = topCategories.map(async (cat) => {
-        if (cat.category === 'Alles') return null;
-        
-        try {
-          if (profile?.archetype === 'None') {
-            const { data: catRecipes } = await supabase
-              .from('recipes')
-              .select('*')
-              .limit(30); // Reduced from 100
-            
-            if (catRecipes && catRecipes.length > 0) {
-              const filtered = catRecipes.filter((r: any) => 
-                r.category === cat.category || 
-                (r.tags && Array.isArray(r.tags) && r.tags.includes(cat.category))
-              );
-              const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-              return {
-                category: cat.category,
-                recipes: shuffled.slice(0, 30).map((r: any) => ({
-                  ...r,
-                  recipe_id: r.id,
-                  likes_count: 0,
-                }))
-              };
-            }
-          } else {
-            const { data: catRecipes, error } = await supabase.rpc('get_recipes_by_category', {
-              p_category: cat.category,
-              p_limit: 30, // Reduced from 100
-              p_user_id: user?.id || null,
-              p_archetype: profile?.archetype || null,
-              p_cooking_skill: profile?.cooking_skill || null,
-              p_dietary_restrictions: (profile?.dietary_restrictions as string[]) || null,
-            });
-            
-            if (error) {
-              console.error(`Error fetching recipes for category ${cat.category}:`, error);
-              return null;
-            } else if (catRecipes && catRecipes.length > 0) {
-              return {
-                category: cat.category,
-                recipes: catRecipes as Recipe[]
-              };
-            }
-          }
-        } catch (err) {
-          console.error(`Error processing category ${cat.category}:`, err);
-        }
-        return null;
-      });
-      
-      const categoryResults = await Promise.all(categoryPromises);
-      categoryResults.forEach((result) => {
-        if (result && result.recipes && result.recipes.length > 0) {
-          categoryRecipesMap[result.category] = result.recipes;
-        }
-      });
-      
-      setCategoryRecipes(categoryRecipesMap);
+      // Don't fetch category recipes initially - they will be lazy loaded on scroll
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -775,12 +729,29 @@ export default function RecipesScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            )}
           </View>
 
-          {quickRecipes.length > 0 && (
-          <View style={styles.section}>
+          <View 
+            style={styles.section}
+            onLayout={() => {
+              // Lazy load quick recipes when section comes into view
+              if (quickRecipes.length === 0 && !loadingQuick) {
+                setLoadingQuick(true);
+                fetchQuickRecipes().finally(() => setLoadingQuick(false));
+              }
+            }}
+          >
             <Text style={styles.sectionTitle}>Klaar in 30 minuten</Text>
             <Text style={styles.sectionSubtitle}>Snelle recepten voor drukke dagen</Text>
+            {loadingQuick ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color="#047857" />
+                <Text style={styles.loadingText}>Recepten laden...</Text>
+              </View>
+            ) : quickRecipes.length === 0 ? (
+              <Text style={styles.emptyText}>Geen snelle recepten gevonden.</Text>
+            ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {quickRecipes.map((recipe) => (
                 <TouchableOpacity
@@ -816,20 +787,35 @@ export default function RecipesScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            )}
           </View>
-          )}
 
-          {/* Category Rows - Infinite scrollable rows like Netflix, exact same layout as Trending */}
+          {/* Category Rows - Lazy loaded on scroll, Netflix-style */}
           {categories.slice(1, 8).map((cat) => {
             const recipes = categoryRecipes[cat.category] || [];
-            if (recipes.length === 0) return null;
+            const isLoading = loadingCategories[cat.category];
             
             return (
-              <View key={cat.category} style={styles.section}>
+              <View 
+                key={cat.category} 
+                style={styles.section}
+                onLayout={() => {
+                  // Lazy load category recipes when section comes into view
+                  if (recipes.length === 0 && !isLoading) {
+                    fetchCategoryRecipes(cat.category);
+                  }
+                }}
+              >
                 <Text style={styles.sectionTitle}>{cat.category}</Text>
                 <Text style={styles.sectionSubtitle}>
                   {cat.count > 0 ? `${cat.count} recepten beschikbaar` : 'Ontdek deze categorie'}
                 </Text>
+                {isLoading ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator size="small" color="#047857" />
+                    <Text style={styles.loadingText}>Recepten laden...</Text>
+                  </View>
+                ) : recipes.length === 0 ? null : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {recipes.map((recipe) => (
                     <TouchableOpacity
@@ -865,6 +851,7 @@ export default function RecipesScreen() {
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+                )}
               </View>
             );
           })}
