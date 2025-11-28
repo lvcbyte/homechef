@@ -85,6 +85,12 @@ begin
     -- Set match threshold based on loose matching
     v_match_threshold := case when p_loose_matching then 0.05 else 0.1 end;
 
+    -- Check if user has inventory
+    if not exists (select 1 from public.inventory where user_id = p_user_id and (expires_at is null or expires_at > now())) then
+        -- No inventory, return empty result
+        return;
+    end if;
+
     return query
     with user_inventory as (
         select 
@@ -178,7 +184,6 @@ begin
                 )
             end as base_match_score
         from public.recipes r
-        cross join user_inventory ui
         where (p_category is null or r.category = p_category or p_category = any(r.tags))
           and (p_max_time_minutes is null or r.total_time_minutes <= p_max_time_minutes)
           and (

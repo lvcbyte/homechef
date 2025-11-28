@@ -119,7 +119,7 @@ export default function RecipesScreen() {
           setChefRadarCarouselData([]);
         }
       } else {
-        const { data: matched } = await supabase.rpc('match_recipes_with_inventory', {
+        const { data: matched, error: matchError } = await supabase.rpc('match_recipes_with_inventory', {
           p_user_id: user.id,
           p_category: category,
           p_limit: 20, // Get more results to filter from
@@ -129,7 +129,11 @@ export default function RecipesScreen() {
           p_loose_matching: true, // Enable loose matching for Chef Radar
         });
         
-        if (matched && matched.length > 0) {
+        if (matchError) {
+          console.error('Error matching recipes with inventory:', matchError);
+          // On error, try AI generation
+          await generateAIChefRadarRecipes();
+        } else if (matched && matched.length > 0) {
           // Filter: show recipes with at least 1 matched ingredient
           const goodMatches = (matched as Recipe[]).filter((r) => {
             const matchedCount = r.matched_ingredients_count || 0;
@@ -366,6 +370,129 @@ export default function RecipesScreen() {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateAIChefRadarRecipes = async () => {
+    if (!user || !profile) return;
+
+    try {
+      // Get user inventory
+      const { data: inventory } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (inventory && inventory.length > 0) {
+        // Generate AI recipes based on inventory
+        const aiRecipes = await generateRecipesWithAI(
+          inventory.map((item: any) => ({
+            name: item.name,
+            quantity_approx: item.quantity_approx,
+            expires_at: item.expires_at,
+            category: item.category,
+          })),
+          {
+            archetype: profile.archetype || undefined,
+            cooking_skill: profile.cooking_skill || undefined,
+            dietary_restrictions: (profile.dietary_restrictions as string[]) || undefined,
+          },
+          'inspirerend'
+        );
+
+        if (aiRecipes && aiRecipes.length > 0) {
+          // Convert AI recipes to Recipe format
+          const convertedRecipes: Recipe[] = aiRecipes.slice(0, 3).map((recipe, index) => ({
+            recipe_id: `ai-${Date.now()}-${index}`,
+            title: recipe.name,
+            description: recipe.description || null,
+            author: 'Stockpit AI',
+            image_url: `https://source.unsplash.com/featured/?${recipe.name.replace(/\s/g, ',')},food,recipe&sig=${Math.random()}`,
+            total_time_minutes: recipe.totalTime || 30,
+            difficulty: recipe.difficulty || 'Gemiddeld',
+            servings: recipe.servings || 4,
+            match_score: 100, // AI recipes are 100% match since they're generated from inventory
+            matched_ingredients_count: inventory.length,
+            total_ingredients_count: recipe.ingredients?.length || 0,
+            matched_ingredients: inventory.map((item: any) => item.name),
+            likes_count: 0,
+            ingredients: recipe.ingredients || [],
+            instructions: recipe.steps || [],
+            nutrition: recipe.macros || null,
+            tags: recipe.tags || [],
+            category: recipe.tags?.[0] || null,
+          }));
+
+          setChefRadarRecipes(convertedRecipes);
+          setChefRadarCarouselData([]);
+        } else {
+          // Fallback to general recipes if AI generation fails
+          const { data: fallback } = await supabase
+            .from('recipes')
+            .select('*')
+            .limit(3)
+            .order('created_at', { ascending: false });
+          
+          if (fallback) {
+            const fallbackRecipes = fallback.map((r: any) => ({
+              ...r,
+              recipe_id: r.id,
+              match_score: 0,
+              matched_ingredients_count: 0,
+              total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+              matched_ingredients: [],
+              likes_count: 0,
+            }));
+            setChefRadarRecipes(fallbackRecipes as Recipe[]);
+            setChefRadarCarouselData([]);
+          }
+        }
+      } else {
+        // No inventory, show general recipes
+        const { data: fallback } = await supabase
+          .from('recipes')
+          .select('*')
+          .limit(3)
+          .order('created_at', { ascending: false });
+        
+        if (fallback) {
+          const fallbackRecipes = fallback.map((r: any) => ({
+            ...r,
+            recipe_id: r.id,
+            match_score: 0,
+            matched_ingredients_count: 0,
+            total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+            matched_ingredients: [],
+            likes_count: 0,
+          }));
+          setChefRadarRecipes(fallbackRecipes as Recipe[]);
+          setChefRadarCarouselData([]);
+        }
+      }
+    } catch (error) {
+      console.error('Error generating AI Chef Radar recipes:', error);
+      // Fallback to general recipes on error
+      const { data: fallback } = await supabase
+        .from('recipes')
+        .select('*')
+        .limit(3)
+        .order('created_at', { ascending: false });
+      
+      if (fallback) {
+        const fallbackRecipes = fallback.map((r: any) => ({
+          ...r,
+          recipe_id: r.id,
+          match_score: 0,
+          matched_ingredients_count: 0,
+          total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+          matched_ingredients: [],
+          likes_count: 0,
+        }));
+        setChefRadarRecipes(fallbackRecipes as Recipe[]);
+        setChefRadarCarouselData([]);
+      }
     }
   };
 
