@@ -143,19 +143,20 @@ export default function RecipesScreen() {
 
     setLoading(true);
     setLoadingProgress(0);
+    
+    // Force hide loading screen after max 3 seconds
+    const maxLoadingTimeout = setTimeout(() => {
+      setLoading(false);
+      setLoadingProgress(0);
+    }, 3000);
+
     try {
       const category = activeFilter === 'Alles' ? null : activeFilter;
 
       setLoadingProgress(10);
-      const { count: inventoryCountResult } = await supabase
-        .from('inventory')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-      setInventoryCount(inventoryCountResult ?? 0);
-      setLoadingProgress(20);
-
-      // Fetch critical data in parallel with timeout and error handling
-      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T | null> => {
+      
+      // Fetch critical data in parallel with shorter timeout (2 seconds max per query)
+      const fetchWithTimeout = async <T,>(promise: Promise<T>, timeoutMs: number = 2000): Promise<T | null> => {
         try {
           return await Promise.race([
             promise,
@@ -169,37 +170,14 @@ export default function RecipesScreen() {
         }
       };
 
-      // Reduce initial data load - only fetch essentials first
-      // Other data will be lazy loaded
-
+      // Only fetch absolute essentials for initial render
       const [
-        rodResult,
         categoriesResult,
-        trendingResult,
-        quickResult,
         likesResult,
       ] = await Promise.all([
-        // Recipe of the day
-        fetchWithTimeout(
-          supabase.rpc('get_recipe_of_the_day').then(async (result) => {
-            if (result.data && !result.error) {
-              const { data: rod } = await supabase
-                .from('recipes')
-                .select('*')
-                .eq('id', result.data)
-                .single();
-              return rod;
-            }
-            return null;
-          })
-        ),
-        // Categories
+        // Categories - essential for page structure
         fetchWithTimeout(supabase.rpc('get_recipe_categories').then(r => r.data || [])),
-        // Trending recipes - lazy load after initial render
-        Promise.resolve([]),
-        // Quick recipes - lazy load after initial render
-        Promise.resolve([]),
-        // User's liked recipes
+        // User's liked recipes - essential for UI state
         fetchWithTimeout(
           supabase
             .from('recipe_likes')
@@ -209,14 +187,9 @@ export default function RecipesScreen() {
         ),
       ]);
 
-      setLoadingProgress(40);
+      setLoadingProgress(50);
       
-      // Set recipe of the day
-      if (rodResult) {
-        setRecipeOfTheDay(rodResult as RecipeDetail);
-      }
-
-      // Set categories
+      // Set categories (essential for page to render)
       if (categoriesResult && Array.isArray(categoriesResult)) {
         const allCats: Category[] = [
           { category: 'Alles', count: 0 },
@@ -224,8 +197,6 @@ export default function RecipesScreen() {
         ];
         setCategories(allCats);
       }
-      
-      setLoadingProgress(60);
 
       // Set liked recipes
       if (likesResult && Array.isArray(likesResult)) {
@@ -234,8 +205,40 @@ export default function RecipesScreen() {
       
       setLoadingProgress(80);
 
-      // Lazy load trending and quick recipes after initial render
-      // This speeds up initial page load
+      // Get inventory count (non-blocking, can be 0 initially)
+      supabase
+        .from('inventory')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .then(({ count }) => {
+          setInventoryCount(count ?? 0);
+        });
+
+      // Hide loading screen - page is ready to show
+      clearTimeout(maxLoadingTimeout);
+      setLoadingProgress(100);
+      setTimeout(() => {
+        setLoading(false);
+        setLoadingProgress(0);
+      }, 200);
+
+      // Load everything else in background (non-blocking)
+      // Recipe of the day
+      fetchWithTimeout(
+        supabase.rpc('get_recipe_of_the_day').then(async (result) => {
+          if (result.data && !result.error) {
+            const { data: rod } = await supabase
+              .from('recipes')
+              .select('*')
+              .eq('id', result.data)
+              .single();
+            if (rod) setRecipeOfTheDay(rod as RecipeDetail);
+          }
+          return null;
+        })
+      ).catch(() => {});
+
+      // Lazy load trending and quick recipes immediately after page shows
       setTimeout(() => {
         setLoadingTrending(true);
         fetchTrendingRecipes().finally(() => setLoadingTrending(false));
@@ -245,82 +248,75 @@ export default function RecipesScreen() {
         setLoadingQuick(true);
         fetchQuickRecipes().finally(() => setLoadingQuick(false));
       }, 200);
-      
-      setLoadingProgress(95);
 
-      // Fetch Chef Radar recipes (non-blocking, can load after page is visible)
+      // Fetch Chef Radar recipes in background (non-blocking)
       setChefRadarLoading(true);
-      // If archetype is "None", get random recipes
       if (profile?.archetype === 'None') {
-        const { data: allRecipes } = await supabase
+        supabase
           .from('recipes')
           .select('*')
-          .limit(20);
-        
-        if (allRecipes) {
-          const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-          const randomRecipes = shuffled.slice(0, 3).map((r: any) => ({
-            ...r,
-            recipe_id: r.id,
-            match_score: 0,
-            matched_ingredients_count: 0,
-            total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
-            likes_count: 0,
-            image_url: r.image_url || buildRecipeImage(r.title, r.id),
-          }));
-          setChefRadarRecipes(randomRecipes as Recipe[]);
-          setChefRadarCarouselData([]);
-        }
-        setChefRadarLoading(false);
+          .limit(20)
+          .then(({ data: allRecipes }) => {
+            if (allRecipes) {
+              const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
+              const randomRecipes = shuffled.slice(0, 3).map((r: any) => ({
+                ...r,
+                recipe_id: r.id,
+                match_score: 0,
+                matched_ingredients_count: 0,
+                total_ingredients_count: r.ingredients ? JSON.parse(JSON.stringify(r.ingredients)).length : 0,
+                likes_count: 0,
+                image_url: r.image_url || buildRecipeImage(r.title, r.id),
+              }));
+              setChefRadarRecipes(randomRecipes as Recipe[]);
+              setChefRadarCarouselData([]);
+            }
+            setChefRadarLoading(false);
+          })
+          .catch(() => setChefRadarLoading(false));
       } else {
-        const { data: matched, error: matchError } = await supabase.rpc('match_recipes_with_inventory', {
+        supabase.rpc('match_recipes_with_inventory', {
           p_user_id: user.id,
           p_category: category,
-          p_limit: 3, // Only get 3 directly, no need for 20
+          p_limit: 3,
           p_archetype: profile?.archetype || null,
           p_cooking_skill: profile?.cooking_skill || null,
           p_dietary_restrictions: (profile?.dietary_restrictions && Array.isArray(profile.dietary_restrictions) ? profile.dietary_restrictions as string[] : null),
           p_loose_matching: true,
-        });
-        
-        if (matchError) {
-          console.error('Error matching recipes with inventory:', matchError);
-          // On error, try AI generation (non-blocking)
-          await generateAIChefRadarRecipes();
-        } else if (matched && matched.length > 0) {
-          const goodMatches = (matched as Recipe[]).filter((r) => {
-            return (r.matched_ingredients_count || 0) >= 1;
-          });
-          
-          if (goodMatches.length > 0) {
-            const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-            const enriched = sorted.slice(0, 3).map((recipe) => ({
-              ...recipe,
-              image_url: recipe.image_url || buildRecipeImage(recipe.title, recipe.recipe_id),
-            }));
-            setChefRadarRecipes(enriched as Recipe[]);
-            setChefRadarCarouselData([]);
-            setChefRadarLoading(false);
+        })
+        .then(({ data: matched, error: matchError }) => {
+          if (matchError) {
+            console.error('Error matching recipes with inventory:', matchError);
+            generateAIChefRadarRecipes().catch(() => {});
+          } else if (matched && matched.length > 0) {
+            const goodMatches = (matched as Recipe[]).filter((r) => {
+              return (r.matched_ingredients_count || 0) >= 1;
+            });
+            
+            if (goodMatches.length > 0) {
+              const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+              const enriched = sorted.slice(0, 3).map((recipe) => ({
+                ...recipe,
+                image_url: recipe.image_url || buildRecipeImage(recipe.title, recipe.recipe_id),
+              }));
+              setChefRadarRecipes(enriched as Recipe[]);
+              setChefRadarCarouselData([]);
+              setChefRadarLoading(false);
+            } else {
+              generateAIChefRadarRecipes().catch(() => {});
+            }
           } else {
-            // No good matches, generate AI recipes (non-blocking)
-            await generateAIChefRadarRecipes();
+            generateAIChefRadarRecipes().catch(() => {});
           }
-        } else {
-          // No matches, generate AI recipes (non-blocking)
-          await generateAIChefRadarRecipes();
-        }
+        })
+        .catch(() => {
+          setChefRadarLoading(false);
+        });
       }
 
-      // Don't fetch category recipes initially - they will be lazy loaded on scroll
-      setLoadingProgress(100);
-      
-      // Small delay to show 100% before hiding loader
-      setTimeout(() => {
-        setLoading(false);
-        setLoadingProgress(0);
-      }, 300);
     } catch (error) {
       console.error('Error fetching data:', error);
+      clearTimeout(maxLoadingTimeout);
       setLoading(false);
       setLoadingProgress(0);
     }
