@@ -319,6 +319,111 @@ Antwoord in JSON formaat:
   }
 }
 
+// Generate a single recipe from description with AI assistance
+export async function generateRecipeFromDescription(
+  description: string,
+  category?: string
+): Promise<GeneratedRecipe | null> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return null;
+  }
+
+  const prompt = `Je bent een professionele chef en receptengenerator voor Stockpit.
+
+De gebruiker beschrijft een recept: "${description}"
+${category ? `Categorie: ${category}` : ''}
+
+Genereer een compleet recept in JSON formaat:
+{
+  "title": "Recept naam (Nederlands)",
+  "description": "Korte beschrijving (1-2 zinnen)",
+  "ingredients": [
+    {"name": "ingrediënt 1", "quantity": "hoeveelheid", "unit": "eenheid"},
+    {"name": "ingrediënt 2", "quantity": "hoeveelheid", "unit": "eenheid"}
+  ],
+  "instructions": [
+    {"step": 1, "instruction": "Stap 1 beschrijving"},
+    {"step": 2, "instruction": "Stap 2 beschrijving"}
+  ],
+  "prep_time_minutes": 15,
+  "cook_time_minutes": 20,
+  "total_time_minutes": 35,
+  "difficulty": "Makkelijk",
+  "servings": 4,
+  "nutrition": {
+    "protein": 25,
+    "carbs": 40,
+    "fat": 15
+  },
+  "tags": ["tag1", "tag2"]
+}
+
+Antwoord ALLEEN met geldig JSON, geen andere tekst.`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'Stockpit',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een professionele chef. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 1500,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for recipe generation:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const recipeData = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!recipeData) return null;
+
+    const recipeNameForImage = recipeData.title?.replace(/\s+/g, ',').toLowerCase() || 'recipe';
+    const imageUrl = `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80`;
+
+    return {
+      name: recipeData.title || 'Nieuw Recept',
+      description: recipeData.description || null,
+      image_url: imageUrl,
+      ingredients: recipeData.ingredients || [],
+      steps: recipeData.instructions?.map((inst: any) => inst.instruction || inst) || [],
+      prepTime: recipeData.prep_time_minutes || 0,
+      cookTime: recipeData.cook_time_minutes || 0,
+      totalTime: recipeData.total_time_minutes || 30,
+      difficulty: recipeData.difficulty || 'Gemiddeld',
+      servings: recipeData.servings || 4,
+      macros: recipeData.nutrition || { protein: 0, carbs: 0, fat: 0 },
+      tags: recipeData.tags || [],
+      missingIngredients: [],
+      relevanceScore: 100,
+    } as GeneratedRecipe;
+  } catch (error) {
+    console.error('Error generating recipe from description:', error);
+    return null;
+  }
+}
+
 // Chat with AI assistant about inventory and recipes
 export async function chatWithAI(
   message: string,

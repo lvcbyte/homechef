@@ -24,6 +24,7 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
+import { generateRecipeFromDescription } from '../services/ai';
 
 interface LocalPhoto {
   id: string;
@@ -75,6 +76,12 @@ const getStoreLabel = (source?: string | null) => {
 };
 
 const WEEKDAY_LABELS = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+
+const RECIPE_CATEGORIES = [
+  'Comfort Food', 'Vlees', 'Vis', 'Feest', 'High Protein', 
+  'Italiaans', 'Aziatisch', 'Plant-based', 'Budget', 'Quick',
+  'Vegan', 'Vegetarian', 'Gezond', 'Dessert', 'Soep', 'Salade'
+];
 
 const getMonthCalendar = (offset: number) => {
   const today = new Date();
@@ -170,6 +177,14 @@ export default function ScanScreen() {
   const [selectedMatch, setSelectedMatch] = useState<CatalogMatch | null>(null);
   const [productLookupLoading, setProductLookupLoading] = useState(false);
   const [categoryLocked, setCategoryLocked] = useState(false);
+  // Recipe creation states
+  const [recipeModalVisible, setRecipeModalVisible] = useState(false);
+  const [recipeTitle, setRecipeTitle] = useState('');
+  const [recipeDescription, setRecipeDescription] = useState('');
+  const [recipeCategory, setRecipeCategory] = useState('Comfort Food');
+  const [recipeDescriptionText, setRecipeDescriptionText] = useState('');
+  const [recipeGenerating, setRecipeGenerating] = useState(false);
+  const [recipeGenerated, setRecipeGenerated] = useState<any>(null);
   const visibleMonthCalendar = useMemo(
     () => getMonthCalendar(expiryMonthOffset),
     [expiryMonthOffset]
@@ -588,7 +603,7 @@ export default function ScanScreen() {
               <View style={styles.section}>
                 <TouchableOpacity 
                   style={styles.actionCard} 
-                  onPress={() => router.push('/recipes?create=true')}
+                  onPress={() => setRecipeModalVisible(true)}
                 >
                   <Ionicons name="restaurant-outline" size={24} color="#047857" />
                   <View style={{ flex: 1 }}>
@@ -909,6 +924,195 @@ export default function ScanScreen() {
             <Pressable style={styles.modalSecondary} onPress={() => setManualModalVisible(false)}>
               <Text style={styles.modalSecondaryText}>Annuleren</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Recipe Creation Modal */}
+      <Modal visible={recipeModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Recept toevoegen</Text>
+              
+              {!recipeGenerated ? (
+                <>
+                  <Text style={styles.modalSubtitle}>
+                    Beschrijf je recept of laat AI je helpen
+                  </Text>
+                  
+                  <TextInput
+                    value={recipeDescriptionText}
+                    onChangeText={setRecipeDescriptionText}
+                    placeholder="bijv. Een snelle pasta met kip en groenten, 30 minuten, makkelijk"
+                    placeholderTextColor="#94a3b8"
+                    style={[styles.modalInput, { minHeight: 100, textAlignVertical: 'top' }]}
+                    multiline
+                  />
+                  
+                  <Text style={[styles.modalSubtitle, { marginTop: 16, marginBottom: 8 }]}>
+                    Categorie
+                  </Text>
+                  <View style={styles.recipeCategoryRow}>
+                    {RECIPE_CATEGORIES.map((cat) => (
+                      <TouchableOpacity
+                        key={cat}
+                        style={[
+                          styles.recipeCategoryChip,
+                          recipeCategory === cat && styles.recipeCategoryChipActive,
+                        ]}
+                        onPress={() => setRecipeCategory(cat)}
+                      >
+                        <Text
+                          style={[
+                            styles.recipeCategoryChipText,
+                            recipeCategory === cat && styles.recipeCategoryChipTextActive,
+                          ]}
+                        >
+                          {cat}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  
+                  <TouchableOpacity
+                    style={[styles.modalButton, { marginTop: 24, opacity: recipeGenerating ? 0.6 : 1 }]}
+                    onPress={async () => {
+                      if (!recipeDescriptionText.trim()) {
+                        Alert.alert('Fout', 'Beschrijf je recept eerst');
+                        return;
+                      }
+                      
+                      setRecipeGenerating(true);
+                      try {
+                        const generated = await generateRecipeFromDescription(
+                          recipeDescriptionText,
+                          recipeCategory
+                        );
+                        
+                        if (generated) {
+                          setRecipeGenerated(generated);
+                          setRecipeTitle(generated.name || '');
+                          setRecipeDescription(generated.description || '');
+                        } else {
+                          Alert.alert('Fout', 'Kon recept niet genereren. Probeer het opnieuw.');
+                        }
+                      } catch (error) {
+                        console.error('Error generating recipe:', error);
+                        Alert.alert('Fout', 'Er is een fout opgetreden bij het genereren van het recept.');
+                      } finally {
+                        setRecipeGenerating(false);
+                      }
+                    }}
+                    disabled={recipeGenerating}
+                  >
+                    {recipeGenerating ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.modalButtonText}>Genereer met AI</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    value={recipeTitle}
+                    onChangeText={setRecipeTitle}
+                    placeholder="Recept naam"
+                    placeholderTextColor="#94a3b8"
+                    style={styles.modalInput}
+                  />
+                  
+                  <TextInput
+                    value={recipeDescription}
+                    onChangeText={setRecipeDescription}
+                    placeholder="Beschrijving"
+                    placeholderTextColor="#94a3b8"
+                    style={[styles.modalInput, { minHeight: 80, textAlignVertical: 'top' }]}
+                    multiline
+                  />
+                  
+                  <TouchableOpacity
+                    style={styles.modalButton}
+                    onPress={async () => {
+                      if (!recipeTitle.trim()) {
+                        Alert.alert('Fout', 'Vul een recept naam in');
+                        return;
+                      }
+                      
+                      if (!user) {
+                        Alert.alert('Fout', 'Je moet ingelogd zijn om recepten toe te voegen');
+                        return;
+                      }
+                      
+                      try {
+                        const ingredients = recipeGenerated.ingredients || [];
+                        const instructions = recipeGenerated.steps || [];
+                        
+                        const { data, error } = await supabase.rpc('create_recipe', {
+                          p_title: recipeTitle,
+                          p_description: recipeDescription || null,
+                          p_image_url: recipeGenerated.image_url || null,
+                          p_prep_time_minutes: recipeGenerated.prepTime || 0,
+                          p_cook_time_minutes: recipeGenerated.cookTime || 0,
+                          p_total_time_minutes: recipeGenerated.totalTime || 30,
+                          p_difficulty: recipeGenerated.difficulty || 'Gemiddeld',
+                          p_servings: recipeGenerated.servings || 4,
+                          p_ingredients: JSON.stringify(ingredients),
+                          p_instructions: JSON.stringify(instructions.map((inst: string, idx: number) => ({
+                            step: idx + 1,
+                            instruction: inst,
+                          }))),
+                          p_tags: recipeGenerated.tags || [recipeCategory],
+                          p_category: recipeCategory,
+                        });
+                        
+                        if (error) {
+                          console.error('Error creating recipe:', error);
+                          Alert.alert('Fout', `Kon recept niet opslaan: ${error.message}`);
+                        } else {
+                          Alert.alert('Succes', 'Recept is toegevoegd!');
+                          setRecipeModalVisible(false);
+                          setRecipeTitle('');
+                          setRecipeDescription('');
+                          setRecipeDescriptionText('');
+                          setRecipeGenerated(null);
+                          setRecipeCategory('Comfort Food');
+                          router.push('/recipes');
+                        }
+                      } catch (error: any) {
+                        console.error('Error saving recipe:', error);
+                        Alert.alert('Fout', 'Er is een fout opgetreden bij het opslaan van het recept.');
+                      }
+                    }}
+                  >
+                    <Text style={styles.modalButtonText}>Recept opslaan</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.modalButton, { backgroundColor: 'transparent', marginTop: 8 }]}
+                    onPress={() => {
+                      setRecipeGenerated(null);
+                      setRecipeTitle('');
+                      setRecipeDescription('');
+                    }}
+                  >
+                    <Text style={[styles.modalButtonText, { color: '#047857' }]}>Opnieuw genereren</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              
+              <Pressable style={styles.modalSecondary} onPress={() => {
+                setRecipeModalVisible(false);
+                setRecipeTitle('');
+                setRecipeDescription('');
+                setRecipeDescriptionText('');
+                setRecipeGenerated(null);
+                setRecipeCategory('Comfort Food');
+              }}>
+                <Text style={styles.modalSecondaryText}>Annuleren</Text>
+              </Pressable>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1443,6 +1647,37 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  recipeCategoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  recipeCategoryChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  recipeCategoryChipActive: {
+    backgroundColor: '#047857',
+    borderColor: '#047857',
+  },
+  recipeCategoryChipText: {
+    color: '#0f172a',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  recipeCategoryChipTextActive: {
+    color: '#fff',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 12,
+    fontWeight: '500',
   },
 });
 
