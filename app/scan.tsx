@@ -3,6 +3,7 @@ import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-ca
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { navigateToRoute } from '../utils/navigation';
 import {
   ActivityIndicator,
@@ -934,7 +935,10 @@ export default function ScanScreen() {
                 </Pressable>
               </View>
             </>
-          ) : (
+          ) : null}
+          
+          {/* Overlay is shown for both web and native */}
+          {Platform.OS === 'web' || permission?.granted ? (
             <View style={styles.barcodePermissionPrompt}>
               <Ionicons name="camera-outline" size={64} color="#94a3b8" />
               <Text style={styles.permissionTitle}>Camera toegang vereist</Text>
