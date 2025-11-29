@@ -162,6 +162,7 @@ export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps
       style={[styles.container, style]}
       // @ts-ignore - web-only prop
       id="quagga-parent"
+      pointerEvents="box-none"
     />
   );
 }

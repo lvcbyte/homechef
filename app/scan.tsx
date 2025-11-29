@@ -422,33 +422,38 @@ export default function ScanScreen() {
     }
   };
 
-  const handleAddProductToInventory = async () => {
-    if (!user || !scannedProduct) return;
+  const handleAddProductToInventory = async (product?: CatalogMatch) => {
+    const productToAdd = product || scannedProduct;
+    if (!user || !productToAdd) return;
     
     try {
       // Get expiry date from FAVV/HACCP estimation
       const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
-        category_slug: scannedProduct.category || 'pantry',
+        category_slug: productToAdd.category || 'pantry',
       });
       
       const expires = expiryData ? expiryData : null;
       
       const { error: insertError } = await supabase.from('inventory').insert({
         user_id: user.id,
-        name: scannedProduct.product_name,
-        category: scannedProduct.category,
-        quantity_approx: scannedProduct.unit_size || null,
+        name: productToAdd.product_name,
+        category: productToAdd.category || 'pantry',
+        quantity_approx: productToAdd.unit_size || null,
         confidence_score: 0.98,
-        catalog_product_id: scannedProduct.id,
-        catalog_price: scannedProduct.price || null,
-        catalog_image_url: scannedProduct.image_url || null,
+        catalog_product_id: productToAdd.id,
+        catalog_price: productToAdd.price || null,
+        catalog_image_url: productToAdd.image_url || null,
         expires_at: expires,
       });
       
       if (insertError) {
+        console.error('Error adding product:', insertError);
         Alert.alert('Fout', `Kon product niet toevoegen: ${insertError.message}`);
+        // Still show product detail modal so user can try again
+        setScannedProduct(productToAdd);
+        setProductDetailModalVisible(true);
       } else {
-        Alert.alert('Toegevoegd', `${scannedProduct.product_name} is toegevoegd aan je voorraad.`, [
+        Alert.alert('Toegevoegd', `${productToAdd.product_name} is toegevoegd aan je voorraad.`, [
           {
             text: 'OK',
             onPress: () => {
@@ -464,6 +469,9 @@ export default function ScanScreen() {
     } catch (error) {
       console.error('Error adding product to inventory:', error);
       Alert.alert('Fout', 'Er is een fout opgetreden bij het toevoegen van het product.');
+      // Still show product detail modal so user can try again
+      setScannedProduct(productToAdd);
+      setProductDetailModalVisible(true);
     }
   };
 
@@ -901,9 +909,9 @@ export default function ScanScreen() {
             </>
           ) : null}
           
-          {/* Overlay is shown for both web and native */}
+          {/* Overlay is shown for both web and native - pointer-events: none so it doesn't block camera */}
           {Platform.OS === 'web' || permission?.granted ? (
-            <View style={styles.barcodeOverlay}>
+            <View style={styles.barcodeOverlay} pointerEvents="box-none">
               <Animated.View 
                 style={[
                   styles.barcodeFrame,
@@ -917,6 +925,7 @@ export default function ScanScreen() {
                     }),
                   },
                 ]}
+                pointerEvents="none"
               >
                 <View style={styles.barcodeCorner} />
                 <View style={[styles.barcodeCorner, { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 }]} />
@@ -940,6 +949,7 @@ export default function ScanScreen() {
                         ],
                       },
                     ]}
+                    pointerEvents="none"
                   >
                     <View style={styles.scanningLine} />
                   </Animated.View>
@@ -947,13 +957,13 @@ export default function ScanScreen() {
               </Animated.View>
               
               {showScanAnimation ? (
-                <View style={styles.scanningStatus}>
+                <View style={styles.scanningStatus} pointerEvents="none">
                   <ActivityIndicator size="large" color="#047857" />
                   <Text style={styles.scanningText}>Barcode gedetecteerd...</Text>
                   <Text style={styles.scanningSubtext}>Product wordt opgezocht</Text>
                 </View>
               ) : (
-                <Text style={styles.barcodeHint}>Richt de camera op de barcode</Text>
+                <Text style={styles.barcodeHint} pointerEvents="none">Richt de camera op de barcode</Text>
               )}
               
               <Pressable 
@@ -966,6 +976,7 @@ export default function ScanScreen() {
                   pulseAnimation.setValue(1);
                 }}
                 disabled={showScanAnimation}
+                pointerEvents="auto"
               >
                 <View style={[styles.closeButton, showScanAnimation && styles.closeButtonDisabled]}>
                   <Ionicons name="close" size={24} color="#fff" />
