@@ -6,8 +6,28 @@
   "framework": null,
   "rewrites": [
     {
-      "source": "/((?!_expo|assets|favicon.ico|.*\\..*|$).*)",
+      "source": "/((?!_expo|assets|favicon.ico|apple-touch-icon.png|.*\\..*|$).*)",
       "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/apple-touch-icon.png",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/assets/apple-touch-icon.png",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ]
 }
