@@ -44,15 +44,71 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
         
         quaggaRef.current = Quagga;
 
-        // Wait for container to be available
+        // Wait for container to be available and have dimensions
+        let retryCount = 0;
+        const maxRetries = 5;
+        
         const checkContainer = () => {
           const container = document.getElementById(containerId);
           if (!container) {
-            setTimeout(checkContainer, 100);
+            if (retryCount < maxRetries) {
+              retryCount++;
+              setTimeout(checkContainer, 200);
+            } else {
+              onError?.(new Error('Container kon niet worden gevonden'));
+            }
             return;
           }
 
+          // Ensure container has dimensions before initializing Quagga
+          const rect = container.getBoundingClientRect();
+          const hasDimensions = rect.width > 0 && rect.height > 0;
+          
+          if (!hasDimensions) {
+            if (retryCount < maxRetries) {
+              retryCount++;
+              console.log(`Container has no dimensions yet, waiting... (attempt ${retryCount}/${maxRetries})`, rect);
+              setTimeout(checkContainer, 200);
+            } else {
+              // Use window dimensions as fallback
+              const width = window.innerWidth || 640;
+              const height = window.innerHeight || 480;
+              container.style.width = `${width}px`;
+              container.style.height = `${height}px`;
+              console.log('Using window dimensions as fallback:', width, height);
+            }
+          } else {
+            // Use actual dimensions
+            container.style.width = `${rect.width}px`;
+            container.style.height = `${rect.height}px`;
+          }
+
+          // Ensure container is visible and has proper styling
+          container.style.position = 'fixed';
+          container.style.top = '0';
+          container.style.left = '0';
+          container.style.backgroundColor = '#000';
+          container.style.overflow = 'hidden';
+          container.style.display = 'block';
+          container.style.visibility = 'visible';
+
+          // Force a reflow to ensure styles are applied
+          void container.offsetWidth;
+          void container.offsetHeight;
+
+          // Get final dimensions after style application
+          const finalRect = container.getBoundingClientRect();
+          const finalWidth = finalRect.width || window.innerWidth || 640;
+          const finalHeight = finalRect.height || window.innerHeight || 480;
+
+          console.log('Initializing Quagga with container dimensions:', {
+            width: finalWidth,
+            height: finalHeight,
+            containerId,
+          });
+
           try {
+            // Initialize Quagga with explicit dimensions
             Quagga.init(
               {
                 inputStream: {
@@ -60,17 +116,10 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                   type: 'LiveStream',
                   target: container,
                   constraints: {
-                    width: { min: 640, ideal: 1280, max: 1920 },
-                    height: { min: 480, ideal: 720, max: 1080 },
+                    width: { min: 640, ideal: Math.min(finalWidth, 1280), max: 1920 },
+                    height: { min: 480, ideal: Math.min(finalHeight, 720), max: 1080 },
                     facingMode: 'environment', // Use back camera
                     advanced: flashEnabled ? [{ torch: true }] : [],
-                  },
-                  area: {
-                    // Define scanning area (optional)
-                    top: '20%',
-                    right: '10%',
-                    bottom: '20%',
-                    left: '10%',
                   },
                 },
                 locator: {
@@ -93,32 +142,56 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
               (err: any) => {
                 if (err) {
                   console.error('Quagga initialization error:', err);
-                  onError?.(new Error(`Quagga initialization failed: ${err.message || err}`));
+                  // Don't retry if we've already retried multiple times
+                  if (retryCount < maxRetries) {
+                    retryCount++;
+                    setTimeout(() => {
+                      console.log(`Retrying Quagga initialization... (attempt ${retryCount}/${maxRetries})`);
+                      checkContainer();
+                    }, 1000);
+                  } else {
+                    onError?.(new Error(`Quagga initialization failed: ${err.message || err}`));
+                  }
                   return;
                 }
                 console.log('Quagga initialized successfully');
-                Quagga.start();
-                setIsInitialized(true);
                 
-                // Get the video stream for flash control
-                // Wait a bit for video element to be created
+                // Start Quagga after a small delay to ensure everything is ready
                 setTimeout(() => {
-                  const videoElement = container.querySelector('video');
-                  if (videoElement && videoElement.srcObject) {
-                    streamRef.current = videoElement.srcObject as MediaStream;
-                    console.log('Video stream captured for flash control');
-                  } else {
-                    console.warn('Video element not found or no stream available');
+                  try {
+                    Quagga.start();
+                    setIsInitialized(true);
+                    retryCount = 0; // Reset retry count on success
+                    
+                    // Get the video stream for flash control
+                    // Wait a bit for video element to be created
+                    setTimeout(() => {
+                      const videoElement = container.querySelector('video');
+                      if (videoElement && videoElement.srcObject) {
+                        streamRef.current = videoElement.srcObject as MediaStream;
+                        console.log('Video stream captured for flash control');
+                      } else {
+                        console.warn('Video element not found or no stream available');
+                      }
+                    }, 1000);
+                  } catch (startError) {
+                    console.error('Error starting Quagga:', startError);
+                    onError?.(new Error(`Failed to start scanner: ${startError}`));
                   }
-                }, 1000);
+                }, 300);
               }
             );
 
             Quagga.onDetected((result: any) => {
               try {
-                const code = result.codeResult?.code;
-                if (!code) {
-                  console.warn('Quagga detected but no code found:', result);
+                if (!result || !result.codeResult) {
+                  console.warn('Quagga detected but result is invalid:', result);
+                  return;
+                }
+                
+                const code = result.codeResult.code;
+                if (!code || typeof code !== 'string' || code.trim().length === 0) {
+                  console.warn('Quagga detected but no valid code found:', result);
                   return;
                 }
                 
@@ -137,6 +210,15 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                 onDetected(code);
               } catch (error) {
                 console.error('Error processing Quagga detection:', error);
+                onError?.(error instanceof Error ? error : new Error('Error processing barcode detection'));
+              }
+            });
+            
+            // Also handle errors from Quagga
+            Quagga.onProcessed((result: any) => {
+              // This is called for every frame, we can use it to check if Quagga is working
+              if (result && result.codeResult) {
+                // Quagga is processing frames correctly
               }
             });
           } catch (error) {
@@ -238,54 +320,106 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
   useEffect(() => {
     // Create container div when component mounts (web only)
     if (typeof document !== 'undefined') {
-      const parent = document.getElementById('quagga-parent');
-      if (parent && !document.getElementById(containerId)) {
-        const div = document.createElement('div');
-        div.id = containerId;
-        div.style.width = '100vw';
-        div.style.height = '100vh';
-        div.style.position = 'fixed';
-        div.style.top = '0';
-        div.style.left = '0';
-        div.style.backgroundColor = '#000';
-        div.style.overflow = 'hidden';
-        div.style.zIndex = '1';
-        // Ensure video is visible
-        const styleId = `quagga-style-${containerId}`;
-        if (!document.getElementById(styleId)) {
-          const style = document.createElement('style');
-          style.id = styleId;
-          style.textContent = `
-            #${containerId} {
-              width: 100vw !important;
-              height: 100vh !important;
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              overflow: hidden !important;
-              z-index: 1 !important;
-            }
-            #${containerId} video,
-            #${containerId} canvas {
-              width: 100vw !important;
-              height: 100vh !important;
-              object-fit: cover !important;
-              position: absolute !important;
-              top: 0 !important;
-              left: 0 !important;
-              z-index: 1 !important;
-            }
-            #${containerId} canvas {
-              z-index: 2 !important;
-            }
-            #${containerId} > div {
-              width: 100vw !important;
-              height: 100vh !important;
-            }
-          `;
-          document.head.appendChild(style);
+      let createAttempts = 0;
+      const maxCreateAttempts = 10;
+      
+      const createContainer = () => {
+        const parent = document.getElementById('quagga-parent');
+        if (!parent) {
+          if (createAttempts < maxCreateAttempts) {
+            createAttempts++;
+            setTimeout(createContainer, 100);
+            return;
+          }
+          console.error('Quagga parent container not found after', maxCreateAttempts, 'attempts');
+          return;
         }
-        parent.appendChild(div);
+        
+        let container = document.getElementById(containerId);
+        if (!container) {
+          container = document.createElement('div');
+          container.id = containerId;
+          
+          // Use explicit pixel dimensions based on window size
+          const width = window.innerWidth || 640;
+          const height = window.innerHeight || 480;
+          
+          container.style.width = `${width}px`;
+          container.style.height = `${height}px`;
+          container.style.position = 'fixed';
+          container.style.top = '0';
+          container.style.left = '0';
+          container.style.backgroundColor = '#000';
+          container.style.overflow = 'hidden';
+          container.style.zIndex = '1';
+          container.style.display = 'block';
+          container.style.visibility = 'visible';
+          
+          // Ensure video is visible
+          const styleId = `quagga-style-${containerId}`;
+          if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+              #${containerId} {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                overflow: hidden !important;
+                z-index: 1 !important;
+                display: block !important;
+                visibility: visible !important;
+                background-color: #000 !important;
+              }
+              #${containerId} video,
+              #${containerId} canvas {
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: cover !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                z-index: 1 !important;
+                display: block !important;
+              }
+              #${containerId} canvas {
+                z-index: 2 !important;
+              }
+              #${containerId} > div {
+                width: 100% !important;
+                height: 100% !important;
+              }
+            `;
+            document.head.appendChild(style);
+          }
+          parent.appendChild(container);
+          
+          // Force a reflow to ensure dimensions are calculated
+          void container.offsetWidth;
+          void container.offsetHeight;
+          
+          // Update dimensions on window resize
+          const updateDimensions = () => {
+            const newWidth = window.innerWidth || 640;
+            const newHeight = window.innerHeight || 480;
+            container.style.width = `${newWidth}px`;
+            container.style.height = `${newHeight}px`;
+          };
+          window.addEventListener('resize', updateDimensions);
+          
+          console.log('Quagga container created:', containerId, {
+            width: container.offsetWidth,
+            height: container.offsetHeight,
+            rect: container.getBoundingClientRect(),
+          });
+        }
+      };
+      
+      // Wait a bit for React to render the parent, but start immediately
+      if (document.getElementById('quagga-parent')) {
+        createContainer();
+      } else {
+        setTimeout(createContainer, 100);
       }
     }
   }, [containerId]);

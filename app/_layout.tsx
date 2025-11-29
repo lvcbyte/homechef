@@ -59,39 +59,47 @@ export default function RootLayout() {
       }
 
       // Remove any existing apple-touch-icon links first
-      const existingIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+      const existingIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
       existingIcons.forEach(icon => icon.remove());
       
-      // Add apple-touch-icon with absolute URL
+      // Add apple-touch-icon with absolute URL and cache-busting
       // For Expo web, assets are served from /assets/ directory
       // Use absolute URL for better iOS compatibility
       const baseUrl = window.location.origin;
+      // Add version query parameter to force iOS to reload the icon (cache-busting)
+      const iconVersion = '?v=2.0';
       
-      // Try multiple icon paths - Expo may serve from different locations
-      const iconPaths = [
-        `${baseUrl}/assets/icon.png`,
-        `${baseUrl}/icon.png`,
-        '/assets/icon.png',
-        '/icon.png',
-      ];
+      // Primary icon - 180x180 is the standard iOS size
+      const appleIcon = document.createElement('link');
+      appleIcon.rel = 'apple-touch-icon';
+      appleIcon.href = `${baseUrl}/assets/icon.png${iconVersion}`;
+      appleIcon.sizes = '180x180';
+      const head = document.getElementsByTagName('head')[0];
+      head.insertBefore(appleIcon, head.firstChild);
       
-      // Add apple-touch-icon for each path (iOS will use the first one that works)
-      iconPaths.forEach((iconPath, index) => {
-        const appleIcon = document.createElement('link');
-        appleIcon.rel = 'apple-touch-icon';
-        appleIcon.href = iconPath;
-        if (index === 0) {
-          appleIcon.sizes = '180x180';
-        }
-        const head = document.getElementsByTagName('head')[0];
-        head.insertBefore(appleIcon, head.firstChild);
-      });
+      // Also add without sizes (iOS fallback)
+      const appleIconNoSize = document.createElement('link');
+      appleIconNoSize.rel = 'apple-touch-icon';
+      appleIconNoSize.href = `${baseUrl}/assets/icon.png${iconVersion}`;
+      head.insertBefore(appleIconNoSize, head.firstChild);
       
-      // Also add a precomposed version (iOS sometimes prefers this)
+      // Precomposed version (iOS sometimes prefers this, and it prevents iOS from adding effects)
       const appleIconPrecomposed = document.createElement('link');
       appleIconPrecomposed.rel = 'apple-touch-icon-precomposed';
-      appleIconPrecomposed.href = `${baseUrl}/assets/icon.png`;
-      document.getElementsByTagName('head')[0].insertBefore(appleIconPrecomposed, document.getElementsByTagName('head')[0].firstChild);
+      appleIconPrecomposed.href = `${baseUrl}/assets/icon.png${iconVersion}`;
+      appleIconPrecomposed.sizes = '180x180';
+      head.insertBefore(appleIconPrecomposed, head.firstChild);
+      
+      // Also add apple-mobile-web-app-title (this affects the icon label)
+      let appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+      if (!appleTitle) {
+        appleTitle = document.createElement('meta');
+        appleTitle.setAttribute('name', 'apple-mobile-web-app-title');
+        appleTitle.setAttribute('content', 'STOCKPIT');
+        head.insertBefore(appleTitle, head.firstChild);
+      } else {
+        appleTitle.setAttribute('content', 'STOCKPIT');
+      }
       
       // Update app title
       if (document.title !== 'STOCKPIT') {
