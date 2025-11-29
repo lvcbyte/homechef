@@ -2485,6 +2485,7 @@ const styles = StyleSheet.create({
   productDetailContent: {
     padding: 24,
     gap: 16,
+    paddingBottom: 32,
   },
   productDetailBrand: {
     fontSize: 14,
