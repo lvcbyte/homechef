@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, CameraType, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
+import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -772,7 +772,7 @@ export default function ScanScreen() {
             <>
               <CameraView
                 style={StyleSheet.absoluteFillObject}
-                facing={CameraType.back}
+                facing="back"
                 barcodeScannerSettings={{
                   barcodeTypes: [
                     'ean13',
