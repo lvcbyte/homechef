@@ -33,7 +33,7 @@ module.exports = {
     web: {
       bundler: 'metro',
       output: 'static',
-      favicon: './assets/favicon.png',
+      favicon: './assets/icon.png',
       name: 'STOCKPIT',
       shortName: 'STOCKPIT',
       lang: 'nl',
@@ -68,7 +68,6 @@ module.exports = {
         appleMobileWebAppCapable: 'yes',
         appleMobileWebAppStatusBarStyle: 'black-translucent',
         appleTouchIcon: './assets/icon.png',
-        appleTouchIconSizes: '180x180',
       },
       meta: {
         viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover',
