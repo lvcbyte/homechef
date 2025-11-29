@@ -27,16 +27,8 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
 
-// Conditionally import QuaggaScanner only on web to avoid native dependency issues
-let QuaggaScanner: any = null;
-if (Platform.OS === 'web') {
-  try {
-    const QuaggaScannerModule = require('../components/barcode/QuaggaScanner');
-    QuaggaScanner = QuaggaScannerModule.QuaggaScanner;
-  } catch (error) {
-    console.warn('QuaggaScanner not available:', error);
-  }
-}
+// QuaggaScanner will be loaded dynamically only on web
+// This prevents native builds from trying to load web-only dependencies
 import { supabase } from '../lib/supabase';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
 import { generateRecipeFromDescription, runInventoryScan } from '../services/ai';
@@ -236,6 +228,19 @@ export default function ScanScreen() {
     }
     ImagePicker.requestCameraPermissionsAsync();
   }, [permission, requestPermission]);
+
+  // Dynamically load QuaggaScanner only on web
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      import('../components/barcode/QuaggaScanner')
+        .then((module) => {
+          setQuaggaScannerComponent(() => module.QuaggaScanner);
+        })
+        .catch((error) => {
+          console.warn('Failed to load QuaggaScanner:', error);
+        });
+    }
+  }, []);
 
   const ensureAuth = () => {
     if (!user) {
@@ -858,9 +863,9 @@ export default function ScanScreen() {
         setScannedBarcode(null);
       }}>
         <View style={styles.barcodeContainer}>
-          {Platform.OS === 'web' && QuaggaScanner ? (
+          {Platform.OS === 'web' && QuaggaScannerComponent ? (
             // Use QuaggaJS for web
-            <QuaggaScanner
+            <QuaggaScannerComponent
               onDetected={(code) => {
                 if (!scannedBarcode && !scanningProduct) {
                   handleBarcode(code);
