@@ -2,11 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { navigateToRoute } from '../utils/navigation';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Modal,
   Pressable,
@@ -169,6 +170,9 @@ export default function ScanScreen() {
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [scannedProduct, setScannedProduct] = useState<CatalogMatch | null>(null);
   const [scanningProduct, setScanningProduct] = useState(false);
+  const [showScanAnimation, setShowScanAnimation] = useState(false);
+  const scanAnimation = useRef(new Animated.Value(0)).current;
+  const pulseAnimation = useRef(new Animated.Value(1)).current;
   const [productDetailModalVisible, setProductDetailModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [manualName, setManualName] = useState('');
@@ -311,7 +315,12 @@ export default function ScanScreen() {
             source: (catalogMatch as any).source,
           };
           setScannedProduct(product);
+          // Stop animation and show success
+          setShowScanAnimation(false);
+          scanAnimation.setValue(0);
+          pulseAnimation.setValue(1);
           setProductDetailModalVisible(true);
+          setScanningProduct(false);
         }
       } else {
         // Product not found - log scan anyway
@@ -347,16 +356,26 @@ export default function ScanScreen() {
               onPress: () => {
                 setScannedBarcode(null);
                 setScanningProduct(false);
+                setShowScanAnimation(false);
+                scanAnimation.setValue(0);
+                pulseAnimation.setValue(1);
               },
             },
           ]
         );
+        // Stop animation
+        setShowScanAnimation(false);
+        scanAnimation.setValue(0);
+        pulseAnimation.setValue(1);
       }
     } catch (error) {
       console.error('Error handling barcode:', error);
       Alert.alert('Fout', `Er is een fout opgetreden bij het scannen van de barcode: ${error instanceof Error ? error.message : 'Onbekende fout'}`);
       setScannedBarcode(null);
       setScanningProduct(false);
+      setShowScanAnimation(false);
+      scanAnimation.setValue(0);
+      pulseAnimation.setValue(1);
     }
   };
 
@@ -1720,6 +1739,45 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'transparent',
     position: 'relative',
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanningLine: {
+    width: '90%',
+    height: 3,
+    backgroundColor: '#047857',
+    borderRadius: 2,
+    shadowColor: '#047857',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  scanningStatus: {
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 12,
+  },
+  scanningText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  scanningSubtext: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+  },
+  closeButtonDisabled: {
+    opacity: 0.5,
   },
   barcodeCorner: {
     position: 'absolute',
