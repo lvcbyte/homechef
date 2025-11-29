@@ -1,0 +1,44 @@
+# Scripts (not needed for web build)
+scripts/
+docs/
+logs/
+
+# Supabase functions (not needed for frontend build)
+supabase/functions/
+supabase/supabase/
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Documentation
+*.md
+!README.md
+
+# Build outputs (will be regenerated)
+dist/
+build/
+
+# Node modules (installed separately)
+node_modules/
+
+# Environment files
+.env.local
+.env*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Expo
+.expo/
+.expo-shared/
+

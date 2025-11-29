@@ -34,7 +34,6 @@
     "ndarray-pixels": "^5.0.1",
     "openai": "^6.9.1",
     "postcss": "^8.5.6",
-    "puppeteer": "^24.31.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-native": "^0.82.1",
@@ -52,6 +51,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-native": "^0.72.8",
     "cheerio": "^1.1.2",
+    "puppeteer": "^24.31.0",
     "typescript": "^5.9.3"
   }
 }

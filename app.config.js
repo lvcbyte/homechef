@@ -20,7 +20,7 @@ module.exports = {
       resizeMode: 'contain',
       backgroundColor: '#050915',
     },
-    assetBundlePatterns: ['**/*'],
+    assetBundlePatterns: ['assets/**/*'],
     ios: {
       supportsTablet: true,
     },
