@@ -1088,14 +1088,29 @@ export default function ScanScreen() {
       </Modal>
 
       {/* Product Detail Modal (Yuka-style) */}
-      <Modal visible={productDetailModalVisible} transparent animationType="slide" onRequestClose={() => {
-        setProductDetailModalVisible(false);
-        setScannedProduct(null);
-        setScannedBarcode(null);
-        setScanningProduct(false);
-      }}>
-        <View style={styles.productDetailBackdrop}>
-          <View style={styles.productDetailCard}>
+      <Modal 
+        visible={productDetailModalVisible} 
+        transparent 
+        animationType="slide" 
+        onRequestClose={() => {
+          setProductDetailModalVisible(false);
+          setScannedProduct(null);
+          setScannedBarcode(null);
+          setScanningProduct(false);
+        }}
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.productDetailBackdrop}>
+          <Pressable 
+            style={styles.productDetailBackdropPressable}
+            onPress={() => {
+              setProductDetailModalVisible(false);
+              setScannedProduct(null);
+              setScannedBarcode(null);
+              setScanningProduct(false);
+            }}
+          >
+            <View style={styles.productDetailCard} onStartShouldSetResponder={() => true}>
             {scannedProduct && (
               <>
                 <Pressable
@@ -2524,6 +2539,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     marginTop: 8,
+    zIndex: 100,
+    elevation: 5,
   },
   productDetailAddButtonText: {
     color: '#fff',
