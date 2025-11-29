@@ -18,6 +18,27 @@ interface SavedRecipe {
   recipe_id?: string;
 }
 
+interface AIChatRecipe {
+  id: string;
+  title: string;
+  description: string | null;
+  ingredients: any[];
+  instructions: any[];
+  prep_time_minutes: number | null;
+  cook_time_minutes: number | null;
+  total_time_minutes: number;
+  difficulty: string;
+  servings: number | null;
+  nutrition: any;
+  tags: string[];
+  category: string | null;
+  image_url: string | null;
+  original_message: string;
+  chat_timestamp: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface RecipeDetail {
   recipe_id: string;
   title: string;
@@ -57,8 +78,12 @@ export default function SavedScreen() {
   const { user } = useAuth();
   const [recipes, setRecipes] = useState<SavedRecipe[]>([]);
   const [lists, setLists] = useState<ShoppingList[]>([]);
+  const [aiChatRecipes, setAiChatRecipes] = useState<AIChatRecipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeDetail | null>(null);
+  const [selectedAIChatRecipe, setSelectedAIChatRecipe] = useState<AIChatRecipe | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [aiRecipeModalVisible, setAiRecipeModalVisible] = useState(false);
+  const [editAIModalVisible, setEditAIModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [listModalVisible, setListModalVisible] = useState(false);
@@ -82,6 +107,18 @@ export default function SavedScreen() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemQuantity, setNewItemQuantity] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
+  const [editingAIRecipe, setEditingAIRecipe] = useState<AIChatRecipe | null>(null);
+  const [editAIRecipeData, setEditAIRecipeData] = useState({
+    title: '',
+    description: '',
+    ingredients: '',
+    instructions: '',
+    prep_time: '',
+    cook_time: '',
+    total_time: '',
+    difficulty: 'Gemiddeld' as 'Makkelijk' | 'Gemiddeld' | 'Moeilijk',
+    servings: '',
+  });
 
   useEffect(() => {
     if (!user) {
@@ -185,45 +222,58 @@ export default function SavedScreen() {
         setLoading(false);
       }, 200);
 
-      // Fetch shopping lists in background (non-blocking)
-      supabase
-        .from('shopping_lists')
-        .select('*')
-        .eq('user_id', user!.id)
-        .order('updated_at', { ascending: false })
-        .then(({ data: shoppingLists }) => {
-          if (shoppingLists && shoppingLists.length > 0) {
-            const listIds = shoppingLists.map((list: any) => list.id);
-            let countMap: Record<string, number> = {};
-            if (listIds.length > 0) {
-              supabase
-                .from('shopping_list_items')
-                .select('list_id')
-                .in('list_id', listIds)
-                .then(({ data: counts }) => {
-                  if (counts) {
-                    counts.forEach((item: any) => {
-                      countMap[item.list_id] = (countMap[item.list_id] || 0) + 1;
-                    });
-                  }
+      // Fetch shopping lists and AI chat recipes in background (non-blocking)
+      Promise.all([
+        supabase
+          .from('shopping_lists')
+          .select('*')
+          .eq('user_id', user!.id)
+          .order('updated_at', { ascending: false })
+          .then(({ data: shoppingLists }) => {
+            if (shoppingLists && shoppingLists.length > 0) {
+              const listIds = shoppingLists.map((list: any) => list.id);
+              let countMap: Record<string, number> = {};
+              if (listIds.length > 0) {
+                return supabase
+                  .from('shopping_list_items')
+                  .select('list_id')
+                  .in('list_id', listIds)
+                  .then(({ data: counts }) => {
+                    if (counts) {
+                      counts.forEach((item: any) => {
+                        countMap[item.list_id] = (countMap[item.list_id] || 0) + 1;
+                      });
+                    }
 
-                  const enriched = shoppingLists.map((list: any) => ({
-                    ...list,
-                    items_count: countMap[list.id] || 0,
-                  }));
+                    const enriched = shoppingLists.map((list: any) => ({
+                      ...list,
+                      items_count: countMap[list.id] || 0,
+                    }));
 
-                  setLists(enriched as ShoppingList[]);
-                });
+                    setLists(enriched as ShoppingList[]);
+                  });
+              } else {
+                setLists(shoppingLists.map((list: any) => ({ ...list, items_count: 0 })) as ShoppingList[]);
+              }
             } else {
-              setLists(shoppingLists.map((list: any) => ({ ...list, items_count: 0 })) as ShoppingList[]);
+              setLists([]);
             }
-          } else {
+          })
+          .catch(() => {
             setLists([]);
-          }
-        })
-        .catch(() => {
-          setLists([]);
-        });
+          }),
+        supabase
+          .from('ai_chat_recipes')
+          .select('*')
+          .eq('user_id', user!.id)
+          .order('created_at', { ascending: false })
+          .then(({ data }) => {
+            setAiChatRecipes(data || []);
+          })
+          .catch(() => {
+            setAiChatRecipes([]);
+          }),
+      ]);
     } catch (error) {
       console.error('Error fetching saved data:', error);
       clearTimeout(maxLoadingTimeout);
@@ -574,6 +624,169 @@ export default function SavedScreen() {
     }
   };
 
+  const handleDeleteAIChatRecipe = async (recipeId: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Weet je zeker dat je dit recept wilt verwijderen?');
+      if (!confirmed) return;
+    } else {
+      Alert.alert(
+        'Recept verwijderen',
+        'Weet je zeker dat je dit recept wilt verwijderen?',
+        [
+          { text: 'Annuleren', style: 'cancel' },
+          {
+            text: 'Verwijderen',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const { error } = await supabase
+                  .from('ai_chat_recipes')
+                  .delete()
+                  .eq('id', recipeId);
+                
+                if (error) throw error;
+                
+                setAiChatRecipes((prev) => prev.filter((r) => r.id !== recipeId));
+                if (selectedAIChatRecipe?.id === recipeId) {
+                  setAiRecipeModalVisible(false);
+                  setSelectedAIChatRecipe(null);
+                }
+              } catch (error: any) {
+                console.error('Error deleting AI chat recipe:', error);
+                Alert.alert('Fout', `Kon recept niet verwijderen: ${error.message}`);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ai_chat_recipes')
+        .delete()
+        .eq('id', recipeId);
+      
+      if (error) throw error;
+      
+      setAiChatRecipes((prev) => prev.filter((r) => r.id !== recipeId));
+      if (selectedAIChatRecipe?.id === recipeId) {
+        setAiRecipeModalVisible(false);
+        setSelectedAIChatRecipe(null);
+      }
+    } catch (error: any) {
+      console.error('Error deleting AI chat recipe:', error);
+      Alert.alert('Fout', `Kon recept niet verwijderen: ${error.message}`);
+    }
+  };
+
+  const handleEditAIChatRecipe = (recipe: AIChatRecipe) => {
+    setEditingAIRecipe(recipe);
+    setEditAIRecipeData({
+      title: recipe.title,
+      description: recipe.description || '',
+      ingredients: Array.isArray(recipe.ingredients)
+        ? recipe.ingredients.map((ing: any) => 
+            typeof ing === 'string' 
+              ? ing 
+              : `${ing.quantity || ''} ${ing.unit || ''} ${ing.name || ''}`.trim()
+          ).join('\n')
+        : '',
+      instructions: Array.isArray(recipe.instructions)
+        ? recipe.instructions.map((inst: any) => 
+            typeof inst === 'string' 
+              ? inst 
+              : inst.instruction || ''
+          ).join('\n')
+        : '',
+      prep_time: recipe.prep_time_minutes?.toString() || '',
+      cook_time: recipe.cook_time_minutes?.toString() || '',
+      total_time: recipe.total_time_minutes?.toString() || '',
+      difficulty: (recipe.difficulty as 'Makkelijk' | 'Gemiddeld' | 'Moeilijk') || 'Gemiddeld',
+      servings: recipe.servings?.toString() || '',
+    });
+    setEditAIModalVisible(true);
+  };
+
+  const handleSaveEditAIRecipe = async () => {
+    if (!editingAIRecipe || !editAIRecipeData.title.trim()) {
+      Alert.alert('Fout', 'Vul ten minste een titel in.');
+      return;
+    }
+
+    try {
+      // Parse ingredients
+      const ingredientsList = editAIRecipeData.ingredients
+        .split(/[\n,]/)
+        .map(ing => ing.trim())
+        .filter(ing => ing.length > 0)
+        .map(ing => {
+          const parts = ing.match(/^(\d+(?:\.\d+)?)?\s*(\w+)?\s*(.+)$/);
+          if (parts) {
+            return {
+              name: parts[3] || ing,
+              quantity: parts[1] || '',
+              unit: parts[2] || '',
+            };
+          }
+          return { name: ing, quantity: '', unit: '' };
+        });
+
+      // Parse instructions
+      const instructionsList = editAIRecipeData.instructions
+        .split(/\n|(?=\d+[\.\)])/)
+        .map(inst => inst.replace(/^\d+[\.\)]\s*/, '').trim())
+        .filter(inst => inst.length > 0)
+        .map((inst, idx) => ({
+          step: idx + 1,
+          instruction: inst,
+        }));
+
+      const totalTime = parseInt(editAIRecipeData.total_time) || 
+                       (parseInt(editAIRecipeData.prep_time) || 0) + (parseInt(editAIRecipeData.cook_time) || 0) ||
+                       30;
+
+      const { error } = await supabase
+        .from('ai_chat_recipes')
+        .update({
+          title: editAIRecipeData.title.trim(),
+          description: editAIRecipeData.description.trim() || null,
+          ingredients: ingredientsList,
+          instructions: instructionsList,
+          prep_time_minutes: parseInt(editAIRecipeData.prep_time) || null,
+          cook_time_minutes: parseInt(editAIRecipeData.cook_time) || null,
+          total_time_minutes: totalTime,
+          difficulty: editAIRecipeData.difficulty,
+          servings: parseInt(editAIRecipeData.servings) || null,
+        })
+        .eq('id', editingAIRecipe.id);
+
+      if (error) throw error;
+
+      // Refresh the list
+      const { data } = await supabase
+        .from('ai_chat_recipes')
+        .select('*')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
+      
+      setAiChatRecipes(data || []);
+      
+      if (selectedAIChatRecipe?.id === editingAIRecipe.id) {
+        const updated = data?.find(r => r.id === editingAIRecipe.id);
+        if (updated) setSelectedAIChatRecipe(updated);
+      }
+
+      setEditAIModalVisible(false);
+      setEditingAIRecipe(null);
+      Alert.alert('Bijgewerkt!', 'Het recept is bijgewerkt.');
+    } catch (error: any) {
+      console.error('Error updating AI chat recipe:', error);
+      Alert.alert('Fout', `Kon recept niet bijwerken: ${error.message}`);
+    }
+  };
+
   const handleRecipePress = async (recipe: SavedRecipe) => {
     const recipeId = recipe.recipe_id || recipe.recipe_payload?.id || recipe.recipe_payload?.recipe_id;
     
@@ -778,6 +991,63 @@ export default function SavedScreen() {
                       </TouchableOpacity>
                     );
                   })}
+                </ScrollView>
+              </View>
+
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>AI Chat Recepten</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {aiChatRecipes.length === 0 && (
+                    <View style={styles.placeholderCard}>
+                      <Text style={styles.placeholderTitle}>Nog geen AI recepten</Text>
+                      <Text style={styles.placeholderCopy}>
+                        Sla recepten op vanuit de AI chatbot om ze hier te zien.
+                      </Text>
+                    </View>
+                  )}
+                  {aiChatRecipes.map((recipe) => (
+                    <TouchableOpacity
+                      key={recipe.id}
+                      style={styles.recipeCard}
+                      onPress={() => {
+                        setSelectedAIChatRecipe(recipe);
+                        setAiRecipeModalVisible(true);
+                      }}
+                    >
+                      <View style={styles.recipeBody}>
+                        <View style={styles.recipeHeaderRow}>
+                          <Text style={styles.recipeMood}>AI Chat</Text>
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAIChatRecipe(recipe.id);
+                            }}
+                            style={styles.deleteButton}
+                          >
+                            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={styles.recipeTitle}>{recipe.title}</Text>
+                        {recipe.description && (
+                          <Text style={styles.recipeDescription} numberOfLines={2}>
+                            {recipe.description}
+                          </Text>
+                        )}
+                        <View style={styles.recipeMeta}>
+                          <Ionicons name="time-outline" size={14} color="#475569" />
+                          <Text style={styles.recipeTime}>{recipe.total_time_minutes} min</Text>
+                          {recipe.difficulty && (
+                            <>
+                              <Text style={styles.recipeMetaSeparator}>•</Text>
+                              <Text style={styles.recipeTime}>{recipe.difficulty}</Text>
+                            </>
+                          )}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </ScrollView>
               </View>
 
@@ -1310,6 +1580,280 @@ export default function SavedScreen() {
                 disabled={!editListName.trim()}
               >
                 <Text style={styles.saveButtonText}>Opslaan</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* AI Chat Recipe Detail Modal */}
+      <Modal
+        visible={aiRecipeModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setAiRecipeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {selectedAIChatRecipe && (
+                <>
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalHeaderTop}>
+                      <Text style={styles.modalTitle}>{selectedAIChatRecipe.title}</Text>
+                      <TouchableOpacity
+                        onPress={() => setAiRecipeModalVisible(false)}
+                        style={styles.closeButton}
+                      >
+                        <Ionicons name="close" size={24} color="#0f172a" />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.modalAuthor}>Van AI Chat</Text>
+                    <View style={styles.modalMetaRow}>
+                      <View style={styles.modalMetaPill}>
+                        <Ionicons name="time-outline" size={16} color="#047857" />
+                        <Text style={styles.modalMetaText}>{selectedAIChatRecipe.total_time_minutes} min</Text>
+                      </View>
+                      <View style={styles.modalMetaPill}>
+                        <Ionicons name="restaurant-outline" size={16} color="#047857" />
+                        <Text style={styles.modalMetaText}>{selectedAIChatRecipe.difficulty}</Text>
+                      </View>
+                      {selectedAIChatRecipe.servings && (
+                        <View style={styles.modalMetaPill}>
+                          <Ionicons name="people-outline" size={16} color="#047857" />
+                          <Text style={styles.modalMetaText}>{selectedAIChatRecipe.servings} pers.</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity
+                        style={[styles.likeButton, { flex: 1 }]}
+                        onPress={() => handleEditAIChatRecipe(selectedAIChatRecipe)}
+                      >
+                        <Ionicons name="create-outline" size={20} color="#047857" />
+                        <Text style={styles.likeButtonText}>Bewerken</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.likeButton, { flex: 1, borderColor: '#ef4444' }]}
+                        onPress={() => handleDeleteAIChatRecipe(selectedAIChatRecipe.id)}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                        <Text style={[styles.likeButtonText, { color: '#ef4444' }]}>Verwijderen</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {selectedAIChatRecipe.description && (
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Beschrijving</Text>
+                      <Text style={styles.modalSectionText}>{selectedAIChatRecipe.description}</Text>
+                    </View>
+                  )}
+
+                  {selectedAIChatRecipe.ingredients && Array.isArray(selectedAIChatRecipe.ingredients) && selectedAIChatRecipe.ingredients.length > 0 && (
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Ingrediënten</Text>
+                      {selectedAIChatRecipe.ingredients.map((ing: any, idx: number) => (
+                        <View key={idx} style={styles.ingredientRow}>
+                          <Text style={styles.ingredientBullet}>•</Text>
+                          <Text style={styles.ingredientText}>
+                            {typeof ing === 'string' 
+                              ? ing 
+                              : `${ing.quantity || ''} ${ing.unit || ''} ${ing.name || ''}`.trim()}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {selectedAIChatRecipe.instructions && Array.isArray(selectedAIChatRecipe.instructions) && selectedAIChatRecipe.instructions.length > 0 && (
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Bereiding</Text>
+                      {selectedAIChatRecipe.instructions.map((step: any, idx: number) => (
+                        <View key={idx} style={styles.instructionRow}>
+                          <View style={styles.instructionNumber}>
+                            <Text style={styles.instructionNumberText}>{typeof step === 'object' ? (step.step || idx + 1) : idx + 1}</Text>
+                          </View>
+                          <Text style={styles.instructionText}>
+                            {typeof step === 'string' ? step : (step.instruction || '')}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit AI Chat Recipe Modal */}
+      <Modal
+        visible={editAIModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setEditAIModalVisible(false);
+          setEditingAIRecipe(null);
+        }}
+      >
+        <View style={styles.saveModalOverlay}>
+          <View style={styles.saveModalContent}>
+            <View style={styles.saveModalHeader}>
+              <Text style={styles.saveModalTitle}>Recept Bewerken</Text>
+              <TouchableOpacity onPress={() => {
+                setEditAIModalVisible(false);
+                setEditingAIRecipe(null);
+              }}>
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.saveModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.saveForm}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Titel *</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={editAIRecipeData.title}
+                    onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, title: text }))}
+                    placeholder="Bijv. Pasta Carbonara"
+                    placeholderTextColor="#9ca3af"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Beschrijving</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.formTextArea]}
+                    value={editAIRecipeData.description}
+                    onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, description: text }))}
+                    placeholder="Korte beschrijving van het recept"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    numberOfLines={3}
+                  />
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Voorbereiding (min)</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={editAIRecipeData.prep_time}
+                      onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, prep_time: text }))}
+                      placeholder="15"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Bereiding (min)</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={editAIRecipeData.cook_time}
+                      onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, cook_time: text }))}
+                      placeholder="20"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Totaal (min)</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={editAIRecipeData.total_time}
+                      onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, total_time: text }))}
+                      placeholder="35"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Moeilijkheid</Text>
+                    <View style={styles.difficultyButtons}>
+                      {['Makkelijk', 'Gemiddeld', 'Moeilijk'].map((diff) => (
+                        <TouchableOpacity
+                          key={diff}
+                          style={[
+                            styles.difficultyButton,
+                            editAIRecipeData.difficulty === diff && styles.difficultyButtonActive,
+                          ]}
+                          onPress={() => setEditAIRecipeData(prev => ({ ...prev, difficulty: diff as any }))}
+                        >
+                          <Text
+                            style={[
+                              styles.difficultyButtonText,
+                              editAIRecipeData.difficulty === diff && styles.difficultyButtonTextActive,
+                            ]}
+                          >
+                            {diff}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Porties</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={editAIRecipeData.servings}
+                      onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, servings: text }))}
+                      placeholder="4"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Ingrediënten</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.formTextArea]}
+                    value={editAIRecipeData.ingredients}
+                    onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, ingredients: text }))}
+                    placeholder="1 el olijfolie&#10;2 teentjes knoflook&#10;200g pasta"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    numberOfLines={6}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Bereiding</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.formTextArea]}
+                    value={editAIRecipeData.instructions}
+                    onChangeText={(text) => setEditAIRecipeData(prev => ({ ...prev, instructions: text }))}
+                    placeholder="1. Kook de pasta volgens de verpakking&#10;2. Bak de knoflook in olijfolie&#10;3. Meng alles door elkaar"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    numberOfLines={8}
+                  />
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.saveModalActions}>
+              <TouchableOpacity
+                style={[styles.saveModalButton, styles.saveModalButtonSecondary]}
+                onPress={() => {
+                  setEditAIModalVisible(false);
+                  setEditingAIRecipe(null);
+                }}
+              >
+                <Text style={styles.saveModalButtonTextSecondary}>Annuleren</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveModalButton, styles.saveModalButtonPrimary]}
+                onPress={handleSaveEditAIRecipe}
+                disabled={!editAIRecipeData.title.trim()}
+              >
+                <Text style={styles.saveModalButtonTextPrimary}>Opslaan</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1969,6 +2513,135 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  recipeDescription: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  recipeHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  deleteButton: {
+    padding: 4,
+  },
+  saveModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  saveModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  saveModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+  },
+  saveModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  saveModalScroll: {
+    maxHeight: 500,
+  },
+  saveForm: {
+    padding: 20,
+    gap: 16,
+  },
+  formGroup: {
+    gap: 8,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#111827',
+    backgroundColor: '#f9fafb',
+  },
+  formTextArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  difficultyButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  difficultyButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.1)',
+    backgroundColor: '#f9fafb',
+    alignItems: 'center',
+  },
+  difficultyButtonActive: {
+    backgroundColor: '#047857',
+    borderColor: '#047857',
+  },
+  difficultyButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  difficultyButtonTextActive: {
+    color: '#fff',
+  },
+  saveModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15,23,42,0.08)',
+  },
+  saveModalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveModalButtonSecondary: {
+    backgroundColor: '#f3f4f6',
+  },
+  saveModalButtonPrimary: {
+    backgroundColor: '#047857',
+  },
+  saveModalButtonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  saveModalButtonTextPrimary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
 

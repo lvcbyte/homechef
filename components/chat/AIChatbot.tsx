@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   KeyboardAvoidingView,
@@ -28,6 +29,7 @@ interface Message {
   text: string;
   isUser: boolean;
   timestamp: Date;
+  saved?: boolean; // Track if this message has been saved
 }
 
 const STANDARD_QUESTIONS = [
@@ -47,6 +49,20 @@ export function AIChatbot() {
   const [inventory, setInventory] = useState<any[]>([]);
   const scrollViewRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [recipeData, setRecipeData] = useState({
+    title: '',
+    description: '',
+    ingredients: '',
+    instructions: '',
+    prep_time: '',
+    cook_time: '',
+    total_time: '',
+    difficulty: 'Gemiddeld',
+    servings: '4',
+  });
 
   useEffect(() => {
     if (visible && user) {
@@ -147,6 +163,112 @@ export function AIChatbot() {
     }, 100);
   };
 
+  const handleSaveMessage = (message: Message) => {
+    if (!user) {
+      Alert.alert('Inloggen vereist', 'Je moet ingelogd zijn om recepten op te slaan.');
+      return;
+    }
+    setSelectedMessage(message);
+    // Try to extract basic info from message text
+    const text = message.text;
+    // Simple extraction - look for common patterns
+    const titleMatch = text.match(/(?:recept|gerecht):\s*([^\n]+)/i) || 
+                      text.match(/^([^\n]+?)(?:\n|$)/);
+    if (titleMatch) {
+      setRecipeData(prev => ({ ...prev, title: titleMatch[1].trim() }));
+    }
+    setRecipeData(prev => ({ ...prev, description: text.substring(0, 200) }));
+    setSaveModalVisible(true);
+  };
+
+  const handleSaveRecipe = async () => {
+    if (!user || !selectedMessage || !recipeData.title.trim()) {
+      Alert.alert('Fout', 'Vul ten minste een titel in.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Parse ingredients (split by newlines or commas)
+      const ingredientsList = recipeData.ingredients
+        .split(/[\n,]/)
+        .map(ing => ing.trim())
+        .filter(ing => ing.length > 0)
+        .map(ing => {
+          // Try to parse "quantity unit name" format
+          const parts = ing.match(/^(\d+(?:\.\d+)?)?\s*(\w+)?\s*(.+)$/);
+          if (parts) {
+            return {
+              name: parts[3] || ing,
+              quantity: parts[1] || '',
+              unit: parts[2] || '',
+            };
+          }
+          return { name: ing, quantity: '', unit: '' };
+        });
+
+      // Parse instructions (split by newlines or numbers)
+      const instructionsList = recipeData.instructions
+        .split(/\n|(?=\d+[\.\)])/)
+        .map(inst => inst.replace(/^\d+[\.\)]\s*/, '').trim())
+        .filter(inst => inst.length > 0)
+        .map((inst, idx) => ({
+          step: idx + 1,
+          instruction: inst,
+        }));
+
+      const totalTime = parseInt(recipeData.total_time) || 
+                       (parseInt(recipeData.prep_time) || 0) + (parseInt(recipeData.cook_time) || 0) ||
+                       30;
+
+      const { error } = await supabase
+        .from('ai_chat_recipes')
+        .insert({
+          user_id: user.id,
+          title: recipeData.title.trim(),
+          description: recipeData.description.trim() || null,
+          ingredients: ingredientsList,
+          instructions: instructionsList,
+          prep_time_minutes: parseInt(recipeData.prep_time) || null,
+          cook_time_minutes: parseInt(recipeData.cook_time) || null,
+          total_time_minutes: totalTime,
+          difficulty: recipeData.difficulty as 'Makkelijk' | 'Gemiddeld' | 'Moeilijk',
+          servings: parseInt(recipeData.servings) || null,
+          original_message: selectedMessage.text,
+          chat_timestamp: selectedMessage.timestamp,
+        });
+
+      if (error) throw error;
+
+      // Mark message as saved
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === selectedMessage.id ? { ...msg, saved: true } : msg
+        )
+      );
+
+      Alert.alert('Opgeslagen!', 'Het recept is opgeslagen in je bewaarde items.');
+      setSaveModalVisible(false);
+      setSelectedMessage(null);
+      setRecipeData({
+        title: '',
+        description: '',
+        ingredients: '',
+        instructions: '',
+        prep_time: '',
+        cook_time: '',
+        total_time: '',
+        difficulty: 'Gemiddeld',
+        servings: '4',
+      });
+    } catch (error: any) {
+      console.error('Error saving recipe:', error);
+      Alert.alert('Fout', `Kon recept niet opslaan: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <>
       {/* Floating Button */}
@@ -237,6 +359,22 @@ export function AIChatbot() {
                     >
                       {message.text}
                     </Text>
+                    {!message.isUser && user && (
+                      <TouchableOpacity
+                        style={styles.saveButton}
+                        onPress={() => handleSaveMessage(message)}
+                        disabled={message.saved}
+                      >
+                        <Ionicons
+                          name={message.saved ? 'checkmark-circle' : 'bookmark-outline'}
+                          size={18}
+                          color={message.saved ? '#047857' : '#6b7280'}
+                        />
+                        <Text style={[styles.saveButtonText, message.saved && styles.saveButtonTextSaved]}>
+                          {message.saved ? 'Opgeslagen' : 'Opslaan'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               ))}
@@ -274,6 +412,173 @@ export function AIChatbot() {
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
+      </Modal>
+
+      {/* Save Recipe Modal */}
+      <Modal
+        visible={saveModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSaveModalVisible(false)}
+      >
+        <View style={styles.saveModalOverlay}>
+          <View style={styles.saveModalContent}>
+            <View style={styles.saveModalHeader}>
+              <Text style={styles.saveModalTitle}>Recept Opslaan</Text>
+              <TouchableOpacity onPress={() => setSaveModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.saveModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.saveForm}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Titel *</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={recipeData.title}
+                    onChangeText={(text) => setRecipeData(prev => ({ ...prev, title: text }))}
+                    placeholder="Bijv. Pasta Carbonara"
+                    placeholderTextColor="#9ca3af"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Beschrijving</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.formTextArea]}
+                    value={recipeData.description}
+                    onChangeText={(text) => setRecipeData(prev => ({ ...prev, description: text }))}
+                    placeholder="Korte beschrijving van het recept"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    numberOfLines={3}
+                  />
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Voorbereiding (min)</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={recipeData.prep_time}
+                      onChangeText={(text) => setRecipeData(prev => ({ ...prev, prep_time: text }))}
+                      placeholder="15"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Bereiding (min)</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={recipeData.cook_time}
+                      onChangeText={(text) => setRecipeData(prev => ({ ...prev, cook_time: text }))}
+                      placeholder="20"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Totaal (min)</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={recipeData.total_time}
+                      onChangeText={(text) => setRecipeData(prev => ({ ...prev, total_time: text }))}
+                      placeholder="35"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Moeilijkheid</Text>
+                    <View style={styles.difficultyButtons}>
+                      {['Makkelijk', 'Gemiddeld', 'Moeilijk'].map((diff) => (
+                        <TouchableOpacity
+                          key={diff}
+                          style={[
+                            styles.difficultyButton,
+                            recipeData.difficulty === diff && styles.difficultyButtonActive,
+                          ]}
+                          onPress={() => setRecipeData(prev => ({ ...prev, difficulty: diff }))}
+                        >
+                          <Text
+                            style={[
+                              styles.difficultyButtonText,
+                              recipeData.difficulty === diff && styles.difficultyButtonTextActive,
+                            ]}
+                          >
+                            {diff}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.formLabel}>Porties</Text>
+                    <TextInput
+                      style={styles.formInput}
+                      value={recipeData.servings}
+                      onChangeText={(text) => setRecipeData(prev => ({ ...prev, servings: text }))}
+                      placeholder="4"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Ingrediënten</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.formTextArea]}
+                    value={recipeData.ingredients}
+                    onChangeText={(text) => setRecipeData(prev => ({ ...prev, ingredients: text }))}
+                    placeholder="1 el olijfolie&#10;2 teentjes knoflook&#10;200g pasta"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    numberOfLines={6}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Bereiding</Text>
+                  <TextInput
+                    style={[styles.formInput, styles.formTextArea]}
+                    value={recipeData.instructions}
+                    onChangeText={(text) => setRecipeData(prev => ({ ...prev, instructions: text }))}
+                    placeholder="1. Kook de pasta volgens de verpakking&#10;2. Bak de knoflook in olijfolie&#10;3. Meng alles door elkaar"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    numberOfLines={8}
+                  />
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.saveModalActions}>
+              <TouchableOpacity
+                style={[styles.saveModalButton, styles.saveModalButtonSecondary]}
+                onPress={() => setSaveModalVisible(false)}
+              >
+                <Text style={styles.saveModalButtonTextSecondary}>Annuleren</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveModalButton, styles.saveModalButtonPrimary]}
+                onPress={handleSaveRecipe}
+                disabled={saving || !recipeData.title.trim()}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveModalButtonTextPrimary}>Opslaan</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -453,6 +758,137 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#e5e7eb',
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15,23,42,0.08)',
+  },
+  saveButtonText: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  saveButtonTextSaved: {
+    color: '#047857',
+  },
+  saveModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  saveModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  saveModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+  },
+  saveModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  saveModalScroll: {
+    maxHeight: 500,
+  },
+  saveForm: {
+    padding: 20,
+    gap: 16,
+  },
+  formGroup: {
+    gap: 8,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#111827',
+    backgroundColor: '#f9fafb',
+  },
+  formTextArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  difficultyButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  difficultyButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.1)',
+    backgroundColor: '#f9fafb',
+    alignItems: 'center',
+  },
+  difficultyButtonActive: {
+    backgroundColor: '#047857',
+    borderColor: '#047857',
+  },
+  difficultyButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  difficultyButtonTextActive: {
+    color: '#fff',
+  },
+  saveModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15,23,42,0.08)',
+  },
+  saveModalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveModalButtonSecondary: {
+    backgroundColor: '#f3f4f6',
+  },
+  saveModalButtonPrimary: {
+    backgroundColor: '#047857',
+  },
+  saveModalButtonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  saveModalButtonTextPrimary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
 

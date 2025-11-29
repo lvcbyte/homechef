@@ -1,4 +1,4 @@
-import { useRouter, useSegments } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const segments = useSegments();
   const { user } = useAuth();
   const [isMounted, setIsMounted] = useState(false);
@@ -25,8 +26,12 @@ export default function WelcomeScreen() {
   }, []);
 
   useEffect(() => {
-    // Only navigate if component is mounted and router is ready (segments available)
-    if (isMounted && user && segments.length >= 0) {
+    // ONLY redirect if:
+    // 1. Component is mounted
+    // 2. User is authenticated
+    // 3. We're actually on the welcome page (pathname check)
+    // This prevents redirects when user is on other pages
+    if (isMounted && user && pathname === '/welcome') {
       const timer = setTimeout(() => {
         try {
           router.replace('/');
@@ -37,7 +42,7 @@ export default function WelcomeScreen() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [user, isMounted, segments]);
+  }, [user, isMounted, pathname]);
 
   useEffect(() => {
     // Subtle fade-in animation

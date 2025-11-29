@@ -26,13 +26,15 @@ export default function RootLayout() {
         existingBase.remove();
       }
 
-      // Add viewport meta tag if not exists
-      if (!document.querySelector('meta[name="viewport"]')) {
-        const viewport = document.createElement('meta');
+      // Add/update viewport meta tag with fullscreen settings
+      let viewport = document.querySelector('meta[name="viewport"]');
+      if (!viewport) {
+        viewport = document.createElement('meta');
         viewport.name = 'viewport';
-        viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         document.getElementsByTagName('head')[0].appendChild(viewport);
       }
+      // Always set viewport to prevent browser UI from showing
+      viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, minimal-ui');
 
       // Add theme-color meta tag
       if (!document.querySelector('meta[name="theme-color"]')) {
@@ -50,12 +52,21 @@ export default function RootLayout() {
         document.getElementsByTagName('head')[0].appendChild(appleCapable);
       }
 
-      // Add apple-mobile-web-app-status-bar-style
-      if (!document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')) {
-        const appleStatusBar = document.createElement('meta');
+      // Add/update apple-mobile-web-app-status-bar-style
+      let appleStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+      if (!appleStatusBar) {
+        appleStatusBar = document.createElement('meta');
         appleStatusBar.name = 'apple-mobile-web-app-status-bar-style';
-        appleStatusBar.content = 'black-translucent';
         document.getElementsByTagName('head')[0].appendChild(appleStatusBar);
+      }
+      appleStatusBar.setAttribute('content', 'black-translucent');
+      
+      // Add format-detection to prevent phone number detection (can cause browser UI)
+      if (!document.querySelector('meta[name="format-detection"]')) {
+        const formatDetection = document.createElement('meta');
+        formatDetection.name = 'format-detection';
+        formatDetection.content = 'telephone=no';
+        document.getElementsByTagName('head')[0].appendChild(formatDetection);
       }
 
       // Remove any existing apple-touch-icon links first
@@ -122,38 +133,78 @@ export default function RootLayout() {
       // Prevent pull-to-refresh on mobile
       document.body.style.overscrollBehavior = 'none';
       
-      // Hide browser UI in standalone mode and keep it hidden
+      // Hide browser UI ALWAYS - not just in standalone mode
+      // This ensures the app looks like a native app in all browsers
       const hideBrowserUI = () => {
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+        // Force fullscreen styling - ALWAYS apply, not just in standalone
+        // Use dynamic viewport height (dvh) for mobile, fallback to vh
+        const heightValue = '100dvh';
+        document.documentElement.style.height = heightValue;
+        document.documentElement.style.overflow = 'hidden';
+        document.documentElement.style.position = 'fixed';
+        document.documentElement.style.width = '100%';
+        document.documentElement.style.top = '0';
+        document.documentElement.style.left = '0';
+        document.documentElement.style.margin = '0';
+        document.documentElement.style.padding = '0';
         
-        if (isStandalone) {
-          // Force fullscreen styling
-          document.documentElement.style.height = '100vh';
-          document.documentElement.style.overflow = 'hidden';
-          document.documentElement.style.position = 'fixed';
-          document.documentElement.style.width = '100%';
-          document.documentElement.style.top = '0';
-          document.documentElement.style.left = '0';
-          
-          document.body.style.height = '100vh';
-          document.body.style.overflow = 'hidden';
-          document.body.style.position = 'fixed';
-          document.body.style.width = '100%';
-          document.body.style.top = '0';
-          document.body.style.left = '0';
-          document.body.style.margin = '0';
-          document.body.style.padding = '0';
-          
-          // Prevent address bar from showing
+        document.body.style.height = heightValue;
+        document.body.style.overflow = 'hidden';
+        document.body.style.position = 'fixed';
+        document.body.style.width = '100%';
+        document.body.style.top = '0';
+        document.body.style.left = '0';
+        document.body.style.margin = '0';
+        document.body.style.padding = '0';
+        document.body.style.touchAction = 'pan-y pinch-zoom';
+        
+        // Prevent address bar from showing on mobile browsers
+        window.scrollTo(0, 0);
+        
+        // Force scroll to top on any scroll attempt
+        if (window.scrollY > 0) {
           window.scrollTo(0, 0);
-          
-          // Force fullscreen on iOS
-          if ((window.navigator as any).standalone) {
-            const viewport = document.querySelector('meta[name="viewport"]');
-            if (viewport) {
-              viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+        }
+        
+        // Update viewport meta tag to ensure proper fullscreen
+        const viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+          viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, minimal-ui');
+        }
+        
+        // Add CSS to prevent browser UI from showing
+        const styleId = 'fullscreen-app-style';
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = `
+            html, body {
+              height: 100vh !important;
+              height: 100dvh !important;
+              overflow: hidden !important;
+              position: fixed !important;
+              width: 100% !important;
+              top: 0 !important;
+              left: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
             }
-          }
+            /* Prevent Safari address bar from showing */
+            @supports (-webkit-touch-callout: none) {
+              html, body {
+                height: -webkit-fill-available !important;
+              }
+            }
+            /* Hide scrollbars */
+            ::-webkit-scrollbar {
+              display: none !important;
+            }
+            * {
+              -ms-overflow-style: none !important;
+              scrollbar-width: none !important;
+            }
+          `;
+          document.head.appendChild(style);
         }
       };
       
@@ -194,11 +245,40 @@ export default function RootLayout() {
       // Periodic check to ensure UI stays hidden
       setInterval(hideBrowserUI, 500);
       
-      // Also hide on any scroll
+      // Also hide on any scroll - prevent scrolling entirely
+      let scrollTimeout: ReturnType<typeof setTimeout>;
       window.addEventListener('scroll', () => {
         hideBrowserUI();
         window.scrollTo(0, 0);
+        // Clear any pending scroll
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          window.scrollTo(0, 0);
+        }, 10);
       }, { passive: false });
+      
+      // Prevent touchmove that might cause scrolling
+      document.addEventListener('touchmove', (e) => {
+        // Allow scrolling within scrollable containers, but prevent body scroll
+        const target = e.target as HTMLElement;
+        const isScrollable = target.closest('[data-scrollable="true"]') || 
+                            target.closest('.scrollable') ||
+                            target.closest('[style*="overflow"]');
+        if (!isScrollable && target === document.body) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+      
+      // Prevent any resize that might show browser UI
+      let resizeTimeout: ReturnType<typeof setTimeout>;
+      window.addEventListener('resize', () => {
+        hideBrowserUI();
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          window.scrollTo(0, 0);
+          hideBrowserUI();
+        }, 100);
+      });
     }
   }, []);
 

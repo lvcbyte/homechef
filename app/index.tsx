@@ -11,6 +11,7 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI } from '../services/ai';
+import { navigateToRoute } from '../utils/navigation';
 
 interface Recipe {
   recipe_id: string;
