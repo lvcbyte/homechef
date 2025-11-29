@@ -297,27 +297,35 @@ export default function ScanScreen() {
   const handleBarcode = async (result: string | BarcodeScanningResult) => {
     // Handle both QuaggaJS (string) and expo-camera (BarcodeScanningResult) formats
     const ean = typeof result === 'string' ? result : result.data;
-    console.log('handleBarcode called with:', result, 'extracted ean:', ean);
+    console.log('🔍 handleBarcode called with:', result, 'extracted ean:', ean);
     
     if (!ean || ean.trim().length === 0) {
       console.warn('Empty barcode, skipping');
       return;
     }
     
-    // Prevent multiple scans of the same barcode
-    if (scannedBarcode === ean || scanningProduct) {
-      console.log('Skipping duplicate scan or already processing');
+    // Normalize barcode first
+    const normalizedBarcode = String(ean).trim().replace(/\s/g, '');
+    
+    // Prevent multiple scans of the same barcode (only if currently processing)
+    // Allow new scans if previous one is done
+    if (scanningProduct) {
+      console.log('⏳ Already processing a scan, skipping');
+      return;
+    }
+    
+    // Only prevent duplicate if it's the exact same code and we just scanned it
+    if (scannedBarcode === normalizedBarcode) {
+      console.log('🔄 Duplicate barcode detected, skipping:', normalizedBarcode);
       return;
     }
     
     if (!user) {
-      console.log('No user, skipping scan');
+      console.log('❌ No user, skipping scan');
       return;
     }
     
-    // Normalize barcode (remove spaces, ensure it's a string)
-    const normalizedBarcode = String(ean).trim().replace(/\s/g, '');
-    console.log('Normalized barcode:', normalizedBarcode);
+    console.log('✅ Processing barcode:', normalizedBarcode);
     
     // Set scanned state to prevent duplicate scans
     setScannedBarcode(normalizedBarcode);
@@ -913,12 +921,11 @@ export default function ScanScreen() {
               // Use QuaggaJS for web
               <QuaggaScannerComponent
                 onDetected={(code) => {
-                  console.log('Barcode detected in scan screen:', code, 'scannedBarcode:', scannedBarcode, 'scanningProduct:', scanningProduct);
-                  if (!scannedBarcode && !scanningProduct && code) {
-                    console.log('Calling handleBarcode with:', code);
+                  // Always try to process if we have a valid code
+                  // The handleBarcode function will handle duplicate prevention
+                  if (code && code.trim().length > 0) {
+                    console.log('📷 Barcode detected in scan screen:', code);
                     handleBarcode(code);
-                  } else {
-                    console.log('Skipping barcode detection - already processing or no code');
                   }
                 }}
                 onError={(error) => {

@@ -119,14 +119,17 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                     width: { min: 640, ideal: Math.min(finalWidth, 1280), max: 1920 },
                     height: { min: 480, ideal: Math.min(finalHeight, 720), max: 1080 },
                     facingMode: 'environment', // Use back camera
+                    aspectRatio: { ideal: finalWidth / finalHeight },
                     advanced: flashEnabled ? [{ torch: true }] : [],
                   },
+                  singleChannel: false, // Use color for better detection
                 },
                 locator: {
-                  patchSize: 'medium',
-                  halfSample: true,
+                  patchSize: 'large', // Larger patch size for better detection
+                  halfSample: false, // Don't half sample for better quality
                 },
-                numOfWorkers: 2,
+                numOfWorkers: 4, // More workers for better performance
+                frequency: 10, // Check every 10 frames for better responsiveness
                 decoder: {
                   readers: [
                     'ean_reader',
@@ -135,7 +138,15 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                     'code_39_reader',
                     'upc_reader',
                     'upc_e_reader',
+                    'codabar_reader',
+                    'i2of5_reader',
                   ],
+                  debug: {
+                    drawBoundingBox: false,
+                    showFrequency: false,
+                    drawScanline: false,
+                    showPattern: false,
+                  },
                 },
                 locate: true,
               },
@@ -162,6 +173,7 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                     Quagga.start();
                     setIsInitialized(true);
                     retryCount = 0; // Reset retry count on success
+                    console.log('✅ Quagga scanner started successfully');
                     
                     // Get the video stream for flash control
                     // Wait a bit for video element to be created
@@ -169,58 +181,117 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                       const videoElement = container.querySelector('video');
                       if (videoElement && videoElement.srcObject) {
                         streamRef.current = videoElement.srcObject as MediaStream;
-                        console.log('Video stream captured for flash control');
+                        console.log('✅ Video stream captured for flash control');
+                        
+                        // Verify video is actually playing
+                        if (videoElement.readyState >= 2) {
+                          console.log('✅ Video stream is active and ready');
+                        } else {
+                          console.warn('⚠️ Video stream may not be ready yet');
+                        }
                       } else {
-                        console.warn('Video element not found or no stream available');
+                        console.warn('⚠️ Video element not found or no stream available');
                       }
                     }, 1000);
                   } catch (startError) {
-                    console.error('Error starting Quagga:', startError);
-                    onError?.(new Error(`Failed to start scanner: ${startError}`));
+                    console.error('❌ Error starting Quagga:', startError);
+                    // Retry starting once
+                    setTimeout(() => {
+                      try {
+                        console.log('🔄 Retrying Quagga start...');
+                        Quagga.start();
+                        setIsInitialized(true);
+                      } catch (retryError) {
+                        console.error('❌ Retry failed:', retryError);
+                        onError?.(new Error(`Failed to start scanner: ${startError}`));
+                      }
+                    }, 1000);
                   }
                 }, 300);
               }
             );
 
+            // Track processing state for health monitoring
+            let lastProcessedTime = Date.now();
+            let consecutiveErrors = 0;
+            const maxConsecutiveErrors = 10;
+            
             Quagga.onDetected((result: any) => {
               try {
                 if (!result || !result.codeResult) {
-                  console.warn('Quagga detected but result is invalid:', result);
                   return;
                 }
                 
                 const code = result.codeResult.code;
                 if (!code || typeof code !== 'string' || code.trim().length === 0) {
-                  console.warn('Quagga detected but no valid code found:', result);
+                  return;
+                }
+                
+                // Validate barcode format (EAN should be 8 or 13 digits, UPC 12 digits)
+                const cleanCode = code.trim().replace(/\s/g, '');
+                const isValidFormat = /^\d{8,13}$/.test(cleanCode) || /^[A-Z0-9\-]+$/.test(cleanCode);
+                
+                if (!isValidFormat) {
+                  console.warn('Invalid barcode format:', cleanCode);
                   return;
                 }
                 
                 const now = Date.now();
 
-                // Prevent duplicate scans within 2 seconds
-                if (lastScannedCode.current === code && now - lastScanTime.current < 2000) {
-                  console.log('Skipping duplicate scan:', code);
+                // Prevent duplicate scans within 1 second (reduced from 2 for better responsiveness)
+                if (lastScannedCode.current === cleanCode && now - lastScanTime.current < 1000) {
                   return;
                 }
 
-                lastScannedCode.current = code;
+                // Reset error counter on successful detection
+                consecutiveErrors = 0;
+                lastProcessedTime = now;
+                
+                lastScannedCode.current = cleanCode;
                 lastScanTime.current = now;
 
-                console.log('Quagga detected barcode:', code);
-                onDetected(code);
+                console.log('✅ Quagga detected barcode:', cleanCode, 'confidence:', result.codeResult.decodedCodes?.length || 'N/A');
+                onDetected(cleanCode);
               } catch (error) {
+                consecutiveErrors++;
                 console.error('Error processing Quagga detection:', error);
-                onError?.(error instanceof Error ? error : new Error('Error processing barcode detection'));
+                if (consecutiveErrors >= maxConsecutiveErrors) {
+                  console.warn('Too many consecutive errors, scanner may need restart');
+                }
               }
             });
             
-            // Also handle errors from Quagga
+            // Monitor processing health
             Quagga.onProcessed((result: any) => {
-              // This is called for every frame, we can use it to check if Quagga is working
-              if (result && result.codeResult) {
-                // Quagga is processing frames correctly
+              lastProcessedTime = Date.now();
+              
+              // Check if scanner is still processing frames
+              if (result) {
+                consecutiveErrors = 0; // Reset on successful frame processing
               }
             });
+            
+            // Health check: restart if scanner stops processing
+            const healthCheckInterval = setInterval(() => {
+              const timeSinceLastProcess = Date.now() - lastProcessedTime;
+              
+              // If no processing for 5 seconds and scanner is initialized, restart
+              if (timeSinceLastProcess > 5000 && isInitialized) {
+                console.warn('Scanner health check: No processing detected, restarting...');
+                try {
+                  Quagga.stop();
+                  setTimeout(() => {
+                    Quagga.start();
+                    lastProcessedTime = Date.now();
+                  }, 500);
+                } catch (error) {
+                  console.error('Error during health check restart:', error);
+                }
+              }
+            }, 5000);
+            
+            // Store interval for cleanup
+            (quaggaRef.current as any).healthCheckInterval = healthCheckInterval;
           } catch (error) {
             console.error('Error initializing Quagga:', error);
             onError?.(error instanceof Error ? error : new Error('Unknown error'));
@@ -237,10 +308,16 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
     initQuagga();
 
     return () => {
+      // Clear health check interval
+      if (quaggaRef.current && (quaggaRef.current as any).healthCheckInterval) {
+        clearInterval((quaggaRef.current as any).healthCheckInterval);
+      }
+      
       if (isInitialized && quaggaRef.current) {
         try {
           quaggaRef.current.stop();
           quaggaRef.current.offDetected();
+          quaggaRef.current.offProcessed();
         } catch (error) {
           console.error('Error stopping Quagga:', error);
         }
