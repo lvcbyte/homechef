@@ -13,7 +13,7 @@ module.exports = {
     scheme: 'stockpit',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/logo.png',
     userInterfaceStyle: 'automatic',
     splash: {
       image: './assets/splash.png',
@@ -47,7 +47,7 @@ module.exports = {
       icons: [
         {
           src: './assets/logo.png',
-          sizes: [192, 512],
+          sizes: [180, 192, 512],
           type: 'image/png',
           purpose: 'any maskable',
         },

@@ -58,8 +58,20 @@ export default function RootLayout() {
         document.getElementsByTagName('head')[0].appendChild(appleStatusBar);
       }
 
-      // Add apple-touch-icon
-      if (!document.querySelector('link[rel="apple-touch-icon"]')) {
+      // Add apple-touch-icon with multiple sizes
+      const appleIconSizes = [180, 167, 152, 120, 76, 60];
+      appleIconSizes.forEach(size => {
+        if (!document.querySelector(`link[rel="apple-touch-icon"][sizes="${size}x${size}"]`)) {
+          const appleIcon = document.createElement('link');
+          appleIcon.rel = 'apple-touch-icon';
+          appleIcon.sizes = `${size}x${size}`;
+          appleIcon.href = `/assets/logo.png`;
+          document.getElementsByTagName('head')[0].appendChild(appleIcon);
+        }
+      });
+      
+      // Add default apple-touch-icon
+      if (!document.querySelector('link[rel="apple-touch-icon"]:not([sizes])')) {
         const appleIcon = document.createElement('link');
         appleIcon.rel = 'apple-touch-icon';
         appleIcon.href = '/assets/logo.png';
