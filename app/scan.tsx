@@ -903,20 +903,29 @@ export default function ScanScreen() {
         presentationStyle="fullScreen"
       >
         <View style={styles.barcodeContainer}>
-          {Platform.OS === 'web' && QuaggaScannerComponent ? (
-            // Use QuaggaJS for web
-            <QuaggaScannerComponent
-              onDetected={(code) => {
-                if (!scannedBarcode && !scanningProduct) {
-                  handleBarcode(code);
-                }
-              }}
-              onError={(error) => {
-                console.error('Quagga error:', error);
-                Alert.alert('Camera fout', 'Kon camera niet starten. Controleer je browser instellingen.');
-              }}
-              style={StyleSheet.absoluteFillObject}
-            />
+          {Platform.OS === 'web' ? (
+            QuaggaScannerComponent ? (
+              // Use QuaggaJS for web
+              <QuaggaScannerComponent
+                onDetected={(code) => {
+                  console.log('Barcode detected in scan screen:', code);
+                  if (!scannedBarcode && !scanningProduct) {
+                    handleBarcode(code);
+                  }
+                }}
+                onError={(error) => {
+                  console.error('Quagga error:', error);
+                  Alert.alert('Camera fout', `Kon camera niet starten: ${error.message || 'Onbekende fout'}. Controleer je browser instellingen.`);
+                }}
+                style={StyleSheet.absoluteFillObject}
+                flashEnabled={flashEnabled}
+              />
+            ) : (
+              <View style={styles.barcodeLoadingContainer}>
+                <ActivityIndicator size="large" color="#047857" />
+                <Text style={styles.barcodeLoadingText}>Barcode scanner wordt geladen...</Text>
+              </View>
+            )
           ) : Platform.OS !== 'web' && permission?.granted ? (
             // Use expo-camera for native
             <>
