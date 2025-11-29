@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, CameraType, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -165,7 +165,7 @@ export default function ScanScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [capturedPhotos, setCapturedPhotos] = useState<LocalPhoto[]>([]);
   const [barcodeMode, setBarcodeMode] = useState(false);
-  const [hasScannerPermission, setHasScannerPermission] = useState<boolean | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [scannedProduct, setScannedProduct] = useState<CatalogMatch | null>(null);
   const [scanningProduct, setScanningProduct] = useState(false);
@@ -212,11 +212,14 @@ export default function ScanScreen() {
   }, [windowWidth]);
 
   useEffect(() => {
-    BarCodeScanner.requestPermissionsAsync().then(({ status }) =>
-      setHasScannerPermission(status === 'granted')
-    );
+    // Request camera permissions on mount
+    if (permission && !permission.granted && !permission.canAskAgain) {
+      // Permission was denied, can't ask again
+    } else if (permission && !permission.granted) {
+      requestPermission();
+    }
     ImagePicker.requestCameraPermissionsAsync();
-  }, []);
+  }, [permission, requestPermission]);
 
   const ensureAuth = () => {
     if (!user) {
@@ -242,7 +245,8 @@ export default function ScanScreen() {
     return data.id;
   };
 
-  const handleBarcode = async ({ data: ean }: { data: string }) => {
+  const handleBarcode = async (result: BarcodeScanningResult) => {
+    const ean = result.data;
     // Prevent multiple scans of the same barcode
     if (scannedBarcode === ean || scanningProduct) return;
     
@@ -665,19 +669,13 @@ export default function ScanScreen() {
                     const session = await ensureSession();
                     if (!session) return;
                     
-                    // Request permission if not yet checked
-                    if (hasScannerPermission === null) {
-                      const { status } = await BarCodeScanner.requestPermissionsAsync();
-                      setHasScannerPermission(status === 'granted');
-                      if (status !== 'granted') {
+                    // Request permission if not granted
+                    if (!permission?.granted) {
+                      const result = await requestPermission();
+                      if (!result.granted) {
                         Alert.alert('Geen camera toegang', 'Sta camera toegang toe in je instellingen.');
                         return;
                       }
-                    }
-                    
-                    if (hasScannerPermission === false) {
-                      Alert.alert('Geen camera toegang', 'Sta camera toegang toe in je instellingen.');
-                      return;
                     }
                     
                     // Reset scan state
@@ -770,19 +768,22 @@ export default function ScanScreen() {
         setScannedBarcode(null);
       }}>
         <View style={styles.barcodeContainer}>
-          {hasScannerPermission ? (
+          {permission?.granted ? (
             <>
-              <BarCodeScanner
-                onBarCodeScanned={scannedBarcode ? undefined : handleBarcode}
+              <CameraView
                 style={StyleSheet.absoluteFillObject}
-                barCodeTypes={[
-                  'ean13',
-                  'ean8',
-                  'upc_a',
-                  'upc_e',
-                  'code128',
-                  'code39',
-                ]}
+                facing={CameraType.back}
+                barcodeScannerSettings={{
+                  barcodeTypes: [
+                    'ean13',
+                    'ean8',
+                    'upc_a',
+                    'upc_e',
+                    'code128',
+                    'code39',
+                  ],
+                }}
+                onBarcodeScanned={scannedBarcode ? undefined : handleBarcode}
               />
               <View style={styles.barcodeOverlay}>
                 <View style={styles.barcodeFrame}>
@@ -813,9 +814,8 @@ export default function ScanScreen() {
               <TouchableOpacity
                 style={styles.permissionButton}
                 onPress={async () => {
-                  const { status } = await BarCodeScanner.requestPermissionsAsync();
-                  setHasScannerPermission(status === 'granted');
-                  if (status !== 'granted') {
+                  const result = await requestPermission();
+                  if (!result.granted) {
                     Alert.alert('Geen toegang', 'Camera toegang is vereist om barcodes te scannen.');
                   }
                 }}
