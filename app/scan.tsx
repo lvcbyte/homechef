@@ -263,7 +263,7 @@ export default function ScanScreen() {
       
       // Use enhanced barcode matching (like Yuka app)
       const { data: matchResult, error: matchError } = await supabase.rpc('match_product_by_barcode_enhanced', { 
-        barcode: normalizedBarcode 
+        p_barcode: normalizedBarcode 
       });
       
       if (matchResult && matchResult.length > 0 && !matchError) {
@@ -773,17 +773,16 @@ export default function ScanScreen() {
           {hasScannerPermission ? (
             <>
               <BarCodeScanner
-                onBarCodeScanned={scannedBarcode ? undefined : handleBarcode}
+                onBarcodeScanned={scannedBarcode ? undefined : handleBarcode}
                 style={StyleSheet.absoluteFillObject}
-                barCodeTypes={[
-                  BarCodeScanner.Constants.BarCodeType.ean13,
-                  BarCodeScanner.Constants.BarCodeType.ean8,
-                  BarCodeScanner.Constants.BarCodeType.upc_a,
-                  BarCodeScanner.Constants.BarCodeType.upc_e,
-                  BarCodeScanner.Constants.BarCodeType.code128,
-                  BarCodeScanner.Constants.BarCodeType.code39,
+                barcodeTypes={[
+                  'ean13',
+                  'ean8',
+                  'upc_a',
+                  'upc_e',
+                  'code128',
+                  'code39',
                 ]}
-                type={BarCodeScanner.Constants.Type.back}
               />
               <View style={styles.barcodeOverlay}>
                 <View style={styles.barcodeFrame}>

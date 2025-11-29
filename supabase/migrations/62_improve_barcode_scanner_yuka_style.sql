@@ -2,9 +2,9 @@
 -- Better matching, faster lookups, and product information
 
 -- Enhanced barcode matching function with better scoring
-create or replace function public.match_product_by_barcode_enhanced(barcode text)
+create or replace function public.match_product_by_barcode_enhanced(p_barcode text)
 returns table (
-    id uuid,
+    id text,
     name text,
     brand text,
     barcode text,
@@ -18,12 +18,18 @@ declare
     normalized_barcode text;
 begin
     -- Normalize barcode: remove spaces, leading zeros handling
-    normalized_barcode = trim(barcode);
+    normalized_barcode = trim(p_barcode);
     
     return query
     with matches as (
         select 
-            pc.*,
+            pc.id,
+            pc.product_name,
+            pc.brand,
+            pc.barcode,
+            pc.image_url,
+            pc.category,
+            pc.nutrition,
             case 
                 when pc.barcode = normalized_barcode then 'exact'
                 when pc.barcode = lpad(normalized_barcode, 13, '0') then 'ean13_padded'
@@ -49,7 +55,7 @@ begin
     )
     select 
         m.id,
-        m.name,
+        m.product_name as name,
         m.brand,
         m.barcode,
         m.image_url,
@@ -58,20 +64,20 @@ begin
         m.match_type,
         m.match_score
     from matches m
-    order by m.match_score desc, m.name
+    order by m.match_score desc, m.product_name
     limit 1;
 end;
 $$ language plpgsql stable security definer;
 
 -- Function to get product details by barcode (for display)
-create or replace function public.get_product_by_barcode(barcode text)
+create or replace function public.get_product_by_barcode(p_barcode text)
 returns jsonb as $$
 declare
     result jsonb;
 begin
     select jsonb_build_object(
         'id', pc.id,
-        'name', pc.name,
+        'name', pc.product_name,
         'brand', pc.brand,
         'barcode', pc.barcode,
         'image_url', pc.image_url,
@@ -83,10 +89,10 @@ begin
     ) into result
     from public.product_catalog pc
     where (
-        pc.barcode = barcode
-        or pc.barcode = lpad(barcode, 13, '0')
-        or pc.barcode = lpad(barcode, 8, '0')
-        or pc.barcode = regexp_replace(barcode, '^0+', '')
+        pc.barcode = p_barcode
+        or pc.barcode = lpad(p_barcode, 13, '0')
+        or pc.barcode = lpad(p_barcode, 8, '0')
+        or pc.barcode = regexp_replace(p_barcode, '^0+', '')
     )
     and pc.is_available = true
     limit 1;
@@ -105,7 +111,7 @@ alter table public.barcode_scans
 create or replace function public.log_barcode_scan(
     p_user_id uuid,
     p_barcode text,
-    p_product_id uuid default null,
+    p_product_id text default null,
     p_product_name text default null,
     p_product_brand text default null,
     p_match_confidence numeric default null
@@ -126,7 +132,7 @@ begin
     ) values (
         p_user_id,
         p_barcode,
-        p_product_id::text,
+        p_product_id,
         p_product_name,
         p_product_brand,
         p_product_id is not null,
@@ -144,7 +150,7 @@ grant execute on function public.match_product_by_barcode_enhanced(text) to auth
 grant execute on function public.match_product_by_barcode_enhanced(text) to anon;
 grant execute on function public.get_product_by_barcode(text) to authenticated;
 grant execute on function public.get_product_by_barcode(text) to anon;
-grant execute on function public.log_barcode_scan(uuid, text, uuid, text, text, numeric) to authenticated;
+grant execute on function public.log_barcode_scan(uuid, text, text, text, text, numeric) to authenticated;
 
 -- Add comments
 comment on function public.match_product_by_barcode_enhanced(text) is 'Enhanced barcode matching with multiple format support and scoring, similar to Yuka app';

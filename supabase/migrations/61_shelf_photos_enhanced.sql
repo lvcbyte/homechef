@@ -27,7 +27,7 @@ create table if not exists public.shelf_photo_analysis (
     detected_item_name text not null,
     detected_quantity text,
     confidence_score numeric(5, 2) default 0.0,
-    matched_product_id uuid references public.product_catalog (id),
+    matched_product_id text references public.product_catalog (id),
     matched_product_name text,
     inventory_item_id uuid references public.inventory (id),
     created_at timestamptz not null default timezone('utc', now())
@@ -196,26 +196,26 @@ create or replace function match_shelf_item_to_catalog(
     p_user_id uuid
 )
 returns table (
-    product_id uuid,
+    product_id text,
     product_name text,
     match_score numeric
 ) as $$
 begin
     return query
     select 
-        pc.id as product_id,
-        pc.name as product_name,
+        pc.id::text as product_id,
+        pc.product_name as product_name,
         -- Simple text similarity matching (can be improved with pg_trgm)
         case 
-            when lower(pc.name) = lower(p_item_name) then 100.0
-            when lower(pc.name) like '%' || lower(p_item_name) || '%' then 80.0
-            when lower(p_item_name) like '%' || lower(pc.name) || '%' then 70.0
+            when lower(pc.product_name) = lower(p_item_name) then 100.0
+            when lower(pc.product_name) like '%' || lower(p_item_name) || '%' then 80.0
+            when lower(p_item_name) like '%' || lower(pc.product_name) || '%' then 70.0
             else 50.0
         end as match_score
     from public.product_catalog pc
     where 
-        lower(pc.name) like '%' || lower(p_item_name) || '%'
-        or lower(p_item_name) like '%' || lower(pc.name) || '%'
+        lower(pc.product_name) like '%' || lower(p_item_name) || '%'
+        or lower(p_item_name) like '%' || lower(pc.product_name) || '%'
     order by match_score desc
     limit 5;
 end;

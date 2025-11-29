@@ -26,6 +26,7 @@ drop policy if exists "shelf photos update" on storage.objects;
 drop policy if exists "shelf photos delete" on storage.objects;
 
 -- Allow authenticated users to upload shelf photos (max 5MB)
+-- Note: File size limit is enforced by bucket configuration, not in policy
 create policy "shelf photos upload"
     on storage.objects
     for insert
@@ -33,7 +34,6 @@ create policy "shelf photos upload"
     with check (
         bucket_id = 'shelf-photos'
         and (storage.foldername(name))[1] = auth.uid()::text
-        and octet_length(decode(encode(metadata->>'data', 'base64'), 'base64')) <= 5242880
     );
 
 -- Allow authenticated users to view their own shelf photos
