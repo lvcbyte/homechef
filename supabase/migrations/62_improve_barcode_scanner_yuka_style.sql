@@ -107,8 +107,9 @@ alter table public.barcode_scans
     add column if not exists product_brand text,
     add column if not exists match_confidence numeric(5, 2);
 
--- Drop old version of function if it exists (with uuid parameter)
+-- Drop old versions of function if they exist (with different signatures)
 drop function if exists public.log_barcode_scan(uuid, text, uuid, text, text, numeric);
+drop function if exists public.log_barcode_scan(uuid, text, text, text, text, numeric);
 
 -- Function to log barcode scan with product info
 create or replace function public.log_barcode_scan(
