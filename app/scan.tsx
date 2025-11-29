@@ -178,6 +178,8 @@ export default function ScanScreen() {
   const scanAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
   const [QuaggaScannerComponent, setQuaggaScannerComponent] = useState<React.ComponentType<any> | null>(null);
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const scanningLineAnimation = useRef(new Animated.Value(0)).current;
   const [productDetailModalVisible, setProductDetailModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [manualName, setManualName] = useState('');
@@ -930,12 +932,39 @@ export default function ScanScreen() {
                 ]}
                 pointerEvents="none"
               >
-                <View style={styles.barcodeCorner} />
-                <View style={[styles.barcodeCorner, { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 }]} />
-                <View style={[styles.barcodeCorner, { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 }]} />
-                <View style={[styles.barcodeCorner, { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 }]} />
+                {/* Top-left corner */}
+                <View style={[styles.barcodeCorner, styles.cornerTopLeft]} />
+                {/* Top-right corner */}
+                <View style={[styles.barcodeCorner, styles.cornerTopRight]} />
+                {/* Bottom-left corner */}
+                <View style={[styles.barcodeCorner, styles.cornerBottomLeft]} />
+                {/* Bottom-right corner */}
+                <View style={[styles.barcodeCorner, styles.cornerBottomRight]} />
                 
-                {/* Scanning animation overlay */}
+                {/* Always visible scanning line animation */}
+                {!showScanAnimation && (
+                  <Animated.View
+                    style={[
+                      styles.scanningOverlay,
+                      {
+                        opacity: 0.8,
+                        transform: [
+                          {
+                            translateY: scanningLineAnimation.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [-140, 140],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    <View style={styles.scanningLine} />
+                  </Animated.View>
+                )}
+                
+                {/* Scanning animation overlay when barcode detected */}
                 {showScanAnimation && (
                   <Animated.View
                     style={[
@@ -954,7 +983,7 @@ export default function ScanScreen() {
                     ]}
                     pointerEvents="none"
                   >
-                    <View style={styles.scanningLine} />
+                    <View style={[styles.scanningLine, styles.scanningLineActive]} />
                   </Animated.View>
                 )}
               </Animated.View>
@@ -969,23 +998,42 @@ export default function ScanScreen() {
                 <Text style={styles.barcodeHint} pointerEvents="none">Richt de camera op de barcode</Text>
               )}
               
-              <Pressable 
-                style={styles.closeOverlay} 
-                onPress={() => {
-                  setBarcodeMode(false);
-                  setScannedBarcode(null);
-                  setShowScanAnimation(false);
-                  scanAnimation.setValue(0);
-                  pulseAnimation.setValue(1);
-                }}
-                disabled={showScanAnimation}
+              {/* Flash toggle button */}
+              <Pressable
+                style={styles.flashButton}
+                onPress={() => setFlashEnabled(!flashEnabled)}
                 pointerEvents="auto"
               >
-                <View style={[styles.closeButton, showScanAnimation && styles.closeButtonDisabled]}>
-                  <Ionicons name="close" size={24} color="#fff" />
+                <View style={[styles.flashButtonInner, flashEnabled && styles.flashButtonActive]}>
+                  <Ionicons 
+                    name={flashEnabled ? "flash" : "flash-off"} 
+                    size={24} 
+                    color={flashEnabled ? "#047857" : "#fff"} 
+                  />
                 </View>
-                <Text style={styles.closeOverlayText}>Stop scannen</Text>
               </Pressable>
+              
+              {/* Close button */}
+              <View style={styles.closeOverlay} pointerEvents="box-none">
+                <Pressable 
+                  onPress={() => {
+                    setBarcodeMode(false);
+                    setScannedBarcode(null);
+                    setShowScanAnimation(false);
+                    setFlashEnabled(false);
+                    scanAnimation.setValue(0);
+                    pulseAnimation.setValue(1);
+                    scanningLineAnimation.setValue(0);
+                  }}
+                  disabled={showScanAnimation}
+                  pointerEvents="auto"
+                >
+                  <View style={[styles.closeButton, showScanAnimation && styles.closeButtonDisabled]}>
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </View>
+                  <Text style={styles.closeOverlayText}>Stop scannen</Text>
+                </Pressable>
+              </View>
             </View>
           ) : (
             <View style={styles.barcodePermissionPrompt}>
@@ -1889,6 +1937,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
+  scanningLineActive: {
+    backgroundColor: '#10b981',
+    height: 4,
+    shadowOpacity: 1,
+    shadowRadius: 12,
+  },
   scanningStatus: {
     alignItems: 'center',
     marginTop: 24,
@@ -1928,6 +1982,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
+  },
+  flashButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    zIndex: 20,
+  },
+  flashButtonInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  flashButtonActive: {
+    backgroundColor: 'rgba(4, 120, 87, 0.3)',
+    borderColor: '#047857',
   },
   closeOverlay: {
     position: 'absolute',

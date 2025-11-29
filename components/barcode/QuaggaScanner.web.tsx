@@ -8,9 +8,10 @@ interface QuaggaScannerProps {
   onDetected: (code: string) => void;
   onError?: (error: Error) => void;
   style?: any;
+  flashEnabled?: boolean;
 }
 
-export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps) {
+export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false }: QuaggaScannerProps) {
   const containerId = 'quagga-scanner-container-' + Math.random().toString(36).substr(2, 9);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastScannedCode = useRef<string | null>(null);
@@ -61,6 +62,7 @@ export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps
                     width: { min: 640, ideal: 1280, max: 1920 },
                     height: { min: 480, ideal: 720, max: 1080 },
                     facingMode: 'environment', // Use back camera
+                    advanced: flashEnabled ? [{ torch: true }] : [],
                   },
                   area: {
                     // Define scanning area (optional)
