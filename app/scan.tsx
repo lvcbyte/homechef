@@ -1173,8 +1173,9 @@ export default function ScanScreen() {
                 </View>
               </>
             )}
-          </View>
-        </View>
+            </View>
+          </Pressable>
+        </SafeAreaView>
       </Modal>
 
       <Modal visible={manualModalVisible} transparent animationType="fade">
