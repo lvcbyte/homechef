@@ -232,6 +232,28 @@ export default function ScanScreen() {
     ImagePicker.requestCameraPermissionsAsync();
   }, [permission, requestPermission]);
 
+  // Continuous scanning line animation
+  useEffect(() => {
+    if (barcodeMode && !showScanAnimation) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanningLineAnimation, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(scanningLineAnimation, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [barcodeMode, showScanAnimation, scanningLineAnimation]);
+
   // Dynamically load QuaggaScanner only on web
   // Using .web.tsx extension ensures it's only loaded on web platform
   useEffect(() => {
@@ -1943,6 +1965,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 12,
   },
+  scanningLineActive: {
+    backgroundColor: '#10b981',
+    height: 4,
+    shadowOpacity: 1,
+    shadowRadius: 12,
+  },
   scanningStatus: {
     alignItems: 'center',
     marginTop: 24,
@@ -1967,10 +1995,35 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderColor: '#047857',
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    top: 0,
-    left: 0,
+    borderWidth: 4,
+  },
+  cornerTopLeft: {
+    top: -2,
+    left: -2,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    borderTopLeftRadius: 20,
+  },
+  cornerTopRight: {
+    top: -2,
+    right: -2,
+    borderLeftWidth: 0,
+    borderBottomWidth: 0,
+    borderTopRightRadius: 20,
+  },
+  cornerBottomLeft: {
+    bottom: -2,
+    left: -2,
+    borderTopWidth: 0,
+    borderRightWidth: 0,
+    borderBottomLeftRadius: 20,
+  },
+  cornerBottomRight: {
+    bottom: -2,
+    right: -2,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+    borderBottomRightRadius: 20,
   },
   barcodeHint: {
     color: '#fff',
@@ -1982,6 +2035,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
+  },
+  flashButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    zIndex: 20,
+  },
+  flashButtonInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  flashButtonActive: {
+    backgroundColor: 'rgba(4, 120, 87, 0.3)',
+    borderColor: '#047857',
   },
   flashButton: {
     position: 'absolute',
