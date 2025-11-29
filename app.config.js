@@ -8,12 +8,12 @@ try {
 
 module.exports = {
   expo: {
-    name: 'Stockpit',
+    name: 'STOCKPIT',
     slug: 'stockpit',
     scheme: 'stockpit',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/logo.png',
+    icon: './assets/icon.png',
     userInterfaceStyle: 'automatic',
     splash: {
       image: './assets/splash.png',
@@ -34,8 +34,8 @@ module.exports = {
       bundler: 'metro',
       output: 'static',
       favicon: './assets/favicon.png',
-      name: 'Stockpit',
-      shortName: 'Stockpit',
+      name: 'STOCKPIT',
+      shortName: 'STOCKPIT',
       lang: 'nl',
       scope: '/',
       themeColor: '#047857',
@@ -46,7 +46,7 @@ module.exports = {
       description: 'Slimme keukenassistent met AI-powered recepten en voorraadbeheer',
       icons: [
         {
-          src: './assets/logo.png',
+          src: './assets/icon.png',
           sizes: [180, 192, 512],
           type: 'image/png',
           purpose: 'any maskable',
@@ -55,15 +55,15 @@ module.exports = {
       apple: {
         appleMobileWebAppCapable: 'yes',
         appleMobileWebAppStatusBarStyle: 'black-translucent',
-        appleTouchIcon: './assets/logo.png',
+        appleTouchIcon: './assets/icon.png',
       },
       meta: {
         viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover',
         'mobile-web-app-capable': 'yes',
         'apple-mobile-web-app-capable': 'yes',
         'apple-mobile-web-app-status-bar-style': 'default',
-        'apple-mobile-web-app-title': 'Stockpit',
-        'application-name': 'Stockpit',
+        'apple-mobile-web-app-title': 'STOCKPIT',
+        'application-name': 'STOCKPIT',
         'theme-color': '#047857',
       },
     },

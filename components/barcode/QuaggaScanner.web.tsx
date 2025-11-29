@@ -165,22 +165,69 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
     };
   }, [onDetected, onError, isInitialized, containerId]);
 
-  // Update flash when it changes
+  // Update flash when it changes - actually control device torch
   useEffect(() => {
-    if (streamRef.current && typeof navigator !== 'undefined') {
-      const videoTrack = streamRef.current.getVideoTracks()[0];
-      if (videoTrack && 'applyConstraints' in videoTrack) {
-        const capabilities = videoTrack.getCapabilities();
-        if (capabilities && 'torch' in capabilities) {
-          videoTrack.applyConstraints({
-            advanced: [{ torch: flashEnabled }] as any,
-          } as any).catch((err: any) => {
-            console.log('Flash not supported or failed:', err);
-          });
-        }
+    const updateFlash = async () => {
+      if (!isInitialized) return;
+      
+      // Try to get the video element from Quagga container
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      
+      const videoElement = container.querySelector('video') as HTMLVideoElement;
+      if (!videoElement || !videoElement.srcObject) {
+        // Try to get stream from Quagga's internal state
+        setTimeout(updateFlash, 500);
+        return;
       }
-    }
-  }, [flashEnabled]);
+      
+      const stream = videoElement.srcObject as MediaStream;
+      if (!stream) return;
+      
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) return;
+      
+      try {
+        const capabilities = videoTrack.getCapabilities();
+        console.log('Video track capabilities:', capabilities);
+        
+        // Check if torch is supported
+        if (capabilities && 'torch' in capabilities && capabilities.torch) {
+          // Use applyConstraints to control torch
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: flashEnabled }] as any,
+          } as any);
+          console.log('Flash toggled:', flashEnabled);
+        } else {
+          // Fallback: try to get new stream with torch constraint
+          if (flashEnabled) {
+            try {
+              const newStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                  facingMode: 'environment',
+                  torch: true,
+                } as any,
+              });
+              
+              // Replace the track
+              if (newStream.getVideoTracks().length > 0) {
+                const newTrack = newStream.getVideoTracks()[0];
+                videoTrack.replaceTrack(newTrack).catch((err) => {
+                  console.log('Could not replace track:', err);
+                });
+              }
+            } catch (err) {
+              console.log('Could not enable torch:', err);
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Flash control error:', error);
+      }
+    };
+    
+    updateFlash();
+  }, [flashEnabled, isInitialized, containerId]);
 
   useEffect(() => {
     // Create container div when component mounts (web only)

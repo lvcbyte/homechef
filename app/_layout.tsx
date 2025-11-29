@@ -65,7 +65,7 @@ export default function RootLayout() {
           const appleIcon = document.createElement('link');
           appleIcon.rel = 'apple-touch-icon';
           appleIcon.sizes = `${size}x${size}`;
-          appleIcon.href = `/assets/logo.png`;
+          appleIcon.href = `/assets/icon.png`;
           document.getElementsByTagName('head')[0].appendChild(appleIcon);
         }
       });
@@ -74,8 +74,13 @@ export default function RootLayout() {
       if (!document.querySelector('link[rel="apple-touch-icon"]:not([sizes])')) {
         const appleIcon = document.createElement('link');
         appleIcon.rel = 'apple-touch-icon';
-        appleIcon.href = '/assets/logo.png';
+        appleIcon.href = '/assets/icon.png';
         document.getElementsByTagName('head')[0].appendChild(appleIcon);
+      }
+      
+      // Update app title
+      if (document.title !== 'STOCKPIT') {
+        document.title = 'STOCKPIT';
       }
 
       // Prevent pull-to-refresh on mobile
