@@ -60,6 +60,62 @@ const RECIPE_MODEL = 'gpt-4o-mini';
 // Free model from OpenRouter - Grok 4.1 Fast (free tier)
 const FREE_LLM_MODEL = 'x-ai/grok-4.1-fast:free';
 
+// Curated list of high-quality food images from Unsplash
+// These are direct image URLs that always work
+const FOOD_IMAGES = [
+  'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1565958011703-44f9829ba187?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1495521821757-a1efb6729352?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1506084868230-bb9d95c24759?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1506354666786-959d6d497f1a?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1495521821757-a1efb6729352?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=1200&q=80',
+];
+
+/**
+ * Generate a reliable image URL for a recipe
+ * Uses a deterministic approach based on recipe name to always return the same image for the same recipe
+ * Falls back to a curated list of high-quality food images
+ */
+export function generateRecipeImageUrl(recipeName: string, seed?: number): string {
+  if (!recipeName) {
+    return FOOD_IMAGES[0];
+  }
+
+  // Create a simple hash from the recipe name for deterministic selection
+  let hash = 0;
+  const name = recipeName.toLowerCase().trim();
+  for (let i = 0; i < name.length; i++) {
+    const char = name.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  // Use seed if provided, otherwise use hash
+  const index = seed !== undefined ? seed : Math.abs(hash);
+  
+  // Select image from curated list
+  return FOOD_IMAGES[index % FOOD_IMAGES.length];
+}
+
 export async function runInventoryScan(photoUris: string[]): Promise<InventoryItem[]> {
   if (!photoUris.length) {
     return [];
@@ -351,9 +407,8 @@ Antwoord in JSON formaat:
       const relevanceScore =
         inventoryHits * 5 + (archetypeMatch ? 20 : -10) + (moodMatch ? 15 : 0);
 
-      // Generate image URL based on recipe title
-      const recipeNameForImage = recipe.title.replace(/\s+/g, ',').toLowerCase();
-      const imageUrl = `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80`;
+      // Generate reliable image URL based on recipe title
+      const imageUrl = generateRecipeImageUrl(recipe.title);
 
       return {
         name: recipe.title,
@@ -458,8 +513,8 @@ Antwoord ALLEEN met geldig JSON, geen andere tekst.`;
 
     if (!recipeData) return null;
 
-    const recipeNameForImage = recipeData.title?.replace(/\s+/g, ',').toLowerCase() || 'recipe';
-    const imageUrl = `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80`;
+    // Generate reliable image URL
+    const imageUrl = generateRecipeImageUrl(recipeData.title || 'recipe');
 
     const normalizedIngredients = (recipeData.ingredients || []).map((ing: any) => {
       if (typeof ing === 'string') {
@@ -717,6 +772,163 @@ BELANGRIJK:
     }
     
     return `Er is een fout opgetreden: ${error?.message || 'Onbekende fout'}. Controleer de console voor meer details.`;
+  }
+}
+
+// Admin AI Assistant - Advanced AI with database access
+export interface AdminAIContext {
+  databaseStats?: {
+    totalUsers: number;
+    totalRecipes: number;
+    totalInventoryItems: number;
+    recentRecipes?: Array<{ id: string; title: string; created_at: string }>;
+    recentUsers?: Array<{ id: string; email: string; created_at: string }>;
+  };
+  availableFunctions?: string[];
+}
+
+export interface AdminAIResponse {
+  message: string;
+  action?: {
+    type: 'create_recipe' | 'update_recipe' | 'delete_recipe' | 'query_database' | 'analyze_recipe' | 'improve_recipe';
+    data?: any;
+  };
+  suggestions?: string[];
+}
+
+export async function chatWithAdminAI(
+  message: string,
+  context: AdminAIContext
+): Promise<AdminAIResponse> {
+  if (!OPENROUTER_KEY) {
+    return {
+      message: 'AI-assistentie is momenteel niet beschikbaar. Controleer je OpenRouter API key.',
+    };
+  }
+
+  const stats = context.databaseStats || {};
+  const recentRecipes = stats.recentRecipes?.slice(0, 10) || [];
+  const recentUsers = stats.recentUsers?.slice(0, 10) || [];
+
+  const systemPrompt = `Je bent STOCKPIT Admin AI, een geavanceerde AI-assistent met volledige database toegang voor het beheren van het STOCKPIT platform.
+
+JE ROL:
+- Je helpt de admin met het beheren van het platform
+- Je kunt recepten toevoegen, bewerken en verwijderen
+- Je kunt database queries uitvoeren (veilig)
+- Je kunt recepten analyseren en verbeteren
+- Je traint jezelf om betere recepten te genereren op basis van feedback
+
+BESCHIKBARE FUNCTIES:
+- admin_create_recipe: Maak een nieuw recept aan
+- admin_update_recipe: Update een bestaand recept
+- admin_delete_recipe: Verwijder een recept
+- get_admin_stats: Haal statistieken op
+- Query database: Voer veilige SELECT queries uit
+
+HUIDIGE DATABASE STATUS:
+- Totaal gebruikers: ${stats.totalUsers || 0}
+- Totaal recepten: ${stats.totalRecipes || 0}
+- Totaal inventory items: ${stats.totalInventoryItems || 0}
+
+RECENTE RECEPTEN:
+${recentRecipes.map(r => `- ${r.title} (ID: ${r.id.substring(0, 8)}...)`).join('\n') || 'Geen recente recepten'}
+
+RECENTE GEBRUIKERS:
+${recentUsers.map(u => `- ${u.email} (ID: ${u.id.substring(0, 8)}...)`).join('\n') || 'Geen recente gebruikers'}
+
+BELANGRIJK:
+- Antwoord altijd in het Nederlands
+- Gebruik GEEN markdown formatting (geen ###, **, etc.)
+- Als je een actie wilt uitvoeren, geef dan een gestructureerd JSON object terug met:
+  {
+    "action": "create_recipe" | "update_recipe" | "delete_recipe" | "query_database" | "analyze_recipe" | "improve_recipe",
+    "data": { ... relevante data ... }
+  }
+- Voor recept creatie/update, zorg dat alle velden correct zijn:
+  - title (string, Nederlands)
+  - description (string, 1-2 zinnen)
+  - ingredients (array van {name, quantity, unit})
+  - instructions (array van {step, instruction})
+  - prep_time_minutes, cook_time_minutes, total_time_minutes (integers)
+  - difficulty ("Makkelijk" | "Gemiddeld" | "Moeilijk")
+  - servings (integer)
+  - tags (array van strings)
+  - category (string, optioneel)
+- Wees proactief en suggestief
+- Analyseer recepten op kwaliteit en geef verbeteringen
+- Help met het trainen van betere recept generatie`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT Admin',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: message,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        message: `API fout: ${response.status} ${response.statusText}`,
+      };
+    }
+
+    const result = await response.json();
+    let content = result.choices?.[0]?.message?.content || 'Geen antwoord ontvangen.';
+
+    // Clean up markdown
+    content = content
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    // Try to extract action JSON if present
+    let action: AdminAIResponse['action'] | undefined;
+    const jsonMatch = content.match(/\{[\s\S]*"action"[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.action) {
+          action = parsed;
+          // Remove JSON from message
+          content = content.replace(jsonMatch[0], '').trim();
+        }
+      } catch (e) {
+        // JSON parsing failed, ignore
+      }
+    }
+
+    return {
+      message: content,
+      action,
+    };
+  } catch (error: any) {
+    console.error('Error in admin AI chat:', error);
+    return {
+      message: `Er is een fout opgetreden: ${error?.message || 'Onbekende fout'}`,
+    };
   }
 }
 

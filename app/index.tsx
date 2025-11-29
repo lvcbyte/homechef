@@ -10,7 +10,7 @@ import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { generateRecipesWithAI } from '../services/ai';
+import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
 import { navigateToRoute } from '../utils/navigation';
 
 interface Recipe {
@@ -302,7 +302,7 @@ export default function Home() {
           title: existing.title,
           description: existing.description,
           author: 'STOCKPIT AI',
-          image_url: existing.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+          image_url: existing.image_url || generateRecipeImageUrl(existing.title),
           total_time_minutes: existing.total_time_minutes,
           difficulty: existing.difficulty || 'Gemiddeld',
           servings: existing.servings,
@@ -377,7 +377,7 @@ export default function Home() {
                 title: saved.title,
                 description: saved.description,
                 author: 'STOCKPIT AI',
-                image_url: saved.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+                image_url: saved.image_url || generateRecipeImageUrl(saved.title),
                 total_time_minutes: saved.total_time_minutes,
                 difficulty: saved.difficulty || 'Gemiddeld',
                 servings: saved.servings,
@@ -594,6 +594,14 @@ export default function Home() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
+            {profile?.is_admin && (
+              <Pressable 
+                onPress={() => navigateToRoute(router, '/admin')}
+                style={styles.adminButton}
+              >
+                <Ionicons name="shield" size={20} color="#047857" />
+              </Pressable>
+            )}
             <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
@@ -630,7 +638,7 @@ export default function Home() {
                 >
                   <Image
                     source={{
-                      uri: dailyAIRecipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+                      uri: dailyAIRecipe.image_url || generateRecipeImageUrl(dailyAIRecipe.title),
                     }}
                     style={styles.dailyAIHeroImage}
                   />
@@ -682,7 +690,7 @@ export default function Home() {
             >
               <Image
                 source={{
-                  uri: recipeOfTheDay.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+                  uri: recipeOfTheDay.image_url || generateRecipeImageUrl(recipeOfTheDay.title),
                 }}
                 style={styles.heroImage}
               />
@@ -743,7 +751,7 @@ export default function Home() {
                 >
                   <Image
                     source={{
-                      uri: recipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=800&q=80',
+                      uri: recipe.image_url || generateRecipeImageUrl(recipe.title),
                     }}
                     style={styles.recipeImage}
                   />
@@ -781,7 +789,7 @@ export default function Home() {
                 >
                   <Image
                     source={{
-                      uri: recipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=800&q=80',
+                      uri: recipe.image_url || generateRecipeImageUrl(recipe.title),
                     }}
                     style={styles.recipeImage}
                   />
@@ -864,7 +872,7 @@ export default function Home() {
                 <>
                   <Image
                     source={{
-                      uri: selectedRecipe.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+                      uri: selectedRecipe.image_url || generateRecipeImageUrl(selectedRecipe.title),
                     }}
                     style={styles.modalImage}
                   />
@@ -1015,7 +1023,17 @@ const styles = StyleSheet.create({
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
+  },
+  adminButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
   },
   avatar: {
     width: 36,

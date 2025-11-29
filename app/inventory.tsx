@@ -187,7 +187,7 @@ interface ShelfPhotoGroup {
 
 export default function InventoryScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'items' | 'categories' | 'expiry'>('items');
@@ -776,6 +776,14 @@ export default function InventoryScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
+            {profile?.is_admin && (
+              <Pressable 
+                onPress={() => navigateToRoute(router, '/admin')}
+                style={styles.adminButton}
+              >
+                <Ionicons name="shield" size={20} color="#047857" />
+              </Pressable>
+            )}
             <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
@@ -1495,7 +1503,17 @@ const styles = StyleSheet.create({
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
+  },
+  adminButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
   },
   avatar: {
     width: 36,

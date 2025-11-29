@@ -75,7 +75,7 @@ interface ShoppingListItem {
 
 export default function SavedScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [recipes, setRecipes] = useState<SavedRecipe[]>([]);
   const [lists, setLists] = useState<ShoppingList[]>([]);
   const [aiChatRecipes, setAiChatRecipes] = useState<AIChatRecipe[]>([]);
@@ -911,6 +911,14 @@ export default function SavedScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
+            {profile?.is_admin && (
+              <Pressable 
+                onPress={() => navigateToRoute(router, '/admin')}
+                style={styles.adminButton}
+              >
+                <Ionicons name="shield" size={20} color="#047857" />
+              </Pressable>
+            )}
             <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
@@ -1905,7 +1913,17 @@ const styles = StyleSheet.create({
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
+  },
+  adminButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
   },
   avatar: {
     width: 36,

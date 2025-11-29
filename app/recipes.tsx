@@ -9,7 +9,7 @@ import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { generateRecipesWithAI } from '../services/ai';
+import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
 import { navigateToRoute } from '../utils/navigation';
 
 interface Recipe {
@@ -43,9 +43,8 @@ interface Category {
   count: number;
 }
 
-const buildRecipeImage = (title?: string, seed?: string) => {
-  const base = title?.replace(/\s+/g, ',').toLowerCase() || 'stockpit,recipe';
-  return `https://source.unsplash.com/featured/?${encodeURIComponent(base)},food,recipe&w=1200&q=80&sig=${seed || Date.now()}`;
+const buildRecipeImage = (title?: string, seed?: number) => {
+  return generateRecipeImageUrl(title || 'recipe', seed);
 };
 
 const canonicalCategory = (recipe: any) => {
@@ -108,6 +107,47 @@ export default function RecipesScreen() {
   const [chefRadarLoadingMessage, setChefRadarLoadingMessage] = useState(CHEF_RADAR_LOADING_MESSAGES[0]);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [inventoryCount, setInventoryCount] = useState<number | null>(null);
+  const [chefRadarExpanded, setChefRadarExpanded] = useState(false);
+  const [generatingMore, setGeneratingMore] = useState(false);
+
+  // Load Chef Radar recipes from session storage on mount
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem(`chefRadarRecipes_${user?.id}`);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setChefRadarRecipes(parsed);
+            setChefRadarLoading(false);
+          }
+        } catch (e) {
+          console.error('Error loading stored recipes:', e);
+        }
+      }
+    }
+  }, [user?.id]);
+
+  // Save Chef Radar recipes to session storage whenever they change
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && user && chefRadarRecipes.length > 0) {
+      sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(chefRadarRecipes));
+    }
+  }, [chefRadarRecipes, user?.id]);
+
+  // Clear stored recipes when user logs out
+  useEffect(() => {
+    if (!user && Platform.OS === 'web' && typeof window !== 'undefined') {
+      // Clear all chef radar recipes from session storage
+      const keys = Object.keys(sessionStorage);
+      keys.forEach(key => {
+        if (key.startsWith('chefRadarRecipes_')) {
+          sessionStorage.removeItem(key);
+        }
+      });
+      setChefRadarRecipes([]);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -251,8 +291,14 @@ export default function RecipesScreen() {
       }, 200);
 
       // Fetch Chef Radar recipes in background (non-blocking)
-      setChefRadarLoading(true);
-      if (profile?.archetype === 'None') {
+      // Only generate if we don't have recipes in session storage
+      const hasStoredRecipes = Platform.OS === 'web' && typeof window !== 'undefined' && 
+        sessionStorage.getItem(`chefRadarRecipes_${user.id}`);
+      
+      if (!hasStoredRecipes) {
+        setChefRadarLoading(true);
+        
+        if (profile?.archetype === 'None') {
         supabase
           .from('recipes')
           .select('*')
@@ -260,7 +306,7 @@ export default function RecipesScreen() {
           .then(({ data: allRecipes }) => {
             if (allRecipes) {
               const shuffled = [...allRecipes].sort(() => Math.random() - 0.5);
-              const randomRecipes = shuffled.slice(0, 3).map((r: any) => ({
+              const randomRecipes = shuffled.slice(0, 1).map((r: any) => ({
                 ...r,
                 recipe_id: r.id,
                 match_score: 0,
@@ -271,12 +317,16 @@ export default function RecipesScreen() {
               }));
               setChefRadarRecipes(randomRecipes as Recipe[]);
               setChefRadarCarouselData([]);
+              // Save to session storage
+              if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(randomRecipes));
+              }
             }
             setChefRadarLoading(false);
           })
           .catch(() => setChefRadarLoading(false));
-      } else {
-        supabase.rpc('match_recipes_with_inventory', {
+        } else {
+          supabase.rpc('match_recipes_with_inventory', {
           p_user_id: user.id,
           p_category: category,
           p_limit: 3,
@@ -288,7 +338,7 @@ export default function RecipesScreen() {
         .then(({ data: matched, error: matchError }) => {
           if (matchError) {
             console.error('Error matching recipes with inventory:', matchError);
-            generateAIChefRadarRecipes().catch(() => {});
+            generateAIChefRadarRecipes(false).catch(() => {});
           } else if (matched && matched.length > 0) {
             const goodMatches = (matched as Recipe[]).filter((r) => {
               return (r.matched_ingredients_count || 0) >= 1;
@@ -296,23 +346,32 @@ export default function RecipesScreen() {
             
             if (goodMatches.length > 0) {
               const sorted = goodMatches.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-              const enriched = sorted.slice(0, 3).map((recipe) => ({
+              const enriched = sorted.slice(0, 1).map((recipe) => ({
                 ...recipe,
                 image_url: recipe.image_url || buildRecipeImage(recipe.title, recipe.recipe_id),
               }));
               setChefRadarRecipes(enriched as Recipe[]);
               setChefRadarCarouselData([]);
+              // Save to session storage
+              if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(enriched));
+              }
               setChefRadarLoading(false);
             } else {
-              generateAIChefRadarRecipes().catch(() => {});
+              if (!hasStoredRecipes) {
+                generateAIChefRadarRecipes(false).catch(() => {});
+              }
             }
           } else {
-            generateAIChefRadarRecipes().catch(() => {});
+            if (!hasStoredRecipes) {
+              generateAIChefRadarRecipes(false).catch(() => {});
+            }
           }
         })
         .catch(() => {
           setChefRadarLoading(false);
         });
+        }
       }
 
     } catch (error) {
@@ -606,11 +665,16 @@ export default function RecipesScreen() {
     }
   };
 
-  const generateAIChefRadarRecipes = async () => {
+  const generateAIChefRadarRecipes = async (generateMore: boolean = false) => {
     if (!user || !profile) return;
 
     try {
-      setChefRadarLoading(true);
+      if (generateMore) {
+        setGeneratingMore(true);
+      } else {
+        setChefRadarLoading(true);
+      }
+      
       // Get user inventory
       const { data: inventory } = await supabase
         .from('inventory')
@@ -620,7 +684,8 @@ export default function RecipesScreen() {
         .limit(50);
 
       if (inventory && inventory.length > 0) {
-        // Generate AI recipes based on inventory
+        // Generate AI recipes based on inventory - only 1 for initial load, 3 for "generate more"
+        const recipeCount = generateMore ? 3 : 1;
         const aiRecipes = await generateRecipesWithAI(
           inventory.map((item: any) => ({
             name: item.name,
@@ -638,10 +703,9 @@ export default function RecipesScreen() {
 
         if (aiRecipes && aiRecipes.length > 0) {
           // Convert AI recipes to Recipe format with better images
-          const convertedRecipes: Recipe[] = aiRecipes.slice(0, 3).map((recipe, index) => {
-            // Generate a better image URL based on recipe name
-            const recipeNameForImage = recipe.name.replace(/\s+/g, ',').toLowerCase();
-            const imageUrl = recipe.image_url || `https://source.unsplash.com/featured/?${encodeURIComponent(recipeNameForImage)},food,recipe,cooking&w=1200&q=80&sig=${Date.now()}-${index}`;
+          const convertedRecipes: Recipe[] = aiRecipes.slice(0, recipeCount).map((recipe, index) => {
+            // Generate a reliable image URL based on recipe name
+            const imageUrl = recipe.image_url || generateRecipeImageUrl(recipe.name, index);
             
             return {
               recipe_id: `ai-${Date.now()}-${index}`,
@@ -667,14 +731,30 @@ export default function RecipesScreen() {
             };
           });
 
-          setChefRadarRecipes(convertedRecipes);
+          if (generateMore) {
+            // Append to existing recipes
+            setChefRadarRecipes(prev => {
+              const updated = [...prev, ...convertedRecipes];
+              // Save to session storage
+              if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+                sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(updated));
+              }
+              return updated;
+            });
+          } else {
+            setChefRadarRecipes(convertedRecipes);
+            // Save to session storage
+            if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+              sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(convertedRecipes));
+            }
+          }
           setChefRadarCarouselData([]);
         } else {
           // Fallback to general recipes if AI generation fails
           const { data: fallback } = await supabase
             .from('recipes')
             .select('*')
-            .limit(3)
+            .limit(1)
             .order('created_at', { ascending: false });
           
           if (fallback) {
@@ -687,7 +767,20 @@ export default function RecipesScreen() {
               matched_ingredients: [],
               likes_count: 0,
             }));
-            setChefRadarRecipes(fallbackRecipes as Recipe[]);
+            if (generateMore) {
+              setChefRadarRecipes(prev => {
+                const updated = [...prev, ...fallbackRecipes];
+                if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+                  sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(updated));
+                }
+                return updated;
+              });
+            } else {
+              setChefRadarRecipes(fallbackRecipes as Recipe[]);
+              if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+                sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(fallbackRecipes));
+              }
+            }
             setChefRadarCarouselData([]);
           }
         }
@@ -696,7 +789,7 @@ export default function RecipesScreen() {
         const { data: fallback } = await supabase
           .from('recipes')
           .select('*')
-          .limit(3)
+          .limit(1)
           .order('created_at', { ascending: false });
         
         if (fallback) {
@@ -709,7 +802,20 @@ export default function RecipesScreen() {
             matched_ingredients: [],
             likes_count: 0,
           }));
-          setChefRadarRecipes(fallbackRecipes as Recipe[]);
+          if (generateMore) {
+            setChefRadarRecipes(prev => {
+              const updated = [...prev, ...fallbackRecipes];
+              if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+                sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(updated));
+              }
+              return updated;
+            });
+          } else {
+            setChefRadarRecipes(fallbackRecipes as Recipe[]);
+            if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+              sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(fallbackRecipes));
+            }
+          }
           setChefRadarCarouselData([]);
         }
       }
@@ -719,7 +825,7 @@ export default function RecipesScreen() {
       const { data: fallback } = await supabase
         .from('recipes')
         .select('*')
-        .limit(3)
+        .limit(1)
         .order('created_at', { ascending: false });
       
       if (fallback) {
@@ -732,11 +838,25 @@ export default function RecipesScreen() {
           matched_ingredients: [],
           likes_count: 0,
         }));
-        setChefRadarRecipes(fallbackRecipes as Recipe[]);
+        if (generateMore) {
+          setChefRadarRecipes(prev => {
+            const updated = [...prev, ...fallbackRecipes];
+            if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+              sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(updated));
+            }
+            return updated;
+          });
+        } else {
+          setChefRadarRecipes(fallbackRecipes as Recipe[]);
+          if (Platform.OS === 'web' && typeof window !== 'undefined' && user) {
+            sessionStorage.setItem(`chefRadarRecipes_${user.id}`, JSON.stringify(fallbackRecipes));
+          }
+        }
         setChefRadarCarouselData([]);
       }
     } finally {
       setChefRadarLoading(false);
+      setGeneratingMore(false);
     }
   };
 
@@ -749,7 +869,7 @@ export default function RecipesScreen() {
         title: recipe.title,
         description: recipe.description || null,
         author: recipe.author || 'STOCKPIT AI',
-        image_url: recipe.image_url || `https://source.unsplash.com/featured/?${encodeURIComponent(recipe.title)},food,recipe&w=1200&q=80`,
+        image_url: recipe.image_url || generateRecipeImageUrl(recipe.title),
         total_time_minutes: recipe.total_time_minutes || 30,
         difficulty: recipe.difficulty || 'Gemiddeld',
         servings: recipe.servings || 4,
@@ -898,6 +1018,14 @@ export default function RecipesScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
+            {profile?.is_admin && (
+              <Pressable 
+                onPress={() => navigateToRoute(router, '/admin')}
+                style={styles.adminButton}
+              >
+                <Ionicons name="shield" size={20} color="#047857" />
+              </Pressable>
+            )}
             <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarInitial}>
@@ -970,72 +1098,153 @@ export default function RecipesScreen() {
             </ScrollView>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Chef Radar Picks</Text>
+          {/* Sticky Chef Radar Picks Section - Compact */}
+          <View style={styles.stickyChefRadarContainer}>
+            <View style={styles.stickyChefRadarHeader}>
+              <View style={styles.stickyChefRadarHeaderLeft}>
+                <Ionicons name="sparkles" size={16} color="#047857" />
+                <Text style={styles.stickyChefRadarTitle}>Chef Radar</Text>
+              </View>
+              {chefRadarRecipes.length > 0 && !chefRadarLoading && (
+                <TouchableOpacity
+                  style={styles.expandButton}
+                  onPress={() => setChefRadarExpanded(!chefRadarExpanded)}
+                >
+                  <Ionicons
+                    name={chefRadarExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color="#047857"
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+
             {inventoryCount === null ? (
-              <View style={styles.loadingRow}>
+              <View style={styles.stickyChefRadarLoading}>
                 <ActivityIndicator size="small" color="#047857" />
-                <Text style={styles.loadingText}>Chef Radar voorbereiden...</Text>
+                <Text style={styles.stickyChefRadarLoadingText}>Chef Radar voorbereiden...</Text>
               </View>
             ) : inventoryCount === 0 ? (
-              <Text style={styles.emptyText}>
-                Geen voorraad gevonden. Upload een shelf shot in STOCKPIT Mode om Chef Radar te activeren.
-              </Text>
+              <View style={styles.stickyChefRadarEmpty}>
+                <Text style={styles.stickyChefRadarEmptyText}>
+                  Geen voorraad gevonden. Upload een shelf shot in STOCKPIT Mode om Chef Radar te activeren.
+                </Text>
+              </View>
             ) : chefRadarLoading ? (
-              <StockpitLoader variant="inline" message={chefRadarLoadingMessage} />
+              <View style={styles.stickyChefRadarLoading}>
+                <StockpitLoader variant="inline" message={chefRadarLoadingMessage} />
+              </View>
             ) : chefRadarRecipes.length === 0 ? (
-              <Text style={styles.emptyText}>
-                Geen directe match gevonden. Probeer de AI-toggle of voeg producten toe aan je voorraad.
-              </Text>
+              <View style={styles.stickyChefRadarEmpty}>
+                <Text style={styles.stickyChefRadarEmptyText}>
+                  Geen directe match gevonden. Probeer de AI-toggle of voeg producten toe aan je voorraad.
+                </Text>
+              </View>
             ) : (
-              <View style={styles.verticalList}>
-                {(showAIGenerated && aiGeneratedRecipes.length > 0
-                  ? aiGeneratedRecipes
-                  : chefRadarRecipes
-                ).map((recipe) => (
+              <>
+                {/* Always show first recipe - compact */}
+                {chefRadarRecipes.length > 0 && (
                   <TouchableOpacity
-                    key={recipe.recipe_id}
-                    style={styles.radarCard}
-                    onPress={() => handleRecipePress(recipe)}
+                    style={styles.stickyChefRadarCard}
+                    onPress={() => handleRecipePress(chefRadarRecipes[0])}
+                    activeOpacity={0.7}
                   >
                     <Image
                       source={{
-                        uri: recipe.image_url || 'https://images.unsplash.com/photo-1470673042977-43d9b07b7103?auto=format&fit=crop&w=1000&q=80',
+                        uri: chefRadarRecipes[0].image_url || 'https://images.unsplash.com/photo-1470673042977-43d9b07b7103?auto=format&fit=crop&w=1000&q=80',
                       }}
-                      style={styles.radarImage}
+                      style={styles.stickyChefRadarImage}
                     />
+                    <View style={styles.stickyChefRadarCardBody}>
+                      <Text style={styles.stickyChefRadarCardTitle} numberOfLines={1}>
+                        {chefRadarRecipes[0].title}
+                      </Text>
+                      <Text style={styles.stickyChefRadarCardMatch} numberOfLines={1}>
+                        {Math.round(chefRadarRecipes[0].match_score || 0)}% match • {chefRadarRecipes[0].total_time_minutes} min
+                      </Text>
+                    </View>
                     <TouchableOpacity
-                      style={styles.heartButtonRadar}
+                      style={styles.stickyChefRadarHeartButton}
                       onPress={(e) => {
                         e.stopPropagation();
-                        handleLike(recipe.recipe_id);
+                        handleLike(chefRadarRecipes[0].recipe_id);
                       }}
                     >
                       <Ionicons
-                        name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
-                        size={20}
-                        color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#fff'}
+                        name={likedRecipes.has(chefRadarRecipes[0].recipe_id) ? 'heart' : 'heart-outline'}
+                        size={16}
+                        color={likedRecipes.has(chefRadarRecipes[0].recipe_id) ? '#ef4444' : '#64748b'}
                       />
                     </TouchableOpacity>
-                    <View style={styles.radarBody}>
-                      <Text style={styles.radarTitle}>{recipe.title}</Text>
-                      <Text style={styles.radarMatch}>
-                        {Math.round(recipe.match_score || 0)}% match • {recipe.matched_ingredients_count || 0} items op voorraad
-                      </Text>
-                      {recipe.matched_ingredients && recipe.matched_ingredients.length > 0 && (
-                        <Text style={styles.radarIngredients} numberOfLines={1}>
-                          {recipe.matched_ingredients.slice(0, 3).join(', ')}
-                          {recipe.matched_ingredients.length > 3 && '...'}
-                        </Text>
-                      )}
-                      <Text style={styles.radarTime}>
-                        {recipe.total_time_minutes} min • {recipe.difficulty}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+                    <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
                   </TouchableOpacity>
-                ))}
-              </View>
+                )}
+
+                {/* Show expanded recipes if expanded */}
+                {chefRadarExpanded && chefRadarRecipes.length > 1 && (
+                  <View style={styles.stickyChefRadarExpanded}>
+                    {chefRadarRecipes.slice(1).map((recipe) => (
+                      <TouchableOpacity
+                        key={recipe.recipe_id}
+                        style={styles.stickyChefRadarCard}
+                        onPress={() => handleRecipePress(recipe)}
+                        activeOpacity={0.7}
+                      >
+                        <Image
+                          source={{
+                            uri: recipe.image_url || 'https://images.unsplash.com/photo-1470673042977-43d9b07b7103?auto=format&fit=crop&w=1000&q=80',
+                          }}
+                          style={styles.stickyChefRadarImage}
+                        />
+                        <View style={styles.stickyChefRadarCardBody}>
+                          <Text style={styles.stickyChefRadarCardTitle} numberOfLines={1}>
+                            {recipe.title}
+                          </Text>
+                          <Text style={styles.stickyChefRadarCardMatch} numberOfLines={1}>
+                            {Math.round(recipe.match_score || 0)}% match • {recipe.total_time_minutes} min
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.stickyChefRadarHeartButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleLike(recipe.recipe_id);
+                          }}
+                        >
+                          <Ionicons
+                            name={likedRecipes.has(recipe.recipe_id) ? 'heart' : 'heart-outline'}
+                            size={16}
+                            color={likedRecipes.has(recipe.recipe_id) ? '#ef4444' : '#64748b'}
+                          />
+                        </TouchableOpacity>
+                        <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Generate More Button - only show when expanded */}
+                {chefRadarExpanded && chefRadarRecipes.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.generateMoreButton}
+                    onPress={() => generateAIChefRadarRecipes(true)}
+                    disabled={generatingMore}
+                    activeOpacity={0.8}
+                  >
+                    {generatingMore ? (
+                      <>
+                        <ActivityIndicator size="small" color="#fff" />
+                        <Text style={styles.generateMoreButtonText}>Genereren...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="add-circle-outline" size={16} color="#fff" />
+                        <Text style={styles.generateMoreButtonText}>Meer genereren</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </>
             )}
           </View>
 
@@ -1323,9 +1532,38 @@ export default function RecipesScreen() {
                   {selectedRecipe.nutrition && (
                     <View style={styles.modalSection}>
                       <Text style={styles.modalSectionTitle}>Voedingswaarden</Text>
-                      <Text style={styles.modalSectionText}>
-                        {JSON.stringify(selectedRecipe.nutrition, null, 2)}
-                      </Text>
+                      {typeof selectedRecipe.nutrition === 'object' && selectedRecipe.nutrition !== null ? (
+                        <View style={styles.nutritionGrid}>
+                          {selectedRecipe.nutrition.protein !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Eiwit</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.protein}g</Text>
+                            </View>
+                          )}
+                          {selectedRecipe.nutrition.carbs !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Koolhydraten</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.carbs}g</Text>
+                            </View>
+                          )}
+                          {selectedRecipe.nutrition.fat !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Vet</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.fat}g</Text>
+                            </View>
+                          )}
+                          {selectedRecipe.nutrition.calories !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Calorieën</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.calories}kcal</Text>
+                            </View>
+                          )}
+                        </View>
+                      ) : (
+                        <Text style={styles.modalSectionText}>
+                          {JSON.stringify(selectedRecipe.nutrition, null, 2)}
+                        </Text>
+                      )}
                     </View>
                   )}
                 </>
@@ -1376,7 +1614,17 @@ const styles = StyleSheet.create({
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
+  },
+  adminButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
   },
   avatar: {
     width: 36,
@@ -1828,15 +2076,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: '90%',
+    maxHeight: Platform.OS === 'web' ? '90%' : '95%',
+    ...(Platform.OS === 'web' && {
+      maxWidth: 600,
+      marginHorizontal: 'auto',
+    }),
   },
   modalImage: {
     width: '100%',
-    height: 250,
+    height: Platform.OS === 'web' ? 300 : 220,
+    backgroundColor: '#e2e8f0',
   },
   modalHeader: {
-    padding: 20,
-    gap: 12,
+    padding: Platform.OS === 'web' ? 20 : 16,
+    gap: Platform.OS === 'web' ? 12 : 10,
   },
   modalHeaderTop: {
     flexDirection: 'row',
@@ -1844,11 +2097,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: Platform.OS === 'web' ? 24 : 20,
     fontWeight: '800',
     color: '#065f46',
     flex: 1,
     marginRight: 12,
+    lineHeight: Platform.OS === 'web' ? 32 : 26,
   },
   closeButton: {
     padding: 4,
@@ -1909,20 +2163,20 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   modalSection: {
-    padding: 20,
+    padding: Platform.OS === 'web' ? 20 : 16,
     paddingTop: 0,
-    gap: 12,
+    gap: Platform.OS === 'web' ? 12 : 10,
   },
   modalSectionTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 18 : 16,
     fontWeight: '700',
     color: '#065f46',
     marginBottom: 4,
   },
   modalSectionText: {
-    fontSize: 15,
+    fontSize: Platform.OS === 'web' ? 15 : 14,
     color: '#1f2937',
-    lineHeight: 22,
+    lineHeight: Platform.OS === 'web' ? 22 : 20,
   },
   ingredientRow: {
     flexDirection: 'row',
@@ -1962,6 +2216,160 @@ const styles = StyleSheet.create({
     color: '#1f2937',
     flex: 1,
     lineHeight: 22,
+  },
+  nutritionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+  nutritionItem: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+  },
+  nutritionLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  nutritionValue: {
+    fontSize: 18,
+    color: '#047857',
+    fontWeight: '700',
+  },
+  stickyChefRadarContainer: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 100,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+    paddingVertical: Platform.OS === 'web' ? 12 : 10,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 16,
+    marginHorizontal: Platform.OS === 'web' ? -24 : -16,
+    marginBottom: Platform.OS === 'web' ? 20 : 16,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+    ...(Platform.OS === 'web' && {
+      position: 'sticky',
+    }),
+  },
+  stickyChefRadarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  stickyChefRadarHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stickyChefRadarTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#065f46',
+    letterSpacing: -0.2,
+  },
+  expandButton: {
+    padding: 4,
+    minWidth: 32,
+    minHeight: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stickyChefRadarLoading: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  stickyChefRadarLoadingText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#64748b',
+  },
+  stickyChefRadarEmpty: {
+    paddingVertical: 12,
+  },
+  stickyChefRadarEmptyText: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 8,
+  },
+  stickyChefRadarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: Platform.OS === 'web' ? 10 : 8,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    marginBottom: 6,
+    gap: Platform.OS === 'web' ? 10 : 8,
+    minHeight: Platform.OS === 'web' ? 56 : 52,
+  },
+  stickyChefRadarImage: {
+    width: Platform.OS === 'web' ? 56 : 48,
+    height: Platform.OS === 'web' ? 56 : 48,
+    borderRadius: 10,
+    backgroundColor: '#e2e8f0',
+  },
+  stickyChefRadarCardBody: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0,
+  },
+  stickyChefRadarCardTitle: {
+    fontSize: Platform.OS === 'web' ? 14 : 13,
+    fontWeight: '700',
+    color: '#0f172a',
+    lineHeight: Platform.OS === 'web' ? 18 : 16,
+  },
+  stickyChefRadarCardMatch: {
+    fontSize: Platform.OS === 'web' ? 11 : 10,
+    color: '#047857',
+    fontWeight: '600',
+    lineHeight: Platform.OS === 'web' ? 14 : 12,
+  },
+  stickyChefRadarHeartButton: {
+    padding: 6,
+    minWidth: 32,
+    minHeight: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stickyChefRadarExpanded: {
+    gap: 6,
+    marginTop: 6,
+  },
+  generateMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#047857',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 6,
+    minHeight: 40,
+  },
+  generateMoreButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 
