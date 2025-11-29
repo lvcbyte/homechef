@@ -105,6 +105,65 @@ export async function runInventoryScan(photoUris: string[]): Promise<InventoryIt
   );
 }
 
+export interface ShelfPhotoAnalysisResult {
+  item_name: string;
+  quantity_estimate?: string;
+  confidence_score: number;
+  brand?: string;
+  category?: string;
+}
+
+/**
+ * Analyze a shelf photo and detect products with high confidence
+ * This is optimized for shelf photos and tries to identify specific products
+ */
+export async function analyzeShelfPhoto(photoUri: string): Promise<ShelfPhotoAnalysisResult[]> {
+  if (!photoUri) {
+    return [];
+  }
+
+  if (!client) {
+    console.warn('OpenAI client not initialized. Please set EXPO_PUBLIC_OPENAI_KEY or use OpenRouter.');
+    return [];
+  }
+
+  try {
+    const response = await client.responses.create({
+      model: VISION_MODEL,
+      input: [
+        {
+          role: 'system',
+          content:
+            'You are an expert product recognition system. Analyze shelf photos and identify specific products with brand names, product names, and quantities. Focus on food products and household items. Return detailed product information that can be matched to a product catalog.',
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Analyze this shelf photo and identify all visible products. For each product, provide: item_name (full product name including brand if visible), quantity_estimate (e.g., "500g", "1 liter", "2 stuks"), confidence_score (0-100), brand (if visible), and category (e.g., "dairy", "pantry", "beverages", "frozen"). Return as JSON array.',
+            },
+            { type: 'input_image', image_url: photoUri },
+          ],
+        },
+      ],
+      response_format: { type: 'json_object' },
+    });
+
+    const payload = JSON.parse(response.output[0].content[0].text ?? '{"items": []}');
+    return (payload.items ?? []).map((item: any): ShelfPhotoAnalysisResult => ({
+      item_name: item.item_name || item.name || '',
+      quantity_estimate: item.quantity_estimate || item.quantity,
+      confidence_score: item.confidence_score || item.confidence || 0,
+      brand: item.brand,
+      category: item.category,
+    })).filter((item: ShelfPhotoAnalysisResult) => item.item_name && item.confidence_score > 50);
+  } catch (error) {
+    console.error('Error analyzing shelf photo:', error);
+    return [];
+  }
+}
+
 export async function generateRecipes({
   inventory,
   profile,

@@ -260,35 +260,43 @@ export default function ScanScreen() {
     
     try {
       const targetSession = await ensureSession();
-      if (targetSession) {
-        // Save barcode scan
-        await supabase.from('barcode_scans').insert({
-          user_id: user.id,
-          ean: normalizedBarcode,
-          session_id: targetSession,
-        });
-      }
       
-      // Try to match with product catalog
-      const { data: catalogMatch, error: matchError } = await supabase.rpc('match_product_by_barcode', { 
+      // Use enhanced barcode matching (like Yuka app)
+      const { data: matchResult, error: matchError } = await supabase.rpc('match_product_by_barcode_enhanced', { 
         barcode: normalizedBarcode 
       });
       
-      if (catalogMatch && !matchError) {
-        // Product found - show detail modal (Yuka-style)
-        const product: CatalogMatch = {
-          id: catalogMatch.id,
-          product_name: catalogMatch.product_name,
-          brand: catalogMatch.brand,
-          category: catalogMatch.category,
-          barcode: catalogMatch.barcode,
-          price: catalogMatch.price,
-          unit_size: catalogMatch.unit_size,
-          image_url: catalogMatch.image_url,
-          source: (catalogMatch as any).source,
-        };
-        setScannedProduct(product);
-        setProductDetailModalVisible(true);
+      if (matchResult && matchResult.length > 0 && !matchError) {
+        const catalogMatch = matchResult[0];
+        
+        // Log the scan with product info
+        if (targetSession) {
+          await supabase.rpc('log_barcode_scan', {
+            p_user_id: user.id,
+            p_barcode: normalizedBarcode,
+            p_product_id: catalogMatch.id,
+            p_product_name: catalogMatch.name,
+            p_product_brand: catalogMatch.brand,
+            p_match_confidence: catalogMatch.match_score,
+          });
+        }
+        
+        if (catalogMatch) {
+          // Product found - show detail modal (Yuka-style)
+          const product: CatalogMatch = {
+            id: catalogMatch.id,
+            product_name: catalogMatch.name || catalogMatch.product_name,
+            brand: catalogMatch.brand,
+            category: catalogMatch.category,
+            barcode: catalogMatch.barcode || normalizedBarcode,
+            price: (catalogMatch as any).price,
+            unit_size: (catalogMatch as any).unit_size,
+            image_url: catalogMatch.image_url,
+            source: (catalogMatch as any).source,
+          };
+          setScannedProduct(product);
+          setProductDetailModalVisible(true);
+        }
       } else {
         // Product not found
         Alert.alert(

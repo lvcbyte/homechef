@@ -9,7 +9,8 @@ import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { InventoryRecord, InventoryItem } from '../types/app';
-import { runInventoryScan } from '../services/ai';
+import { runInventoryScan, analyzeShelfPhoto } from '../services/ai';
+import * as ImagePicker from 'expo-image-picker';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
 import { navigateToRoute } from '../utils/navigation';
 
@@ -163,9 +164,25 @@ const valueFeatures = [
 
 interface ShelfPhoto {
   id: string;
+  user_id: string;
   storage_path: string;
-  url: string;
+  file_size_bytes: number;
+  notes: string | null;
+  analysis_status: 'pending' | 'processing' | 'completed' | 'failed';
+  analyzed_at: string | null;
+  items_detected_count: number;
+  items_matched_count: number;
   created_at: string;
+  updated_at: string;
+  url: string;
+  week_start?: string;
+  week_label?: string;
+}
+
+interface ShelfPhotoGroup {
+  week_label: string;
+  week_start: string;
+  photos: ShelfPhoto[];
 }
 
 export default function InventoryScreen() {
@@ -184,8 +201,15 @@ export default function InventoryScreen() {
   const [editExpiryMonthOffset, setEditExpiryMonthOffset] = useState(0);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [shelfPhotos, setShelfPhotos] = useState<ShelfPhoto[]>([]);
+  const [shelfPhotoGroups, setShelfPhotoGroups] = useState<ShelfPhotoGroup[]>([]);
   const [shelfLoading, setShelfLoading] = useState(false);
   const [processingPhotoId, setProcessingPhotoId] = useState<string | null>(null);
+  const [selectedShelfPhoto, setSelectedShelfPhoto] = useState<ShelfPhoto | null>(null);
+  const [shelfPhotoModalVisible, setShelfPhotoModalVisible] = useState(false);
+  const [shelfPhotoNotes, setShelfPhotoNotes] = useState('');
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [storageUsage, setStorageUsage] = useState<{ total_files: number; total_size_mb: number; max_size_mb: number; used_percentage: number } | null>(null);
 
   const visibleMonthCalendar = useMemo(
     () => getMonthCalendar(editExpiryMonthOffset),
@@ -269,51 +293,82 @@ export default function InventoryScreen() {
     if (!user) return;
     setShelfLoading(true);
     try {
-      const { data: sessions } = await supabase
-        .from('scan_sessions')
-        .select('id')
+      // Fetch shelf photos from new table
+      const { data: photos, error } = await supabase
+        .from('shelf_photos')
+        .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10);
 
-      if (!sessions || sessions.length === 0) {
+      if (error) {
+        console.error('Error fetching shelf photos:', error);
         setShelfPhotos([]);
+        setShelfPhotoGroups([]);
         return;
       }
 
-      const sessionIds = sessions.map((session) => session.id);
-      const { data: photos } = await supabase
-        .from('scan_photos')
-        .select('id, storage_path, created_at, session_id')
-        .in('session_id', sessionIds)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!photos) {
+      if (!photos || photos.length === 0) {
         setShelfPhotos([]);
+        setShelfPhotoGroups([]);
         return;
       }
 
+      // Get public URLs for photos
       const mapped = photos
         .map((photo: any) => {
           const { data: publicUrlData } = supabase.storage
-            .from('inventory-scans')
+            .from('shelf-photos')
             .getPublicUrl(photo.storage_path);
           const url = publicUrlData?.publicUrl;
           if (!url) return null;
+          
+          // Calculate week info
+          const date = new Date(photo.created_at);
+          const weekStart = new Date(date);
+          weekStart.setDate(date.getDate() - date.getDay() + 1); // Monday
+          const weekLabel = `${weekStart.getFullYear()}-W${String(Math.ceil((date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / 86400000 / 7)).padStart(2, '0')}`;
+          
           return {
-            id: photo.id,
-            storage_path: photo.storage_path,
-            created_at: photo.created_at,
+            ...photo,
             url,
+            week_start: weekStart.toISOString(),
+            week_label: weekLabel,
           } as ShelfPhoto;
         })
         .filter(Boolean) as ShelfPhoto[];
 
       setShelfPhotos(mapped);
+
+      // Group photos by week
+      const grouped = mapped.reduce((acc, photo) => {
+        const weekLabel = photo.week_label || 'Unknown';
+        const existingGroup = acc.find(g => g.week_label === weekLabel);
+        if (existingGroup) {
+          existingGroup.photos.push(photo);
+        } else {
+          acc.push({
+            week_label: weekLabel,
+            week_start: photo.week_start || photo.created_at,
+            photos: [photo],
+          });
+        }
+        return acc;
+      }, [] as ShelfPhotoGroup[]);
+
+      // Sort groups by week (newest first)
+      grouped.sort((a, b) => new Date(b.week_start).getTime() - new Date(a.week_start).getTime());
+      setShelfPhotoGroups(grouped);
+
+      // Fetch storage usage
+      const { data: usage } = await supabase.rpc('get_user_shelf_storage_usage', { p_user_id: user.id });
+      if (usage) {
+        setStorageUsage(usage);
+      }
     } catch (error) {
       console.error('Error fetching shelf photos:', error);
       setShelfPhotos([]);
+      setShelfPhotoGroups([]);
     } finally {
       setShelfLoading(false);
     }
@@ -352,19 +407,273 @@ export default function InventoryScreen() {
     return successCount;
   };
 
+  const handleUploadShelfPhoto = async () => {
+    if (!user) return;
+    
+    // Check photo limit
+    if (shelfPhotos.length >= 10) {
+      Alert.alert('Limiet bereikt', 'Je kunt maximaal 10 shelf foto\'s hebben. Verwijder eerst een oude foto.');
+      return;
+    }
+
+    // Request camera permission
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Toestemming nodig', 'Camera toestemming is nodig om foto\'s te maken.');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      // Launch camera
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        allowsEditing: false,
+        aspect: [4, 3],
+      });
+
+      if (result.canceled || !result.assets?.[0]) {
+        setUploadingPhoto(false);
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.uri) {
+        setUploadingPhoto(false);
+        return;
+      }
+
+      // Get file size
+      const fileInfo = await fetch(asset.uri).then(r => r.blob());
+      const fileSizeBytes = fileInfo.size;
+
+      // Check file size (5MB limit)
+      if (fileSizeBytes > 5242880) {
+        Alert.alert('Bestand te groot', 'Foto\'s mogen maximaal 5MB zijn. Probeer een foto met lagere kwaliteit.');
+        setUploadingPhoto(false);
+        return;
+      }
+
+      // Upload to storage
+      const filePath = `${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('shelf-photos')
+        .upload(filePath, fileInfo, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Create shelf photo record
+      const { data: newPhoto, error: insertError } = await supabase
+        .from('shelf_photos')
+        .insert({
+          user_id: user.id,
+          storage_path: filePath,
+          file_size_bytes: fileSizeBytes,
+          analysis_status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      // Refresh photos
+      await fetchShelfPhotos();
+
+      // Start analysis in background
+      analyzeShelfPhotoAndMatch(newPhoto.id, filePath);
+    } catch (error: any) {
+      console.error('Error uploading shelf photo:', error);
+      Alert.alert('Upload mislukt', error.message || 'Kon foto niet uploaden. Probeer het opnieuw.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const analyzeShelfPhotoAndMatch = async (photoId: string, storagePath: string) => {
+    if (!user) return;
+
+    try {
+      // Update status to processing
+      await supabase.rpc('update_shelf_photo_analysis', {
+        p_shelf_photo_id: photoId,
+        p_status: 'processing',
+      });
+
+      // Get photo URL
+      const { data: urlData } = supabase.storage
+        .from('shelf-photos')
+        .getPublicUrl(storagePath);
+      
+      if (!urlData?.publicUrl) {
+        throw new Error('Could not get photo URL');
+      }
+
+      // Analyze photo with AI
+      const analysisResults = await analyzeShelfPhoto(urlData.publicUrl);
+      
+      if (analysisResults.length === 0) {
+        await supabase.rpc('update_shelf_photo_analysis', {
+          p_shelf_photo_id: photoId,
+          p_status: 'completed',
+          p_items_detected: 0,
+          p_items_matched: 0,
+        });
+        return;
+      }
+
+      let matchedCount = 0;
+
+      // Match each detected item with product catalog
+      for (const item of analysisResults) {
+        // Try to match with product catalog
+        const { data: matches } = await supabase.rpc('match_shelf_item_to_catalog', {
+          p_item_name: item.item_name,
+          p_user_id: user.id,
+        });
+
+        let matchedProductId: string | null = null;
+        let matchedProductName: string | null = null;
+        let inventoryItemId: string | null = null;
+
+        if (matches && matches.length > 0 && matches[0].match_score > 70) {
+          const bestMatch = matches[0];
+          matchedProductId = bestMatch.product_id;
+          matchedProductName = bestMatch.product_name;
+
+          // Add to inventory
+          const { data: detection } = await supabase.rpc('detect_category', { item_name: item.item_name });
+          const suggestion = detection?.[0];
+          
+          const { data: inventoryItem } = await supabase
+            .from('inventory')
+            .insert({
+              user_id: user.id,
+              name: matchedProductName,
+              category: item.category || suggestion?.category || 'pantry',
+              quantity_approx: item.quantity_estimate || null,
+              catalog_product_id: matchedProductId,
+              confidence_score: item.confidence_score / 100,
+            })
+            .select()
+            .single();
+
+          if (inventoryItem) {
+            inventoryItemId = inventoryItem.id;
+            matchedCount++;
+          }
+        }
+
+        // Save analysis result
+        await supabase.from('shelf_photo_analysis').insert({
+          shelf_photo_id: photoId,
+          detected_item_name: item.item_name,
+          detected_quantity: item.quantity_estimate || null,
+          confidence_score: item.confidence_score,
+          matched_product_id: matchedProductId,
+          matched_product_name: matchedProductName,
+          inventory_item_id: inventoryItemId,
+        });
+      }
+
+      // Update analysis status
+      await supabase.rpc('update_shelf_photo_analysis', {
+        p_shelf_photo_id: photoId,
+        p_status: 'completed',
+        p_items_detected: analysisResults.length,
+        p_items_matched: matchedCount,
+      });
+
+      // Refresh inventory and photos
+      fetchInventory();
+      fetchShelfPhotos();
+    } catch (error) {
+      console.error('Error analyzing shelf photo:', error);
+      await supabase.rpc('update_shelf_photo_analysis', {
+        p_shelf_photo_id: photoId,
+        p_status: 'failed',
+      });
+    }
+  };
+
   const processShelfPhoto = async (photo: ShelfPhoto) => {
     if (!requireAuth() || !user) return;
     setProcessingPhotoId(photo.id);
     try {
-      const detectedItems = await runInventoryScan([photo.url]);
-      await insertDetectedShelfItems(detectedItems, photo.storage_path);
-      fetchInventory();
+      // Re-analyze the photo
+      await analyzeShelfPhotoAndMatch(photo.id, photo.storage_path);
+      Alert.alert('Analyse gestart', 'De foto wordt opnieuw geanalyseerd. Dit kan even duren.');
     } catch (error) {
       console.error('Error processing shelf photo:', error);
       Alert.alert('Fout', 'Kon deze foto niet verwerken. Probeer het later opnieuw.');
     } finally {
       setProcessingPhotoId(null);
     }
+  };
+
+  const handleSaveNotes = async () => {
+    if (!selectedShelfPhoto || !user) return;
+
+    try {
+      const { error } = await supabase
+        .from('shelf_photos')
+        .update({ notes: shelfPhotoNotes })
+        .eq('id', selectedShelfPhoto.id)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setEditingNotes(false);
+      await fetchShelfPhotos();
+      Alert.alert('Opgeslagen', 'Notities zijn opgeslagen.');
+    } catch (error: any) {
+      console.error('Error saving notes:', error);
+      Alert.alert('Fout', 'Kon notities niet opslaan.');
+    }
+  };
+
+  const handleDeleteShelfPhoto = async (photo: ShelfPhoto) => {
+    if (!user) return;
+
+    Alert.alert(
+      'Foto verwijderen',
+      'Weet je zeker dat je deze foto wilt verwijderen?',
+      [
+        { text: 'Annuleren', style: 'cancel' },
+        {
+          text: 'Verwijderen',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete from storage
+              await supabase.storage
+                .from('shelf-photos')
+                .remove([photo.storage_path]);
+
+              // Delete from database
+              const { error } = await supabase
+                .from('shelf_photos')
+                .delete()
+                .eq('id', photo.id)
+                .eq('user_id', user.id);
+
+              if (error) throw error;
+
+              await fetchShelfPhotos();
+            } catch (error: any) {
+              console.error('Error deleting photo:', error);
+              Alert.alert('Fout', 'Kon foto niet verwijderen.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const requireAuth = () => {
@@ -543,47 +852,98 @@ export default function InventoryScreen() {
           {user ? (
             <>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>My Shelf</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>My Shelf</Text>
+                  {storageUsage && (
+                    <Text style={styles.storageUsageText}>
+                      {storageUsage.total_files}/10 foto's • {storageUsage.total_size_mb.toFixed(1)}MB gebruikt
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={styles.uploadButton}
+                  onPress={handleUploadShelfPhoto}
+                  disabled={uploadingPhoto || shelfPhotos.length >= 10}
+                >
+                  {uploadingPhoto ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="camera" size={18} color="#fff" />
+                      <Text style={styles.uploadButtonText}>Foto</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </View>
               {shelfLoading ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator size="small" color="#047857" />
                   <Text style={styles.loadingText}>Shelf shots laden...</Text>
                 </View>
-              ) : shelfPhotos.length === 0 ? (
-                <Text style={styles.emptyShelfText}>
-                  Maak een shelf shot in STOCKPIT mode om een visueel archief op te bouwen.
-                </Text>
+              ) : shelfPhotoGroups.length === 0 ? (
+                <View style={styles.emptyShelfContainer}>
+                  <Ionicons name="images-outline" size={48} color="#94a3b8" />
+                  <Text style={styles.emptyShelfText}>
+                    Maak je eerste shelf foto om je voorraad visueel bij te houden.
+                  </Text>
+                  <Text style={styles.emptyShelfSubtext}>
+                    Upload maximaal 10 foto's. AI analyseert automatisch en voegt producten toe aan je voorraad.
+                  </Text>
+                </View>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.shelfScroll}>
-                  {shelfPhotos.map((photo) => (
-                    <View key={photo.id} style={styles.shelfCard}>
-                      <Image source={{ uri: photo.url }} style={styles.shelfImage} />
-                      <Text style={styles.shelfTimestamp}>
-                        {new Date(photo.created_at).toLocaleDateString('nl-NL', {
-                          day: 'numeric',
-                          month: 'long',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.shelfButton,
-                          processingPhotoId === photo.id && { opacity: 0.6 },
-                        ]}
-                        disabled={processingPhotoId === photo.id}
-                        onPress={() => processShelfPhoto(photo)}
-                      >
-                        {processingPhotoId === photo.id ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={styles.shelfButtonText}>Detecteer opnieuw</Text>
-                        )}
-                      </TouchableOpacity>
+                <View style={styles.shelfGroupsContainer}>
+                  {shelfPhotoGroups.map((group) => (
+                    <View key={group.week_label} style={styles.shelfWeekGroup}>
+                      <View style={styles.weekHeader}>
+                        <Text style={styles.weekLabel}>{group.week_label}</Text>
+                        <Text style={styles.weekPhotoCount}>{group.photos.length} foto{group.photos.length !== 1 ? "'s" : ''}</Text>
+                      </View>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.shelfScroll}>
+                        {group.photos.map((photo) => (
+                          <TouchableOpacity
+                            key={photo.id}
+                            style={styles.shelfCard}
+                            onPress={() => {
+                              setSelectedShelfPhoto(photo);
+                              setShelfPhotoNotes(photo.notes || '');
+                              setShelfPhotoModalVisible(true);
+                            }}
+                          >
+                            <Image source={{ uri: photo.url }} style={styles.shelfImage} />
+                            <View style={styles.shelfCardOverlay}>
+                              {photo.analysis_status === 'completed' && (
+                                <View style={styles.analysisBadge}>
+                                  <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                                  <Text style={styles.analysisBadgeText}>
+                                    {photo.items_matched_count}/{photo.items_detected_count}
+                                  </Text>
+                                </View>
+                              )}
+                              {photo.analysis_status === 'processing' && (
+                                <View style={styles.analysisBadgeProcessing}>
+                                  <ActivityIndicator size="small" color="#fff" />
+                                </View>
+                              )}
+                              {photo.notes && (
+                                <View style={styles.notesIndicator}>
+                                  <Ionicons name="document-text" size={14} color="#047857" />
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.shelfTimestamp}>
+                              {new Date(photo.created_at).toLocaleDateString('nl-NL', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
                   ))}
-                </ScrollView>
+                </View>
               )}
 
               <View style={styles.inventoryHeaderRow}>
@@ -777,6 +1137,147 @@ export default function InventoryScreen() {
         </ScrollView>
       </SafeAreaView>
       <GlassDock />
+
+      {/* Shelf Photo Detail Modal */}
+      <Modal
+        visible={shelfPhotoModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShelfPhotoModalVisible(false);
+          setSelectedShelfPhoto(null);
+          setEditingNotes(false);
+        }}
+      >
+        <View style={styles.shelfPhotoModalOverlay}>
+          <View style={styles.shelfPhotoModalContent}>
+            {selectedShelfPhoto && (
+              <>
+                <View style={styles.shelfPhotoModalHeader}>
+                  <Text style={styles.shelfPhotoModalTitle}>Shelf Foto</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShelfPhotoModalVisible(false);
+                      setSelectedShelfPhoto(null);
+                      setEditingNotes(false);
+                    }}
+                  >
+                    <Ionicons name="close" size={24} color="#0f172a" />
+                  </TouchableOpacity>
+                </View>
+
+                <Image source={{ uri: selectedShelfPhoto.url }} style={styles.shelfPhotoModalImage} />
+
+                <View style={styles.shelfPhotoModalInfo}>
+                  <Text style={styles.shelfPhotoModalDate}>
+                    {new Date(selectedShelfPhoto.created_at).toLocaleDateString('nl-NL', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+
+                  {selectedShelfPhoto.analysis_status === 'completed' && (
+                    <View style={styles.analysisInfo}>
+                      <View style={styles.analysisInfoRow}>
+                        <Ionicons name="checkmark-circle" size={20} color="#047857" />
+                        <Text style={styles.analysisInfoText}>
+                          {selectedShelfPhoto.items_matched_count} van {selectedShelfPhoto.items_detected_count} producten toegevoegd
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {selectedShelfPhoto.analysis_status === 'processing' && (
+                    <View style={styles.analysisInfo}>
+                      <ActivityIndicator size="small" color="#047857" />
+                      <Text style={styles.analysisInfoText}>Foto wordt geanalyseerd...</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.notesSection}>
+                    <View style={styles.notesHeader}>
+                      <Text style={styles.notesTitle}>Notities</Text>
+                      {!editingNotes && (
+                        <TouchableOpacity onPress={() => setEditingNotes(true)}>
+                          <Ionicons name="create-outline" size={20} color="#047857" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {editingNotes ? (
+                      <View style={styles.notesEditContainer}>
+                        <TextInput
+                          style={styles.notesInput}
+                          value={shelfPhotoNotes}
+                          onChangeText={setShelfPhotoNotes}
+                          placeholder="Voeg notities toe aan deze foto..."
+                          multiline
+                          numberOfLines={4}
+                          placeholderTextColor="#94a3b8"
+                        />
+                        <View style={styles.notesActions}>
+                          <TouchableOpacity
+                            style={styles.notesCancelButton}
+                            onPress={() => {
+                              setEditingNotes(false);
+                              setShelfPhotoNotes(selectedShelfPhoto.notes || '');
+                            }}
+                          >
+                            <Text style={styles.notesCancelText}>Annuleren</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.notesSaveButton}
+                            onPress={handleSaveNotes}
+                          >
+                            <Text style={styles.notesSaveText}>Opslaan</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <Text style={styles.notesText}>
+                        {selectedShelfPhoto.notes || 'Geen notities. Tik op het potlood icoon om notities toe te voegen.'}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.shelfPhotoModalActions}>
+                    <TouchableOpacity
+                      style={styles.shelfPhotoActionButton}
+                      onPress={() => {
+                        setShelfPhotoModalVisible(false);
+                        processShelfPhoto(selectedShelfPhoto);
+                      }}
+                      disabled={processingPhotoId === selectedShelfPhoto.id}
+                    >
+                      {processingPhotoId === selectedShelfPhoto.id ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="refresh" size={18} color="#fff" />
+                          <Text style={styles.shelfPhotoActionText}>Opnieuw analyseren</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.shelfPhotoActionButton, styles.shelfPhotoDeleteButton]}
+                      onPress={() => {
+                        setShelfPhotoModalVisible(false);
+                        handleDeleteShelfPhoto(selectedShelfPhoto);
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#fff" />
+                      <Text style={styles.shelfPhotoActionText}>Verwijderen</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Nutrition Modal */}
       {selectedNutritionItem && (selectedNutritionItem as any).catalog_nutrition && (
@@ -1704,6 +2205,235 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 14,
     color: '#475569',
+  },
+  // Shelf photos enhanced styles
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#047857',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  uploadButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  storageUsageText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+  },
+  emptyShelfContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  emptyShelfSubtext: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  shelfGroupsContainer: {
+    gap: 24,
+  },
+  shelfWeekGroup: {
+    gap: 12,
+  },
+  weekHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  weekLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  weekPhotoCount: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  shelfCardOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  analysisBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(4, 120, 87, 0.9)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  analysisBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  analysisBadgeProcessing: {
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    padding: 6,
+    borderRadius: 12,
+  },
+  notesIndicator: {
+    backgroundColor: '#fff',
+    padding: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#047857',
+  },
+  // Shelf Photo Modal styles
+  shelfPhotoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  shelfPhotoModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '90%',
+  },
+  shelfPhotoModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+  },
+  shelfPhotoModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  shelfPhotoModalImage: {
+    width: '100%',
+    height: 300,
+    backgroundColor: '#f1f5f9',
+  },
+  shelfPhotoModalInfo: {
+    padding: 20,
+    gap: 16,
+  },
+  shelfPhotoModalDate: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  analysisInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ecfdf5',
+    padding: 12,
+    borderRadius: 12,
+  },
+  analysisInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  analysisInfoText: {
+    fontSize: 14,
+    color: '#065f46',
+    fontWeight: '600',
+  },
+  notesSection: {
+    gap: 8,
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notesTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  notesText: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+    padding: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    minHeight: 60,
+  },
+  notesEditContainer: {
+    gap: 12,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.15)',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: '#0f172a',
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  notesActions: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
+  },
+  notesCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.15)',
+  },
+  notesCancelText: {
+    color: '#64748b',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  notesSaveButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#047857',
+  },
+  notesSaveText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  shelfPhotoModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  shelfPhotoActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#047857',
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  shelfPhotoDeleteButton: {
+    backgroundColor: '#ef4444',
+  },
+  shelfPhotoActionText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 
