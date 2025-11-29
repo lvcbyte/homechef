@@ -1958,6 +1958,18 @@ const styles = StyleSheet.create({
     height: '100%',
     position: 'relative',
   },
+  barcodeLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+    gap: 16,
+  },
+  barcodeLoadingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   barcodeOverlay: {
     position: 'absolute',
     top: 0,
