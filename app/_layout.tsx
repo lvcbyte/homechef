@@ -71,16 +71,28 @@ export default function RootLayout() {
       
       // Hide browser UI in standalone mode and keep it hidden
       const hideBrowserUI = () => {
-        if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
-          document.documentElement.style.height = '100%';
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+        
+        if (isStandalone) {
+          // Force fullscreen styling
+          document.documentElement.style.height = '100vh';
           document.documentElement.style.overflow = 'hidden';
-          document.body.style.height = '100%';
+          document.documentElement.style.position = 'fixed';
+          document.documentElement.style.width = '100%';
+          document.documentElement.style.top = '0';
+          document.documentElement.style.left = '0';
+          
+          document.body.style.height = '100vh';
           document.body.style.overflow = 'hidden';
           document.body.style.position = 'fixed';
           document.body.style.width = '100%';
+          document.body.style.top = '0';
+          document.body.style.left = '0';
+          document.body.style.margin = '0';
+          document.body.style.padding = '0';
           
           // Prevent address bar from showing
-          window.scrollTo(0, 1);
+          window.scrollTo(0, 0);
           
           // Force fullscreen on iOS
           if ((window.navigator as any).standalone) {
@@ -95,9 +107,9 @@ export default function RootLayout() {
       hideBrowserUI();
       
       // Re-hide on navigation/popstate
-      window.addEventListener('popstate', hideBrowserUI);
-      window.addEventListener('pushstate', hideBrowserUI);
-      window.addEventListener('replacestate', hideBrowserUI);
+      window.addEventListener('popstate', () => {
+        setTimeout(hideBrowserUI, 50);
+      });
       
       // Monitor for navigation changes (Expo Router)
       const originalPushState = history.pushState;
@@ -105,20 +117,35 @@ export default function RootLayout() {
       
       history.pushState = function(...args) {
         originalPushState.apply(history, args);
-        setTimeout(hideBrowserUI, 100);
+        setTimeout(hideBrowserUI, 50);
       };
       
       history.replaceState = function(...args) {
         originalReplaceState.apply(history, args);
-        setTimeout(hideBrowserUI, 100);
+        setTimeout(hideBrowserUI, 50);
       };
       
       // Also hide on focus (when returning to app)
       window.addEventListener('focus', hideBrowserUI);
       window.addEventListener('pageshow', hideBrowserUI);
+      window.addEventListener('hashchange', hideBrowserUI);
+      
+      // Listen for Expo Router navigation
+      if (typeof window !== 'undefined') {
+        const observer = new MutationObserver(() => {
+          hideBrowserUI();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
       
       // Periodic check to ensure UI stays hidden
-      setInterval(hideBrowserUI, 1000);
+      setInterval(hideBrowserUI, 500);
+      
+      // Also hide on any scroll
+      window.addEventListener('scroll', () => {
+        hideBrowserUI();
+        window.scrollTo(0, 0);
+      }, { passive: false });
     }
   }, []);
 

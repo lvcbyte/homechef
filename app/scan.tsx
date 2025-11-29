@@ -476,14 +476,17 @@ export default function ScanScreen() {
         console.error('Error adding product:', insertError);
         Alert.alert('Fout', `Kon product niet toevoegen: ${insertError.message}`);
       } else {
+        // Close modal first
+        setProductDetailModalVisible(false);
+        setScannedProduct(null);
+        setScannedBarcode(null);
+        setScanningProduct(false);
+        
+        // Show success message
         Alert.alert('Toegevoegd', `${scannedProduct.product_name} is toegevoegd aan je voorraad.`, [
           {
             text: 'OK',
             onPress: () => {
-              setProductDetailModalVisible(false);
-              setScannedProduct(null);
-              setScannedBarcode(null);
-              setScanningProduct(false);
               navigateToRoute(router, '/inventory');
             },
           },
@@ -1125,52 +1128,59 @@ export default function ScanScreen() {
                   <Ionicons name="close" size={24} color="#0f172a" />
                 </Pressable>
                 
-                {scannedProduct.image_url ? (
-                  <Image source={{ uri: scannedProduct.image_url }} style={styles.productDetailImage} />
-                ) : (
-                  <View style={styles.productDetailImagePlaceholder}>
-                    <Ionicons name="image-outline" size={64} color="#94a3b8" />
-                  </View>
-                )}
-                
-                <View style={styles.productDetailContent}>
-                  <Text style={styles.productDetailBrand}>{scannedProduct.brand || 'Onbekend merk'}</Text>
-                  <Text style={styles.productDetailName}>{scannedProduct.product_name}</Text>
-                  
-                  <View style={styles.productDetailMeta}>
-                    {scannedProduct.price && (
-                      <View style={styles.productDetailMetaItem}>
-                        <Ionicons name="pricetag-outline" size={18} color="#047857" />
-                        <Text style={styles.productDetailMetaText}>€{scannedProduct.price.toFixed(2)}</Text>
-                      </View>
-                    )}
-                    {scannedProduct.unit_size && (
-                      <View style={styles.productDetailMetaItem}>
-                        <Ionicons name="cube-outline" size={18} color="#047857" />
-                        <Text style={styles.productDetailMetaText}>{scannedProduct.unit_size}</Text>
-                      </View>
-                    )}
-                    <View style={styles.productDetailMetaItem}>
-                      <Ionicons name="grid-outline" size={18} color="#047857" />
-                      <Text style={styles.productDetailMetaText}>{getCategoryLabel(scannedProduct.category)}</Text>
-                    </View>
-                  </View>
-                  
-                  {scannedProduct.barcode && (
-                    <View style={styles.productDetailBarcode}>
-                      <Text style={styles.productDetailBarcodeLabel}>EAN</Text>
-                      <Text style={styles.productDetailBarcodeValue}>{scannedProduct.barcode}</Text>
+                <ScrollView 
+                  style={styles.productDetailScrollView}
+                  contentContainerStyle={styles.productDetailScrollContent}
+                  showsVerticalScrollIndicator={true}
+                >
+                  {scannedProduct.image_url ? (
+                    <Image source={{ uri: scannedProduct.image_url }} style={styles.productDetailImage} />
+                  ) : (
+                    <View style={styles.productDetailImagePlaceholder}>
+                      <Ionicons name="image-outline" size={64} color="#94a3b8" />
                     </View>
                   )}
                   
-                  <TouchableOpacity
-                    style={styles.productDetailAddButton}
-                    onPress={handleAddProductToInventory}
-                  >
-                    <Ionicons name="add-circle" size={24} color="#fff" />
-                    <Text style={styles.productDetailAddButtonText}>Toevoegen aan voorraad</Text>
-                  </TouchableOpacity>
-                </View>
+                  <View style={styles.productDetailContent}>
+                    <Text style={styles.productDetailBrand}>{scannedProduct.brand || 'Onbekend merk'}</Text>
+                    <Text style={styles.productDetailName}>{scannedProduct.product_name}</Text>
+                    
+                    <View style={styles.productDetailMeta}>
+                      {scannedProduct.price && (
+                        <View style={styles.productDetailMetaItem}>
+                          <Ionicons name="pricetag-outline" size={18} color="#047857" />
+                          <Text style={styles.productDetailMetaText}>€{scannedProduct.price.toFixed(2)}</Text>
+                        </View>
+                      )}
+                      {scannedProduct.unit_size && (
+                        <View style={styles.productDetailMetaItem}>
+                          <Ionicons name="cube-outline" size={18} color="#047857" />
+                          <Text style={styles.productDetailMetaText}>{scannedProduct.unit_size}</Text>
+                        </View>
+                      )}
+                      <View style={styles.productDetailMetaItem}>
+                        <Ionicons name="grid-outline" size={18} color="#047857" />
+                        <Text style={styles.productDetailMetaText}>{getCategoryLabel(scannedProduct.category)}</Text>
+                      </View>
+                    </View>
+                    
+                    {scannedProduct.barcode && (
+                      <View style={styles.productDetailBarcode}>
+                        <Text style={styles.productDetailBarcodeLabel}>EAN</Text>
+                        <Text style={styles.productDetailBarcodeValue}>{scannedProduct.barcode}</Text>
+                      </View>
+                    )}
+                    
+                    <TouchableOpacity
+                      style={styles.productDetailAddButton}
+                      onPress={handleAddProductToInventory}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="add-circle" size={24} color="#fff" />
+                      <Text style={styles.productDetailAddButtonText}>Toevoegen aan voorraad</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               </>
             )}
             </View>
@@ -2457,6 +2467,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 5,
+    position: 'relative',
+  },
+  productDetailScrollView: {
+    flex: 1,
+  },
+  productDetailScrollContent: {
+    paddingBottom: 40,
   },
   productDetailClose: {
     position: 'absolute',
@@ -2486,7 +2503,6 @@ const styles = StyleSheet.create({
   productDetailContent: {
     padding: 24,
     gap: 16,
-    paddingBottom: 32,
   },
   productDetailBrand: {
     fontSize: 14,
@@ -2550,7 +2566,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     marginTop: 8,
-    zIndex: 100,
+    minHeight: 56,
+    shadowColor: '#047857',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
     elevation: 5,
   },
   productDetailAddButtonText: {
