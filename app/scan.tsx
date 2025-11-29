@@ -3,6 +3,7 @@ import { BarCodeScanner } from 'expo-barcode-scanner';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
+import { navigateToRoute } from '../utils/navigation';
 import {
   ActivityIndicator,
   Alert,
@@ -219,7 +220,7 @@ export default function ScanScreen() {
 
   const ensureAuth = () => {
     if (!user) {
-      router.push('/auth/sign-in');
+      navigateToRoute(router, '/auth/sign-in');
       return false;
     }
     return true;
@@ -346,7 +347,7 @@ export default function ScanScreen() {
               setScannedProduct(null);
               setScannedBarcode(null);
               setScanningProduct(false);
-              router.push('/inventory');
+              navigateToRoute(router, '/inventory');
             },
           },
         ]);
@@ -609,10 +610,10 @@ export default function ScanScreen() {
     <View style={styles.authCard}>
       <Text style={styles.heroTitle}>Activeer je STOCKPIT</Text>
       <Text style={styles.heroSubtitle}>Log in om barcodes, shelf shots en snelle invoer te combineren.</Text>
-      <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/auth/sign-in')}>
+      <TouchableOpacity style={styles.primaryButton} onPress={() => navigateToRoute(router, '/auth/sign-in')}>
         <Text style={styles.primaryButtonText}>Sign in</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/auth/sign-up')}>
+      <TouchableOpacity style={styles.secondaryButton} onPress={() => navigateToRoute(router, '/auth/sign-up')}>
         <Text style={styles.secondaryText}>Account maken</Text>
       </TouchableOpacity>
     </View>
@@ -628,7 +629,7 @@ export default function ScanScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable onPress={() => router.push('/inventory')} style={styles.backButton}>
+            <Pressable onPress={() => navigateToRoute(router, '/inventory')} style={styles.backButton}>
               <Ionicons name="chevron-back" size={22} color="#0f172a" />
               <Text style={styles.backLabel}>Voorraad</Text>
             </Pressable>
@@ -1415,7 +1416,7 @@ export default function ScanScreen() {
                           {
                             text: 'OK',
                             onPress: () => {
-                              router.push('/saved');
+                              navigateToRoute(router, '/saved');
                             },
                           },
                         ]);

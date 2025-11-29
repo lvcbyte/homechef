@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { navigateToRoute } from '../../utils/navigation';
 
 const tabs = [
   { key: 'home', label: 'Home', icon: 'home-outline', route: '/' },
@@ -14,6 +15,10 @@ export function GlassDock() {
   const router = useRouter();
   const pathname = usePathname();
 
+  const handleNavigation = (route: string) => {
+    navigateToRoute(router, route);
+  };
+
   return (
     <SafeAreaView edges={['bottom']} style={styles.safeArea}>
       <View style={styles.dock}>
@@ -23,7 +28,7 @@ export function GlassDock() {
             <Pressable
               key={tab.key}
               style={styles.tab}
-              onPress={() => router.push(tab.route)}
+              onPress={() => handleNavigation(tab.route)}
             >
               <Ionicons
                 name={tab.icon as any}

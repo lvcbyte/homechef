@@ -10,6 +10,7 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI } from '../services/ai';
+import { navigateToRoute } from '../utils/navigation';
 
 interface Recipe {
   recipe_id: string;
@@ -864,7 +865,7 @@ export default function RecipesScreen() {
               <Text style={styles.brandLabel}>STOCKPIT</Text>
             </View>
             <View style={styles.headerIcons}>
-              <Pressable onPress={() => router.push('/profile')}>
+              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
                 <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
               </Pressable>
             </View>
@@ -897,7 +898,7 @@ export default function RecipesScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable onPress={() => router.push('/profile')}>
+            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarInitial}>
                   {user.email?.charAt(0).toUpperCase() ?? 'U'}

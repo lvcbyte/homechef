@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import type { InventoryRecord, InventoryItem } from '../types/app';
 import { runInventoryScan } from '../services/ai';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
+import { navigateToRoute } from '../utils/navigation';
 
 const categoryFilters = [{ id: 'all', label: 'All' }, ...CATEGORY_OPTIONS];
 const viewModeOptions = [
@@ -466,7 +467,7 @@ export default function InventoryScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable onPress={() => router.push('/profile')}>
+            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
                   <Text style={styles.avatarInitial}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>

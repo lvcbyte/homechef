@@ -593,7 +593,7 @@ export default function Home() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable onPress={() => router.push('/profile')}>
+            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
                   <Text style={styles.avatarInitial}>
@@ -720,7 +720,7 @@ export default function Home() {
                       styles.categoryBox,
                       { backgroundColor: categoryColors[cat.category] || '#047857' },
                     ]}
-                    onPress={() => router.push(`/recipes?category=${cat.category}`)}
+                    onPress={() => navigateToRoute(router, `/recipes?category=${cat.category}`)}
                   >
                     <Text style={styles.categoryLabel}>{cat.category}</Text>
                   </TouchableOpacity>

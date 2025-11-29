@@ -19,6 +19,17 @@ export default function RootLayout() {
         lastTouchEnd = now;
       }, false);
 
+      // Ensure base tag is set correctly for routing
+      // Remove any existing base tag that might point to localhost
+      const existingBase = document.querySelector('base');
+      if (existingBase) {
+        const href = existingBase.getAttribute('href');
+        // If base tag points to localhost, remove it or update it
+        if (href && (href.includes('localhost') || href.includes('127.0.0.1'))) {
+          existingBase.remove();
+        }
+      }
+
       // Add viewport meta tag if not exists
       if (!document.querySelector('meta[name="viewport"]')) {
         const viewport = document.createElement('meta');

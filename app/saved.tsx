@@ -9,6 +9,7 @@ import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateShoppingListFromInventory } from '../services/ai';
+import { navigateToRoute } from '../utils/navigation';
 
 interface SavedRecipe {
   id: string;
@@ -697,7 +698,7 @@ export default function SavedScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable onPress={() => router.push('/profile')}>
+            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
                   <Text style={styles.avatarInitial}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>

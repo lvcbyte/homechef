@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { navigateToRoute } from '../utils/navigation';
 
 const archetypes = [
   {
@@ -130,7 +131,7 @@ export default function ProfileScreen() {
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable onPress={() => router.push('/profile')}>
+            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
               {user ? (
                 <View style={styles.avatar}>
                   <Text style={styles.avatarInitial}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>
