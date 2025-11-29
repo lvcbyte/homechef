@@ -56,7 +56,7 @@ export function AIChatbot() {
         setMessages([
           {
             id: '1',
-            text: 'Hoi! Ik ben Stockpit, je AI-keukenassistent. Hoe kan ik je helpen?',
+            text: 'Hoi! Ik ben STOCKPIT, je AI-keukenassistent. Hoe kan ik je helpen?',
             isUser: false,
             timestamp: new Date(),
           },
@@ -178,7 +178,7 @@ export function AIChatbot() {
                   <Ionicons name="sparkles" size={24} color="#047857" />
                 </View>
                 <View style={styles.headerText}>
-                  <Text style={styles.headerTitle}>Stockpit AI</Text>
+                  <Text style={styles.headerTitle}>STOCKPIT AI</Text>
                   <Text style={styles.headerSubtitle}>Je keukenassistent</Text>
                 </View>
               </View>

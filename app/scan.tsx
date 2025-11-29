@@ -607,7 +607,7 @@ export default function ScanScreen() {
 
   const renderAuthCTA = () => (
     <View style={styles.authCard}>
-      <Text style={styles.heroTitle}>Activeer je Stockpit</Text>
+      <Text style={styles.heroTitle}>Activeer je STOCKPIT</Text>
       <Text style={styles.heroSubtitle}>Log in om barcodes, shelf shots en snelle invoer te combineren.</Text>
       <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/auth/sign-in')}>
         <Text style={styles.primaryButtonText}>Sign in</Text>
@@ -624,10 +624,8 @@ export default function ScanScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>S</Text>
-            </View>
-            <Text style={styles.brandLabel}>Stockpit</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
             <Pressable onPress={() => router.push('/inventory')} style={styles.backButton}>
@@ -642,7 +640,7 @@ export default function ScanScreen() {
             <Text style={styles.heroEyebrow}>STOCKPIT</Text>
             <Text style={styles.heroSubtitle}>Pick your lane</Text>
             <Text style={styles.heroDescription}>
-              De Stockpit voor merkproducten en packaged goods
+              De STOCKPIT voor merkproducten en packaged goods
             </Text>
           </View>
 
@@ -745,10 +743,10 @@ export default function ScanScreen() {
 
               {sessionId && (
                 <View style={styles.sessionCard}>
-                  <Text style={styles.sessionLabel}>Stockpit session ID</Text>
+                  <Text style={styles.sessionLabel}>STOCKPIT session ID</Text>
                   <Text style={styles.sessionValue}>{sessionId}</Text>
                   <Text style={styles.sessionCopy}>
-                    Je Stockpit sessie wordt automatisch geprocessed zodra je klaar bent. Resultaten vind je in “Voorraad”.
+                    Je STOCKPIT sessie wordt automatisch geprocessed zodra je klaar bent. Resultaten vind je in "Voorraad".
                   </Text>
                 </View>
               )}
@@ -1003,7 +1001,7 @@ export default function ScanScreen() {
 
             {manualStep === 1 && (
               <>
-                <Text style={styles.modalTitle}>Kies een Stockpit lane</Text>
+                <Text style={styles.modalTitle}>Kies een STOCKPIT lane</Text>
                 <Text style={styles.modalCopy}>
                   {manualCategory
                     ? `Gedetecteerd: ${getCategoryLabel(manualCategory)} (${manualIsFood ? 'voeding' : 'non-food'})`
@@ -1495,15 +1493,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: 18,
   },
   brandLabel: {
     fontSize: 18,

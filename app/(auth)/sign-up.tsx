@@ -26,7 +26,7 @@ export default function SignUpScreen() {
           <Text style={styles.headerTitle}>Account aanmaken</Text>
         </View>
         <View style={styles.body}>
-          <Text style={styles.heroTitle}>Welkom bij Stockpit</Text>
+          <Text style={styles.heroTitle}>Welkom bij STOCKPIT</Text>
           <Text style={styles.heroSub}>
             Bouw je voorraadarchief en krijg realtime inspiratie op maat van jouw keuken.
           </Text>
@@ -87,7 +87,7 @@ export default function SignUpScreen() {
             <Text style={styles.primaryButtonText}>{submitting ? 'Bezig...' : 'Account maken'}</Text>
           </Pressable>
 
-          <Pressable onPress={() => router.push('/sign-in')} style={styles.secondaryButton}>
+          <Pressable onPress={() => router.push('/(auth)/sign-in')} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>
               Heb je al een account? <Text style={{ color: '#047857' }}>Log in</Text>
             </Text>

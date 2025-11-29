@@ -51,7 +51,7 @@ const openRouterClient = OPENROUTER_KEY ? new OpenAI({
   dangerouslyAllowBrowser: true,
   defaultHeaders: {
     'HTTP-Referer': 'https://stockpit.app',
-    'X-Title': 'Stockpit',
+    'X-Title': 'STOCKPIT',
   },
 }) : null;
 
@@ -184,7 +184,7 @@ export async function generateRecipesWithAI(
     `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''}${item.expires_at ? ` - vervalt: ${new Date(item.expires_at).toLocaleDateString('nl-NL')}` : ''}`
   ).join('\n');
 
-  const prompt = `Je bent een professionele chef en receptengenerator voor Stockpit, een slimme keuken app.
+  const prompt = `Je bent een professionele chef en receptengenerator voor STOCKPIT, een slimme keuken app.
 
 Gebruikersinventaris:
 ${inventoryList || 'Geen items in voorraad'}
@@ -244,7 +244,7 @@ Antwoord in JSON formaat:
         'Authorization': `Bearer ${OPENROUTER_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://stockpit.app',
-        'X-Title': 'Stockpit',
+        'X-Title': 'STOCKPIT',
       },
       body: JSON.stringify({
         model: FREE_LLM_MODEL,
@@ -329,7 +329,7 @@ export async function generateRecipeFromDescription(
     return null;
   }
 
-  const prompt = `Je bent een professionele chef en receptengenerator voor Stockpit.
+  const prompt = `Je bent een professionele chef en receptengenerator voor STOCKPIT.
 
 De gebruiker beschrijft een recept: "${description}"
 ${category ? `Categorie: ${category}` : ''}
@@ -368,7 +368,7 @@ Antwoord ALLEEN met geldig JSON, geen andere tekst.`;
         'Authorization': `Bearer ${OPENROUTER_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://stockpit.app',
-        'X-Title': 'Stockpit',
+        'X-Title': 'STOCKPIT',
       },
       body: JSON.stringify({
         model: FREE_LLM_MODEL,
@@ -459,7 +459,7 @@ export async function generateShoppingListFromInventory(
     .join('\n')
     || 'Geen voorraad beschikbaar';
 
-  const prompt = `Je bent de Stockpit boodschappenplanner.
+  const prompt = `Je bent de STOCKPIT boodschappenplanner.
 
 Huidige voorraad:
 ${inventoryList}
@@ -480,7 +480,7 @@ Genereer een boodschappenlijst in JSON:
         'Authorization': `Bearer ${OPENROUTER_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://stockpit.app',
-        'X-Title': 'Stockpit',
+        'X-Title': 'STOCKPIT',
       },
       body: JSON.stringify({
         model: FREE_LLM_MODEL,
@@ -541,7 +541,7 @@ export async function chatWithAI(
     `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''}${item.expires_at ? ` - vervalt: ${new Date(item.expires_at).toLocaleDateString('nl-NL')}` : ''}`
   ).join('\n') || 'Geen items in voorraad';
 
-  const systemPrompt = `Je bent Stockpit, een vriendelijke en behulpzame AI-keukenassistent. Je helpt gebruikers met:
+  const systemPrompt = `Je bent STOCKPIT, een vriendelijke en behulpzame AI-keukenassistent. Je helpt gebruikers met:
 - Recepten vinden op basis van hun voorraad
 - Kooktips en technieken
 - Voedselveiligheid en houdbaarheid
@@ -575,7 +575,7 @@ BELANGRIJK:
         'Authorization': `Bearer ${OPENROUTER_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://stockpit.app',
-        'X-Title': 'Stockpit',
+        'X-Title': 'STOCKPIT',
       },
       body: JSON.stringify({
         model: FREE_LLM_MODEL,

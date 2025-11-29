@@ -296,7 +296,7 @@ export default function AdminPage() {
       // Enhanced prompt for admin AI
       const adminPrompt = `${userMessage}
 
-Je bent een admin AI assistent voor Stockpit met volledige database toegang. Je kunt:
+Je bent een admin AI assistent voor STOCKPIT met volledige database toegang. Je kunt:
 - Recepten toevoegen, bewerken of verwijderen
 - Gebruikers beheren
 - Inventory items beheren
@@ -416,7 +416,7 @@ Geef concrete SQL queries of acties die uitgevoerd moeten worden. Antwoord in he
             <View style={styles.modalOverlay}>
               <View style={styles.loginModal}>
                 <Text style={styles.loginTitle}>Admin Login</Text>
-                <Text style={styles.loginSubtitle}>Stockpit Admin Dashboard</Text>
+                <Text style={styles.loginSubtitle}>STOCKPIT Admin Dashboard</Text>
                 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Gebruikersnaam</Text>
@@ -474,9 +474,7 @@ Geef concrete SQL queries of acties die uitgevoerd moeten worden. Antwoord in he
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>S</Text>
-            </View>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandLabel}>Admin Dashboard</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/')}>
@@ -684,15 +682,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: 18,
   },
   brandLabel: {
     fontSize: 18,

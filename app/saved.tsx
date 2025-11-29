@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
@@ -41,6 +41,16 @@ interface ShoppingList {
   items_count?: number;
 }
 
+interface ShoppingListItem {
+  id: string;
+  list_id: string;
+  name: string;
+  quantity: string | null;
+  category: string | null;
+  completed: boolean;
+  created_at: string;
+}
+
 export default function SavedScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -53,12 +63,24 @@ export default function SavedScreen() {
   const [listModalVisible, setListModalVisible] = useState(false);
   const [listName, setListName] = useState('');
   const [listFocus, setListFocus] = useState('');
-  const [listItemsDraft, setListItemsDraft] = useState<Array<{ id: string; name: string; quantity: string; reason?: string }>>([]);
+  const [listItemsDraft, setListItemsDraft] = useState<Array<{ id: string; name: string; quantity: string; category?: string; reason?: string }>>([]);
   const [manualItemName, setManualItemName] = useState('');
   const [manualItemQuantity, setManualItemQuantity] = useState('');
+  const [manualItemCategory, setManualItemCategory] = useState('');
   const [listGenerating, setListGenerating] = useState(false);
   const [inventoryPreview, setInventoryPreview] = useState<Array<{ id: string; name: string; quantity_approx?: string; category?: string }>>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [selectedList, setSelectedList] = useState<ShoppingList | null>(null);
+  const [listDetailVisible, setListDetailVisible] = useState(false);
+  const [listItems, setListItems] = useState<ShoppingListItem[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [listItemsLoading, setListItemsLoading] = useState(false);
+  const [editingList, setEditingList] = useState<ShoppingList | null>(null);
+  const [editListName, setEditListName] = useState('');
+  const [editListModalVisible, setEditListModalVisible] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemQuantity, setNewItemQuantity] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -269,10 +291,12 @@ export default function SavedScreen() {
         id: `${Date.now()}-${prev.length}`,
         name: manualItemName.trim(),
         quantity: manualItemQuantity.trim(),
+        category: manualItemCategory.trim() || undefined,
       },
     ]);
     setManualItemName('');
     setManualItemQuantity('');
+    setManualItemCategory('');
   };
 
   const handleSaveShoppingList = async () => {
@@ -306,6 +330,7 @@ export default function SavedScreen() {
           list_id: newList.id,
           name: item.name,
           quantity: item.quantity || null,
+          category: item.category || null,
         }))
       );
 
@@ -332,6 +357,220 @@ export default function SavedScreen() {
     setListItemsDraft([]);
     setManualItemName('');
     setManualItemQuantity('');
+    setManualItemCategory('');
+  };
+
+  const handleListPress = async (list: ShoppingList) => {
+    setSelectedList(list);
+    setListDetailVisible(true);
+    setListItemsLoading(true);
+    setSelectedCategory(null);
+    
+    try {
+      const { data, error } = await supabase
+        .from('shopping_list_items')
+        .select('*')
+        .eq('list_id', list.id)
+        .order('created_at', { ascending: true });
+      
+      if (error) throw error;
+      setListItems(data || []);
+    } catch (error) {
+      console.error('Error fetching list items:', error);
+      Alert.alert('Fout', 'Kon items niet laden');
+    } finally {
+      setListItemsLoading(false);
+    }
+  };
+
+  const handleToggleItemComplete = async (itemId: string, completed: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('shopping_list_items')
+        .update({ completed: !completed })
+        .eq('id', itemId);
+      
+      if (error) throw error;
+      
+      setListItems((prev) =>
+        prev.map((item) => (item.id === itemId ? { ...item, completed: !completed } : item))
+      );
+    } catch (error) {
+      console.error('Error toggling item:', error);
+      Alert.alert('Fout', 'Kon item niet updaten');
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    try {
+      const { error } = await supabase
+        .from('shopping_list_items')
+        .delete()
+        .eq('id', itemId);
+      
+      if (error) throw error;
+      
+      setListItems((prev) => prev.filter((item) => item.id !== itemId));
+      
+      if (selectedList) {
+        setLists((prev) =>
+          prev.map((list) =>
+            list.id === selectedList.id
+              ? { ...list, items_count: (list.items_count || 0) - 1 }
+              : list
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      Alert.alert('Fout', 'Kon item niet verwijderen');
+    }
+  };
+
+  const categories = Array.from(new Set(listItems.map((item) => item.category).filter(Boolean))) as string[];
+  const filteredItems = selectedCategory
+    ? listItems.filter((item) => item.category === selectedCategory)
+    : listItems;
+
+  const performDeleteList = async (listId: string) => {
+    if (!user) return;
+
+    try {
+      // First close detail modal if open
+      if (selectedList?.id === listId) {
+        setListDetailVisible(false);
+        setSelectedList(null);
+      }
+
+      const { error } = await supabase
+        .from('shopping_lists')
+        .delete()
+        .eq('id', listId)
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('Delete error:', error);
+        throw error;
+      }
+      
+      setLists((prev) => prev.filter((list) => list.id !== listId));
+      
+      if (Platform.OS !== 'web') {
+        Alert.alert('Verwijderd', 'De lijst is verwijderd.');
+      }
+    } catch (error: any) {
+      console.error('Error deleting list:', error);
+      const errorMsg = `Kon de lijst niet verwijderen: ${error.message || 'Onbekende fout'}`;
+      if (Platform.OS !== 'web') {
+        Alert.alert('Fout', errorMsg);
+      } else if (typeof window !== 'undefined') {
+        alert(errorMsg);
+      }
+    }
+  };
+
+  const handleDeleteList = (listId: string, listName: string) => {
+    if (!user) return;
+
+    // Use confirm for web compatibility, Alert.alert for native
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm(`Weet je zeker dat je "${listName}" wilt verwijderen? Alle items worden ook verwijderd.`);
+      if (confirmed) {
+        performDeleteList(listId);
+      }
+    } else {
+      Alert.alert(
+        'Lijst verwijderen',
+        `Weet je zeker dat je "${listName}" wilt verwijderen? Alle items worden ook verwijderd.`,
+        [
+          { text: 'Annuleren', style: 'cancel' },
+          {
+            text: 'Verwijderen',
+            style: 'destructive',
+            onPress: () => performDeleteList(listId),
+          },
+        ]
+      );
+    }
+  };
+
+  const handleEditList = (list: ShoppingList) => {
+    setEditingList(list);
+    setEditListName(list.name);
+    setEditListModalVisible(true);
+  };
+
+  const handleSaveEditList = async () => {
+    if (!editingList || !editListName.trim()) {
+      Alert.alert('Fout', 'Geef de lijst een naam');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('shopping_lists')
+        .update({ name: editListName.trim() })
+        .eq('id', editingList.id);
+      
+      if (error) throw error;
+      
+      setLists((prev) =>
+        prev.map((list) =>
+          list.id === editingList.id ? { ...list, name: editListName.trim() } : list
+        )
+      );
+      
+      if (selectedList?.id === editingList.id) {
+        setSelectedList({ ...selectedList, name: editListName.trim() });
+      }
+      
+      setEditListModalVisible(false);
+      setEditingList(null);
+      setEditListName('');
+    } catch (error) {
+      console.error('Error updating list:', error);
+      Alert.alert('Fout', 'Kon de lijst niet bijwerken. Probeer opnieuw.');
+    }
+  };
+
+  const handleAddItemToList = async () => {
+    if (!selectedList || !newItemName.trim()) {
+      Alert.alert('Fout', 'Vul een itemnaam in');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('shopping_list_items')
+        .insert({
+          list_id: selectedList.id,
+          name: newItemName.trim(),
+          quantity: newItemQuantity.trim() || null,
+          category: newItemCategory.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setListItems((prev) => [...prev, data]);
+      
+      // Update items count in lists
+      setLists((prev) =>
+        prev.map((list) =>
+          list.id === selectedList.id
+            ? { ...list, items_count: (list.items_count || 0) + 1 }
+            : list
+        )
+      );
+
+      setNewItemName('');
+      setNewItemQuantity('');
+      setNewItemCategory('');
+    } catch (error: any) {
+      console.error('Error adding item:', error);
+      Alert.alert('Fout', `Kon item niet toevoegen: ${error.message || 'Onbekende fout'}`);
+    }
   };
 
   const handleRecipePress = async (recipe: SavedRecipe) => {
@@ -444,17 +683,20 @@ export default function SavedScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView style={styles.safeArea}>
+      <ImageBackground 
+        source={require('../assets/gree.png')} 
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+        <View style={styles.overlay} />
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>S</Text>
-            </View>
-            <Text style={styles.brandLabel}>Stockpit</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Ionicons name="search" size={22} color="#0f172a" />
             <Pressable onPress={() => router.push('/profile')}>
               {user ? (
                 <View style={styles.avatar}>
@@ -556,11 +798,39 @@ export default function SavedScreen() {
                   )}
                   {lists.map((list) => (
                     <View key={list.id} style={styles.listCard}>
-                      <Ionicons name="list-circle" size={26} color="#047857" />
-                      <Text style={styles.listName}>{list.name}</Text>
-                      <Text style={styles.listMeta}>
-                        {list.items_count ?? '-'} items • {new Date(list.updated_at).toLocaleDateString()}
-                      </Text>
+                      <TouchableOpacity 
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                        onPress={() => handleListPress(list)}
+                      >
+                        <Ionicons name="list-circle" size={26} color="#047857" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.listName}>{list.name}</Text>
+                          <Text style={styles.listMeta}>
+                            {list.items_count ?? '-'} items • {new Date(list.updated_at).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+                      </TouchableOpacity>
+                      <View style={styles.listCardActions}>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleEditList(list);
+                          }}
+                          style={styles.listActionButton}
+                        >
+                          <Ionicons name="create-outline" size={18} color="#047857" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDeleteList(list.id, list.name);
+                          }}
+                          style={styles.listActionButton}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -579,8 +849,9 @@ export default function SavedScreen() {
             </View>
           )}
         </ScrollView>
-      </SafeAreaView>
-      <GlassDock />
+        </SafeAreaView>
+        <GlassDock />
+      </ImageBackground>
 
       {/* Recipe Detail Modal */}
       <Modal
@@ -794,32 +1065,252 @@ export default function SavedScreen() {
               </View>
 
               <View style={styles.manualRow}>
-                <TextInput
-                  value={manualItemName}
-                  onChangeText={setManualItemName}
-                  placeholder="Item"
-                  placeholderTextColor="#94a3b8"
-                  style={[styles.listInput, { flex: 1 }]}
-                />
-                <TextInput
-                  value={manualItemQuantity}
-                  onChangeText={setManualItemQuantity}
-                  placeholder="Hoeveelheid"
-                  placeholderTextColor="#94a3b8"
-                  style={[styles.listInput, { flex: 1 }]}
-                />
+                <View style={{ flex: 1, gap: 8 }}>
+                  <TextInput
+                    value={manualItemName}
+                    onChangeText={setManualItemName}
+                    placeholder="Item naam"
+                    placeholderTextColor="#94a3b8"
+                    style={styles.listInput}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TextInput
+                      value={manualItemQuantity}
+                      onChangeText={setManualItemQuantity}
+                      placeholder="Hoeveelheid"
+                      placeholderTextColor="#94a3b8"
+                      style={[styles.listInput, { flex: 1 }]}
+                    />
+                    <TextInput
+                      value={manualItemCategory}
+                      onChangeText={setManualItemCategory}
+                      placeholder="Categorie (optioneel)"
+                      placeholderTextColor="#94a3b8"
+                      style={[styles.listInput, { flex: 1 }]}
+                    />
+                  </View>
+                </View>
                 <TouchableOpacity style={styles.addItemButton} onPress={handleAddManualListItem}>
                   <Ionicons name="add" size={20} color="#fff" />
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.modalButton} onPress={handleSaveShoppingList}>
-                <Text style={styles.modalButtonText}>Lijst opslaan</Text>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.saveButtonPrimary]} 
+                onPress={handleSaveShoppingList}
+                disabled={!listName.trim() || listItemsDraft.length === 0}
+              >
+                <Text style={styles.saveButtonText}>
+                  {listItemsDraft.length > 0 ? `Opslaan (${listItemsDraft.length} items)` : 'Lijst opslaan'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalButton, { backgroundColor: 'transparent', marginTop: 8 }]} onPress={resetListModal}>
                 <Text style={[styles.modalButtonText, { color: '#047857' }]}>Annuleren</Text>
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Shopping List Detail Modal */}
+      <Modal
+        visible={listDetailVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setListDetailVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.listDetailCard}>
+            <View style={styles.listDetailHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.listDetailTitle}>{selectedList?.name}</Text>
+                <Text style={styles.listDetailMeta}>
+                  {listItems.length} items • {selectedList && new Date(selectedList.updated_at).toLocaleDateString('nl-NL')}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setListDetailVisible(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="#0f172a" />
+              </TouchableOpacity>
+            </View>
+
+            {categories.length > 0 && (
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.categoryFilter}
+                contentContainerStyle={styles.categoryFilterContent}
+              >
+                <TouchableOpacity
+                  style={[styles.categoryChip, !selectedCategory && styles.categoryChipActive]}
+                  onPress={() => setSelectedCategory(null)}
+                >
+                  <Text style={[styles.categoryChipText, !selectedCategory && styles.categoryChipTextActive]}>
+                    Alles
+                  </Text>
+                </TouchableOpacity>
+                {categories.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryChip, selectedCategory === cat && styles.categoryChipActive]}
+                    onPress={() => setSelectedCategory(cat)}
+                  >
+                    <Text style={[styles.categoryChipText, selectedCategory === cat && styles.categoryChipTextActive]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {listItemsLoading ? (
+              <View style={styles.listDetailLoading}>
+                <ActivityIndicator size="large" color="#047857" />
+              </View>
+            ) : filteredItems.length === 0 ? (
+              <View style={styles.listDetailEmpty}>
+                <Ionicons name="list-outline" size={48} color="#94a3b8" />
+                <Text style={styles.listDetailEmptyText}>
+                  {selectedCategory ? `Geen items in categorie "${selectedCategory}"` : 'Geen items in deze lijst'}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.listDetailItems}>
+                {filteredItems.map((item) => (
+                  <View key={item.id} style={[styles.listDetailItem, item.completed && styles.listDetailItemCompleted]}>
+                    <TouchableOpacity
+                      style={styles.listDetailCheckbox}
+                      onPress={() => handleToggleItemComplete(item.id, item.completed)}
+                    >
+                      <Ionicons
+                        name={item.completed ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={24}
+                        color={item.completed ? '#047857' : '#94a3b8'}
+                      />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.listDetailItemName, item.completed && styles.listDetailItemNameCompleted]}>
+                        {item.name}
+                      </Text>
+                      <View style={styles.listDetailItemMeta}>
+                        {item.quantity && (
+                          <Text style={styles.listDetailItemQuantity}>{item.quantity}</Text>
+                        )}
+                        {item.category && (
+                          <View style={styles.listDetailItemCategory}>
+                            <Text style={styles.listDetailItemCategoryText}>{item.category}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteItem(item.id)}
+                      style={styles.listDetailDelete}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Add Item Section */}
+            <View style={styles.addItemSection}>
+              <Text style={styles.addItemSectionTitle}>Item toevoegen</Text>
+              <View style={styles.addItemForm}>
+                <TextInput
+                  value={newItemName}
+                  onChangeText={setNewItemName}
+                  placeholder="Item naam"
+                  placeholderTextColor="#94a3b8"
+                  style={styles.addItemInput}
+                />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput
+                    value={newItemQuantity}
+                    onChangeText={setNewItemQuantity}
+                    placeholder="Hoeveelheid"
+                    placeholderTextColor="#94a3b8"
+                    style={[styles.addItemInput, { flex: 1 }]}
+                  />
+                  <TextInput
+                    value={newItemCategory}
+                    onChangeText={setNewItemCategory}
+                    placeholder="Categorie (optioneel)"
+                    placeholderTextColor="#94a3b8"
+                    style={[styles.addItemInput, { flex: 1 }]}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.addItemButtonDetail}
+                  onPress={handleAddItemToList}
+                  disabled={!newItemName.trim()}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                  <Text style={styles.addItemButtonText}>Toevoegen</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit List Modal */}
+      <Modal
+        visible={editListModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setEditListModalVisible(false);
+          setEditingList(null);
+          setEditListName('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.listModalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalSectionTitle}>Lijst bewerken</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditListModalVisible(false);
+                  setEditingList(null);
+                  setEditListName('');
+                }}
+              >
+                <Ionicons name="close" size={24} color="#0f172a" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={{ gap: 12, marginTop: 16 }}>
+              <Text style={styles.label}>Naam</Text>
+              <TextInput
+                value={editListName}
+                onChangeText={setEditListName}
+                placeholder="Naam van de lijst"
+                placeholderTextColor="#94a3b8"
+                style={styles.listInput}
+                autoFocus
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+              <TouchableOpacity
+                style={[styles.modalButton, { flex: 1, backgroundColor: 'transparent' }]}
+                onPress={() => {
+                  setEditListModalVisible(false);
+                  setEditingList(null);
+                  setEditListName('');
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: '#64748b' }]}>Annuleren</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButtonPrimary, { flex: 1 }]}
+                onPress={handleSaveEditList}
+                disabled={!editListName.trim()}
+              >
+                <Text style={styles.saveButtonText}>Opslaan</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -830,11 +1321,20 @@ export default function SavedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
   },
   safeArea: {
     flex: 1,
     paddingTop: 8,
+    zIndex: 1,
   },
   header: {
     paddingHorizontal: 24,
@@ -851,15 +1351,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: 18,
   },
   brandLabel: {
     fontSize: 18,
@@ -1002,7 +1493,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(15,23,42,0.08)',
     backgroundColor: '#f8fafc',
     padding: 14,
-    gap: 6,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  listCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  listActionButton: {
+    padding: 6,
   },
   listName: {
     fontSize: 15,
@@ -1076,8 +1578,10 @@ const styles = StyleSheet.create({
     height: 250,
   },
   modalHeader: {
-    padding: 20,
-    gap: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   modalHeaderTop: {
     flexDirection: 'row',
@@ -1272,6 +1776,198 @@ const styles = StyleSheet.create({
     padding: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  saveButtonPrimary: {
+    backgroundColor: '#047857',
+    marginTop: 24,
+    paddingVertical: 16,
+    borderRadius: 14,
+    shadowColor: '#047857',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  listDetailCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '90%',
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  listDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
+  listDetailTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  listDetailMeta: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  categoryFilter: {
+    marginBottom: 16,
+  },
+  categoryFilterContent: {
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.1)',
+  },
+  categoryChipActive: {
+    backgroundColor: '#047857',
+    borderColor: '#047857',
+  },
+  categoryChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+  },
+  listDetailLoading: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listDetailEmpty: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  listDetailEmptyText: {
+    fontSize: 15,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  listDetailItems: {
+    paddingHorizontal: 24,
+  },
+  listDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.05)',
+  },
+  listDetailItemCompleted: {
+    opacity: 0.6,
+    backgroundColor: '#f0fdf4',
+  },
+  listDetailCheckbox: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listDetailItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  listDetailItemNameCompleted: {
+    textDecorationLine: 'line-through',
+    color: '#64748b',
+  },
+  listDetailItemMeta: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  listDetailItemQuantity: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  listDetailItemCategory: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: '#ecfdf5',
+  },
+  listDetailItemCategoryText: {
+    fontSize: 11,
+    color: '#047857',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  listDetailDelete: {
+    padding: 8,
+  },
+  label: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  addItemSection: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15,23,42,0.08)',
+    backgroundColor: '#f8fafc',
+  },
+  addItemSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 12,
+  },
+  addItemForm: {
+    gap: 12,
+  },
+  addItemInput: {
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#0f172a',
+    backgroundColor: '#fff',
+  },
+  addItemButtonDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#047857',
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  addItemButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

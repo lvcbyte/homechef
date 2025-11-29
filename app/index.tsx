@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
@@ -55,6 +55,7 @@ const categoryColors: Record<string, string> = {
 
 export default function Home() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, profile } = useAuth();
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
@@ -68,13 +69,23 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      fetchData();
-    } else {
-      // For non-logged-in users, still fetch some data
+    // Only redirect if we're on the home page (index) and user is not authenticated
+    // Don't redirect if user is on other pages
+    if (pathname === '/' && !user) {
+      const timer = setTimeout(() => {
+        try {
+          router.replace('/welcome');
+        } catch (error) {
+          // Router might not be ready, ignore
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+    // Only fetch data if user is authenticated and we're on the home page
+    if (user && pathname === '/') {
       fetchData();
     }
-  }, [user, profile]);
+  }, [user, profile, pathname]);
 
 
   // Remove auto-rotation for quick recipes - make it infinite scroll instead
@@ -289,7 +300,7 @@ export default function Home() {
           recipe_id: existing.id,
           title: existing.title,
           description: existing.description,
-          author: 'Stockpit AI',
+          author: 'STOCKPIT AI',
           image_url: existing.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
           total_time_minutes: existing.total_time_minutes,
           difficulty: existing.difficulty || 'Gemiddeld',
@@ -364,7 +375,7 @@ export default function Home() {
                 recipe_id: saved.id,
                 title: saved.title,
                 description: saved.description,
-                author: 'Stockpit AI',
+                author: 'STOCKPIT AI',
                 image_url: saved.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
                 total_time_minutes: saved.total_time_minutes,
                 difficulty: saved.difficulty || 'Gemiddeld',
@@ -430,7 +441,7 @@ export default function Home() {
               recipe_id: saved.id,
               title: saved.title,
               description: saved.description,
-              author: 'Stockpit AI',
+              author: 'STOCKPIT AI',
               image_url: saved.image_url || 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
               total_time_minutes: saved.total_time_minutes,
               difficulty: saved.difficulty || 'Gemiddeld',
@@ -465,7 +476,7 @@ export default function Home() {
 
   const handleRecipePress = async (recipe: Recipe | RecipeDetail) => {
     // Check if it's a daily AI recipe (has recipe_id but might not be in recipes table)
-    if ('recipe_id' in recipe && recipe.author === 'Stockpit AI') {
+    if ('recipe_id' in recipe && recipe.author === 'STOCKPIT AI') {
       // It's a daily AI recipe, use it directly
       setSelectedRecipe(recipe as RecipeDetail);
       setModalVisible(true);
@@ -551,6 +562,12 @@ export default function Home() {
     }
   };
 
+  // Only redirect if we're on the home page and not authenticated
+  // Don't render anything if redirecting
+  if (pathname === '/' && !user) {
+    return null;
+  }
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -561,19 +578,21 @@ export default function Home() {
     );
   }
 
+  // Don't render if not authenticated (will redirect)
+  if (!user) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>S</Text>
-            </View>
-            <Text style={styles.brandLabel}>Stockpit</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Ionicons name="search" size={22} color="#0f172a" />
             <Pressable onPress={() => router.push('/profile')}>
               {user ? (
                 <View style={styles.avatar}>
@@ -986,15 +1005,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: 18,
   },
   brandLabel: {
     fontSize: 18,

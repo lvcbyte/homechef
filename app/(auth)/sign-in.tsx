@@ -73,7 +73,7 @@ export default function SignInScreen() {
             <Text style={styles.primaryButtonText}>{submitting ? 'Aan het inloggen...' : 'Sign in'}</Text>
           </Pressable>
 
-          <Pressable onPress={() => router.push('/sign-up')} style={styles.secondaryButton}>
+          <Pressable onPress={() => router.push('/(auth)/sign-up')} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>
               Nog geen account? <Text style={{ color: '#047857' }}>Maak er één</Text>
             </Text>

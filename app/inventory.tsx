@@ -462,13 +462,10 @@ export default function InventoryScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>S</Text>
-            </View>
-            <Text style={styles.brandLabel}>Stockpit</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Ionicons name="search" size={22} color="#0f172a" />
             <Pressable onPress={() => router.push('/profile')}>
               {user ? (
                 <View style={styles.avatar}>
@@ -546,9 +543,6 @@ export default function InventoryScreen() {
             <>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>My Shelf</Text>
-                <TouchableOpacity onPress={() => router.push('/scan')}>
-                  <Text style={styles.sectionLink}>Open Stockpit</Text>
-                </TouchableOpacity>
               </View>
               {shelfLoading ? (
                 <View style={styles.loadingRow}>
@@ -557,7 +551,7 @@ export default function InventoryScreen() {
                 </View>
               ) : shelfPhotos.length === 0 ? (
                 <Text style={styles.emptyShelfText}>
-                  Maak een shelf shot in Stockpit mode om een visueel archief op te bouwen.
+                  Maak een shelf shot in STOCKPIT mode om een visueel archief op te bouwen.
                 </Text>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.shelfScroll}>
@@ -603,7 +597,7 @@ export default function InventoryScreen() {
                   {viewMode === 'items'
                     ? 'Live score en houdbaarheid'
                     : viewMode === 'categories'
-                    ? 'Geclusterd per Stockpit lane'
+                    ? 'Geclusterd per STOCKPIT lane'
                     : 'Sortering op dichtstbijzijnde houdbaarheid'}
                 </Text>
               </View>
@@ -990,15 +984,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: 18,
   },
   brandLabel: {
     fontSize: 18,

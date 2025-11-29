@@ -1,6 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Image, StyleSheet, Text, View } from 'react-native';
 
 interface StockpitLoaderProps {
   message?: string;
@@ -10,7 +10,7 @@ interface StockpitLoaderProps {
 }
 
 const LOADING_MESSAGES = [
-  'Stockpit engine opstarten...',
+  'STOCKPIT engine opstarten...',
   'Recepten scannen...',
   'Voorraad analyseren...',
   'Perfecte match zoeken...',
@@ -81,7 +81,7 @@ const INVENTORY_LOADING_MESSAGES = [
   'Houdbaarheidsdata laden...',
   'Categorieën sorteren...',
   'Foto\'s ophalen...',
-  'Stockpit Mode voorbereiden...',
+  'STOCKPIT Mode voorbereiden...',
   'Producten synchroniseren...',
   'Catalogus matchen...',
   'Prijzen ophalen...',
@@ -137,15 +137,15 @@ export function StockpitLoader({ message, progress, variant = 'inline', customTi
     if (customTip) return customTip;
     switch (variant) {
       case 'recipes':
-        return '💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen';
+        return '💡 Tip: Gebruik STOCKPIT Mode om je voorraad snel te scannen';
       case 'home':
         return '💡 Tip: Swipe door je persoonlijke recepten voor dagelijkse inspiratie';
       case 'inventory':
-        return '💡 Tip: Scan je voorraad met Stockpit Mode voor automatische detectie';
+        return '💡 Tip: Scan je voorraad met STOCKPIT Mode voor automatische detectie';
       case 'saved':
         return '💡 Tip: Bewaar je favoriete recepten voor snelle toegang later';
       default:
-        return '💡 Tip: Gebruik Stockpit Mode om je voorraad snel te scannen';
+        return '💡 Tip: Gebruik STOCKPIT Mode om je voorraad snel te scannen';
     }
   };
 
@@ -281,9 +281,7 @@ export function StockpitLoader({ message, progress, variant = 'inline', customTi
                 },
               ]}
             >
-              <View style={styles.logo}>
-                <Text style={styles.logoText}>S</Text>
-              </View>
+              <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
               {/* Decorative circles */}
               <Animated.View
                 style={[
@@ -324,7 +322,7 @@ export function StockpitLoader({ message, progress, variant = 'inline', customTi
                 transform: [{ translateY: slideAnim }],
               }}
             >
-              <Text style={styles.brandText}>Stockpit</Text>
+              <Text style={styles.brandText}>STOCKPIT</Text>
             </Animated.View>
 
             {/* Animated Message */}
@@ -403,11 +401,9 @@ export function StockpitLoader({ message, progress, variant = 'inline', customTi
         <BlurView intensity={80} tint="light" style={styles.fullscreenBlur}>
           <View style={styles.fullscreenContent}>
             <Animated.View style={[styles.logoContainer, { transform: [{ scale: pulseAnim }] }]}>
-              <View style={styles.logo}>
-                <Text style={styles.logoText}>S</Text>
-              </View>
+              <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             </Animated.View>
-            <Text style={styles.brandText}>Stockpit</Text>
+            <Text style={styles.brandText}>STOCKPIT</Text>
             <Text style={styles.messageText}>{displayMessage}</Text>
             {progress !== undefined && (
               <View style={styles.progressContainer}>
@@ -501,21 +497,6 @@ const styles = StyleSheet.create({
   logo: {
     width: isMobile ? 80 : 96,
     height: isMobile ? 80 : 96,
-    borderRadius: isMobile ? 20 : 24,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#047857',
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-    zIndex: 2,
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: isMobile ? 40 : 48,
   },
   decorativeCircle1: {
     position: 'absolute',

@@ -646,7 +646,7 @@ export default function RecipesScreen() {
               recipe_id: `ai-${Date.now()}-${index}`,
               title: recipe.name,
               description: recipe.description || null,
-              author: 'Stockpit AI',
+              author: 'STOCKPIT AI',
               image_url: imageUrl,
               total_time_minutes: recipe.totalTime || 30,
               difficulty: recipe.difficulty || 'Gemiddeld',
@@ -747,7 +747,7 @@ export default function RecipesScreen() {
         recipe_id: recipe.recipe_id,
         title: recipe.title,
         description: recipe.description || null,
-        author: recipe.author || 'Stockpit AI',
+        author: recipe.author || 'STOCKPIT AI',
         image_url: recipe.image_url || `https://source.unsplash.com/featured/?${encodeURIComponent(recipe.title)},food,recipe&w=1200&q=80`,
         total_time_minutes: recipe.total_time_minutes || 30,
         difficulty: recipe.difficulty || 'Gemiddeld',
@@ -860,13 +860,10 @@ export default function RecipesScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <View style={styles.brandRow}>
-              <View style={styles.logo}>
-                <Text style={styles.logoText}>S</Text>
-            </View>
-            <Text style={styles.brandLabel}>Stockpit</Text>
+              <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+              <Text style={styles.brandLabel}>STOCKPIT</Text>
             </View>
             <View style={styles.headerIcons}>
-              <Ionicons name="search" size={22} color="#0f172a" />
               <Pressable onPress={() => router.push('/profile')}>
                 <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
               </Pressable>
@@ -896,13 +893,10 @@ export default function RecipesScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.brandRow}>
-            <View style={styles.logo}>
-                <Text style={styles.logoText}>S</Text>
-            </View>
-            <Text style={styles.brandLabel}>Stockpit</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
           <View style={styles.headerIcons}>
-            <Ionicons name="search" size={22} color="#0f172a" />
             <Pressable onPress={() => router.push('/profile')}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarInitial}>
@@ -953,7 +947,7 @@ export default function RecipesScreen() {
             <Text style={styles.heroEyebrow}>Chef Radar</Text>
             <Text style={styles.heroSectionTitle}>Jouw voorraad, onze recepten.</Text>
             <Text style={styles.heroSubtitle}>
-              De Stockpit engine sorteert alle combinaties op beschikbaarheid en vibe. Kies jouw mood en start een sessie.
+              De STOCKPIT engine sorteert alle combinaties op beschikbaarheid en vibe. Kies jouw mood en start een sessie.
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={styles.filterRow}>
@@ -984,7 +978,7 @@ export default function RecipesScreen() {
               </View>
             ) : inventoryCount === 0 ? (
               <Text style={styles.emptyText}>
-                Geen voorraad gevonden. Upload een shelf shot in Stockpit Mode om Chef Radar te activeren.
+                Geen voorraad gevonden. Upload een shelf shot in STOCKPIT Mode om Chef Radar te activeren.
               </Text>
             ) : chefRadarLoading ? (
               <StockpitLoader variant="inline" message={chefRadarLoadingMessage} />
@@ -1372,15 +1366,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#047857',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    color: '#f0fdf4',
-    fontWeight: '800',
-    fontSize: 18,
   },
   brandLabel: {
     fontSize: 18,
