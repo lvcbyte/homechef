@@ -179,21 +179,33 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
       if (parent && !document.getElementById(containerId)) {
         const div = document.createElement('div');
         div.id = containerId;
-        div.style.width = '100%';
-        div.style.height = '100%';
-        div.style.position = 'relative';
+        div.style.width = '100vw';
+        div.style.height = '100vh';
+        div.style.position = 'fixed';
+        div.style.top = '0';
+        div.style.left = '0';
         div.style.backgroundColor = '#000';
         div.style.overflow = 'hidden';
+        div.style.zIndex = '1';
         // Ensure video is visible
         const styleId = `quagga-style-${containerId}`;
         if (!document.getElementById(styleId)) {
           const style = document.createElement('style');
           style.id = styleId;
           style.textContent = `
+            #${containerId} {
+              width: 100vw !important;
+              height: 100vh !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              overflow: hidden !important;
+              z-index: 1 !important;
+            }
             #${containerId} video,
             #${containerId} canvas {
-              width: 100% !important;
-              height: 100% !important;
+              width: 100vw !important;
+              height: 100vh !important;
               object-fit: cover !important;
               position: absolute !important;
               top: 0 !important;
@@ -202,6 +214,10 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
             }
             #${containerId} canvas {
               z-index: 2 !important;
+            }
+            #${containerId} > div {
+              width: 100vw !important;
+              height: 100vh !important;
             }
           `;
           document.head.appendChild(style);
