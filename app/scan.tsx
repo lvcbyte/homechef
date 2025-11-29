@@ -297,7 +297,12 @@ export default function ScanScreen() {
   const handleBarcode = async (result: string | BarcodeScanningResult) => {
     // Handle both QuaggaJS (string) and expo-camera (BarcodeScanningResult) formats
     const ean = typeof result === 'string' ? result : result.data;
-    console.log('Barcode scanned:', ean);
+    console.log('handleBarcode called with:', result, 'extracted ean:', ean);
+    
+    if (!ean || ean.trim().length === 0) {
+      console.warn('Empty barcode, skipping');
+      return;
+    }
     
     // Prevent multiple scans of the same barcode
     if (scannedBarcode === ean || scanningProduct) {
