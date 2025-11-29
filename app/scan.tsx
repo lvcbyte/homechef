@@ -888,10 +888,15 @@ export default function ScanScreen() {
       </SafeAreaView>
       <GlassDock />
 
-      <Modal visible={barcodeMode} animationType="slide" onRequestClose={() => {
-        setBarcodeMode(false);
-        setScannedBarcode(null);
-      }}>
+      <Modal 
+        visible={barcodeMode} 
+        animationType="slide" 
+        onRequestClose={() => {
+          setBarcodeMode(false);
+          setScannedBarcode(null);
+        }}
+        presentationStyle="fullScreen"
+      >
         <View style={styles.barcodeContainer}>
           {Platform.OS === 'web' && QuaggaScannerComponent ? (
             // Use QuaggaJS for web
