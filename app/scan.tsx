@@ -773,9 +773,9 @@ export default function ScanScreen() {
           {hasScannerPermission ? (
             <>
               <BarCodeScanner
-                onBarcodeScanned={scannedBarcode ? undefined : handleBarcode}
+                onBarCodeScanned={scannedBarcode ? undefined : handleBarcode}
                 style={StyleSheet.absoluteFillObject}
-                barcodeTypes={[
+                barCodeTypes={[
                   'ean13',
                   'ean8',
                   'upc_a',
