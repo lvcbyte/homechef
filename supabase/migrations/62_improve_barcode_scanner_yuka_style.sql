@@ -107,6 +107,9 @@ alter table public.barcode_scans
     add column if not exists product_brand text,
     add column if not exists match_confidence numeric(5, 2);
 
+-- Drop old version of function if it exists (with uuid parameter)
+drop function if exists public.log_barcode_scan(uuid, text, uuid, text, text, numeric);
+
 -- Function to log barcode scan with product info
 create or replace function public.log_barcode_scan(
     p_user_id uuid,
@@ -155,5 +158,5 @@ grant execute on function public.log_barcode_scan(uuid, text, text, text, text, 
 -- Add comments
 comment on function public.match_product_by_barcode_enhanced(text) is 'Enhanced barcode matching with multiple format support and scoring, similar to Yuka app';
 comment on function public.get_product_by_barcode(text) is 'Get complete product information by barcode for display';
-comment on function public.log_barcode_scan(uuid, text, uuid, text, text, numeric) is 'Log a barcode scan with product matching information';
+comment on function public.log_barcode_scan(uuid, text, text, text, text, numeric) is 'Log a barcode scan with product matching information';
 
