@@ -272,11 +272,34 @@ export default function ScanScreen() {
     setScannedBarcode(normalizedBarcode);
     setScanningProduct(true);
     
-    // Show feedback
-    Alert.alert('Barcode gedetecteerd', `Scannen van barcode: ${normalizedBarcode}...`, [], { cancelable: false });
+    // Start scan animation
+    setShowScanAnimation(true);
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(scanAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnimation, {
+              toValue: 1.2,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnimation, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ]),
+          { iterations: 3 }
+        ),
+      ]),
+    ]).start();
     
-    // Close scanner immediately for better UX
-    setBarcodeMode(false);
+    // Don't close scanner immediately - keep it open to show animation
     
     try {
       const targetSession = await ensureSession();
