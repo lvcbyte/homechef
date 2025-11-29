@@ -260,10 +260,12 @@ export default function ScanScreen() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       import('../components/barcode/QuaggaScanner.web')
         .then((module) => {
+          console.log('QuaggaScanner loaded successfully');
           setQuaggaScannerComponent(() => module.QuaggaScanner);
         })
         .catch((error) => {
-          console.warn('Failed to load QuaggaScanner:', error);
+          console.error('Failed to load QuaggaScanner:', error);
+          Alert.alert('Fout', 'Barcode scanner kon niet worden geladen. Probeer de pagina te verversen.');
         });
     }
   }, []);

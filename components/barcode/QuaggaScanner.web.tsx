@@ -109,19 +109,29 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
             );
 
             Quagga.onDetected((result: any) => {
-              const code = result.codeResult.code;
-              const now = Date.now();
+              try {
+                const code = result.codeResult?.code;
+                if (!code) {
+                  console.warn('Quagga detected but no code found:', result);
+                  return;
+                }
+                
+                const now = Date.now();
 
-              // Prevent duplicate scans within 2 seconds
-              if (lastScannedCode.current === code && now - lastScanTime.current < 2000) {
-                return;
+                // Prevent duplicate scans within 2 seconds
+                if (lastScannedCode.current === code && now - lastScanTime.current < 2000) {
+                  console.log('Skipping duplicate scan:', code);
+                  return;
+                }
+
+                lastScannedCode.current = code;
+                lastScanTime.current = now;
+
+                console.log('Quagga detected barcode:', code);
+                onDetected(code);
+              } catch (error) {
+                console.error('Error processing Quagga detection:', error);
               }
-
-              lastScannedCode.current = code;
-              lastScanTime.current = now;
-
-              console.log('Quagga detected barcode:', code);
-              onDetected(code);
             });
           } catch (error) {
             console.error('Error initializing Quagga:', error);
