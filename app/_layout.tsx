@@ -66,20 +66,32 @@ export default function RootLayout() {
       // For Expo web, assets are served from /assets/ directory
       // Use absolute URL for better iOS compatibility
       const baseUrl = window.location.origin;
-      const iconPath = `${baseUrl}/assets/icon.png`;
       
-      // Add primary apple-touch-icon (180x180 is standard for iOS)
-      const appleIcon = document.createElement('link');
-      appleIcon.rel = 'apple-touch-icon';
-      appleIcon.href = iconPath;
-      appleIcon.sizes = '180x180';
-      document.getElementsByTagName('head')[0].insertBefore(appleIcon, document.getElementsByTagName('head')[0].firstChild);
+      // Try multiple icon paths - Expo may serve from different locations
+      const iconPaths = [
+        `${baseUrl}/assets/icon.png`,
+        `${baseUrl}/icon.png`,
+        '/assets/icon.png',
+        '/icon.png',
+      ];
       
-      // Also add without sizes for compatibility (iOS will use this as fallback)
-      const appleIconDefault = document.createElement('link');
-      appleIconDefault.rel = 'apple-touch-icon';
-      appleIconDefault.href = iconPath;
-      document.getElementsByTagName('head')[0].insertBefore(appleIconDefault, document.getElementsByTagName('head')[0].firstChild);
+      // Add apple-touch-icon for each path (iOS will use the first one that works)
+      iconPaths.forEach((iconPath, index) => {
+        const appleIcon = document.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = iconPath;
+        if (index === 0) {
+          appleIcon.sizes = '180x180';
+        }
+        const head = document.getElementsByTagName('head')[0];
+        head.insertBefore(appleIcon, head.firstChild);
+      });
+      
+      // Also add a precomposed version (iOS sometimes prefers this)
+      const appleIconPrecomposed = document.createElement('link');
+      appleIconPrecomposed.rel = 'apple-touch-icon-precomposed';
+      appleIconPrecomposed.href = `${baseUrl}/assets/icon.png`;
+      document.getElementsByTagName('head')[0].insertBefore(appleIconPrecomposed, document.getElementsByTagName('head')[0].firstChild);
       
       // Update app title
       if (document.title !== 'STOCKPIT') {

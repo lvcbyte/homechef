@@ -101,10 +101,16 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                 setIsInitialized(true);
                 
                 // Get the video stream for flash control
-                const videoElement = container.querySelector('video');
-                if (videoElement && videoElement.srcObject) {
-                  streamRef.current = videoElement.srcObject as MediaStream;
-                }
+                // Wait a bit for video element to be created
+                setTimeout(() => {
+                  const videoElement = container.querySelector('video');
+                  if (videoElement && videoElement.srcObject) {
+                    streamRef.current = videoElement.srcObject as MediaStream;
+                    console.log('Video stream captured for flash control');
+                  } else {
+                    console.warn('Video element not found or no stream available');
+                  }
+                }, 1000);
               }
             );
 

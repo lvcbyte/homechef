@@ -908,9 +908,12 @@ export default function ScanScreen() {
               // Use QuaggaJS for web
               <QuaggaScannerComponent
                 onDetected={(code) => {
-                  console.log('Barcode detected in scan screen:', code);
-                  if (!scannedBarcode && !scanningProduct) {
+                  console.log('Barcode detected in scan screen:', code, 'scannedBarcode:', scannedBarcode, 'scanningProduct:', scanningProduct);
+                  if (!scannedBarcode && !scanningProduct && code) {
+                    console.log('Calling handleBarcode with:', code);
                     handleBarcode(code);
+                  } else {
+                    console.log('Skipping barcode detection - already processing or no code');
                   }
                 }}
                 onError={(error) => {
