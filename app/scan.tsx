@@ -847,7 +847,22 @@ export default function ScanScreen() {
         setScannedBarcode(null);
       }}>
         <View style={styles.barcodeContainer}>
-          {permission?.granted ? (
+          {Platform.OS === 'web' ? (
+            // Use QuaggaJS for web
+            <QuaggaScanner
+              onDetected={(code) => {
+                if (!scannedBarcode && !scanningProduct) {
+                  handleBarcode(code);
+                }
+              }}
+              onError={(error) => {
+                console.error('Quagga error:', error);
+                Alert.alert('Camera fout', 'Kon camera niet starten. Controleer je browser instellingen.');
+              }}
+              style={StyleSheet.absoluteFillObject}
+            />
+          ) : permission?.granted ? (
+            // Use expo-camera for native
             <>
               <CameraView
                 style={StyleSheet.absoluteFillObject}
@@ -863,9 +878,14 @@ export default function ScanScreen() {
                     'qr',
                   ],
                 }}
-                onBarcodeScanned={scannedBarcode || scanningProduct ? undefined : handleBarcode}
+                onBarcodeScanned={scannedBarcode || scanningProduct ? undefined : (result) => handleBarcode(result)}
               />
-              <View style={styles.barcodeOverlay}>
+            </>
+          ) : null}
+          
+          {/* Overlay is shown for both web and native */}
+          {(Platform.OS === 'web' || permission?.granted) && (
+            <View style={styles.barcodeOverlay}>
                 <Animated.View 
                   style={[
                     styles.barcodeFrame,
@@ -935,11 +955,7 @@ export default function ScanScreen() {
                   <Text style={styles.closeOverlayText}>Stop scannen</Text>
                 </Pressable>
               </View>
-            </>
-          ) : null}
-          
-          {/* Overlay is shown for both web and native */}
-          {Platform.OS === 'web' || permission?.granted ? (
+          ) : (
             <View style={styles.barcodePermissionPrompt}>
               <Ionicons name="camera-outline" size={64} color="#94a3b8" />
               <Text style={styles.permissionTitle}>Camera toegang vereist</Text>
