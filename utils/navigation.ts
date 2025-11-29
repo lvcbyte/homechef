@@ -6,17 +6,17 @@ import { Router } from 'expo-router';
  * This prevents issues where routes might be interpreted as absolute URLs pointing to localhost
  */
 export function navigateToRoute(router: Router, route: string) {
-  // On web, ensure we're using relative paths to avoid localhost redirects
-  // Expo Router handles relative paths correctly, but we need to ensure
-  // the route doesn't get interpreted as an absolute URL
+  // Ensure route starts with / for consistency
+  const cleanRoute = route.startsWith('/') ? route : `/${route}`;
+  
+  // On web, use router.push which handles client-side routing
+  // Expo Router should handle this correctly on both web and native
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    // Ensure route starts with / for consistency
-    const cleanRoute = route.startsWith('/') ? route : `/${route}`;
-    // Use router.push - Expo Router will handle it correctly
+    // Use router.push - Expo Router handles client-side navigation automatically
     router.push(cleanRoute as any);
   } else {
     // On native, use the route as-is
-    router.push(route as any);
+    router.push(cleanRoute as any);
   }
 }
 

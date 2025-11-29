@@ -19,15 +19,11 @@ export default function RootLayout() {
         lastTouchEnd = now;
       }, false);
 
-      // Ensure base tag is set correctly for routing
-      // Remove any existing base tag that might point to localhost
+      // Remove any base tag that might interfere with Expo Router's routing
+      // Expo Router handles routing internally and base tags can cause issues
       const existingBase = document.querySelector('base');
       if (existingBase) {
-        const href = existingBase.getAttribute('href');
-        // If base tag points to localhost, remove it or update it
-        if (href && (href.includes('localhost') || href.includes('127.0.0.1'))) {
-          existingBase.remove();
-        }
+        existingBase.remove();
       }
 
       // Add viewport meta tag if not exists
