@@ -177,6 +177,7 @@ export default function ScanScreen() {
   const [showScanAnimation, setShowScanAnimation] = useState(false);
   const scanAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
+  const [QuaggaScannerComponent, setQuaggaScannerComponent] = useState<React.ComponentType<any> | null>(null);
   const [productDetailModalVisible, setProductDetailModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [manualName, setManualName] = useState('');
