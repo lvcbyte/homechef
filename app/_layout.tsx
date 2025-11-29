@@ -64,18 +64,30 @@ export default function RootLayout() {
       
       // Add apple-touch-icon with absolute URL
       // For Expo web, assets are served from /assets/ directory
+      // Use absolute URL for better iOS compatibility
       const baseUrl = window.location.origin;
+      const iconPath = `${baseUrl}/assets/icon.png`;
+      
+      // Add primary apple-touch-icon (180x180 is standard for iOS)
       const appleIcon = document.createElement('link');
       appleIcon.rel = 'apple-touch-icon';
-      appleIcon.href = `${baseUrl}/assets/icon.png`;
+      appleIcon.href = iconPath;
       appleIcon.sizes = '180x180';
       document.getElementsByTagName('head')[0].appendChild(appleIcon);
       
-      // Also add without sizes for compatibility
+      // Also add without sizes for compatibility (iOS will use this as fallback)
       const appleIconDefault = document.createElement('link');
       appleIconDefault.rel = 'apple-touch-icon';
-      appleIconDefault.href = `${baseUrl}/assets/icon.png`;
+      appleIconDefault.href = iconPath;
       document.getElementsByTagName('head')[0].appendChild(appleIconDefault);
+      
+      // Add preconnect for faster loading
+      const preconnect = document.createElement('link');
+      preconnect.rel = 'preconnect';
+      preconnect.href = baseUrl;
+      if (!document.querySelector(`link[rel="preconnect"][href="${baseUrl}"]`)) {
+        document.getElementsByTagName('head')[0].appendChild(preconnect);
+      }
       
       // Update app title
       if (document.title !== 'STOCKPIT') {
