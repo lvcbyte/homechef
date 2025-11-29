@@ -858,7 +858,7 @@ export default function ScanScreen() {
         setScannedBarcode(null);
       }}>
         <View style={styles.barcodeContainer}>
-          {Platform.OS === 'web' ? (
+          {Platform.OS === 'web' && QuaggaScanner ? (
             // Use QuaggaJS for web
             <QuaggaScanner
               onDetected={(code) => {
@@ -872,7 +872,7 @@ export default function ScanScreen() {
               }}
               style={StyleSheet.absoluteFillObject}
             />
-          ) : permission?.granted ? (
+          ) : Platform.OS !== 'web' && permission?.granted ? (
             // Use expo-camera for native
             <>
               <CameraView
