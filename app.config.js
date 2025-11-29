@@ -47,7 +47,19 @@ module.exports = {
       icons: [
         {
           src: './assets/icon.png',
-          sizes: [180, 192, 512],
+          sizes: '180x180',
+          type: 'image/png',
+          purpose: 'any maskable',
+        },
+        {
+          src: './assets/icon.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any maskable',
+        },
+        {
+          src: './assets/icon.png',
+          sizes: '512x512',
           type: 'image/png',
           purpose: 'any maskable',
         },

@@ -58,25 +58,24 @@ export default function RootLayout() {
         document.getElementsByTagName('head')[0].appendChild(appleStatusBar);
       }
 
-      // Add apple-touch-icon with multiple sizes
-      const appleIconSizes = [180, 167, 152, 120, 76, 60];
-      appleIconSizes.forEach(size => {
-        if (!document.querySelector(`link[rel="apple-touch-icon"][sizes="${size}x${size}"]`)) {
-          const appleIcon = document.createElement('link');
-          appleIcon.rel = 'apple-touch-icon';
-          appleIcon.sizes = `${size}x${size}`;
-          appleIcon.href = `/assets/icon.png`;
-          document.getElementsByTagName('head')[0].appendChild(appleIcon);
-        }
-      });
+      // Remove any existing apple-touch-icon links first
+      const existingIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+      existingIcons.forEach(icon => icon.remove());
       
-      // Add default apple-touch-icon
-      if (!document.querySelector('link[rel="apple-touch-icon"]:not([sizes])')) {
-        const appleIcon = document.createElement('link');
-        appleIcon.rel = 'apple-touch-icon';
-        appleIcon.href = '/assets/icon.png';
-        document.getElementsByTagName('head')[0].appendChild(appleIcon);
-      }
+      // Add apple-touch-icon with absolute URL
+      // For Expo web, assets are served from /assets/ directory
+      const baseUrl = window.location.origin;
+      const appleIcon = document.createElement('link');
+      appleIcon.rel = 'apple-touch-icon';
+      appleIcon.href = `${baseUrl}/assets/icon.png`;
+      appleIcon.sizes = '180x180';
+      document.getElementsByTagName('head')[0].appendChild(appleIcon);
+      
+      // Also add without sizes for compatibility
+      const appleIconDefault = document.createElement('link');
+      appleIconDefault.rel = 'apple-touch-icon';
+      appleIconDefault.href = `${baseUrl}/assets/icon.png`;
+      document.getElementsByTagName('head')[0].appendChild(appleIconDefault);
       
       // Update app title
       if (document.title !== 'STOCKPIT') {
