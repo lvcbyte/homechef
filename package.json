@@ -31,6 +31,7 @@
     "expo-router": "^6.0.15",
     "expo-status-bar": "^3.0.8",
     "nativewind": "^4.2.1",
+    "ndarray-pixels": "^5.0.1",
     "openai": "^6.9.1",
     "postcss": "^8.5.6",
     "puppeteer": "^24.31.0",

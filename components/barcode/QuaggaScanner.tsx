@@ -15,16 +15,31 @@ export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps
   const quaggaRef = useRef<any>(null);
 
   useEffect(() => {
-    // Only run on web
+    // Only run on web - early return to prevent any imports on native
     if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
       return;
     }
 
     const initQuagga = async () => {
       try {
-        // Dynamically import Quagga
-        const QuaggaModule = await import('@ericblade/quagga2');
-        const Quagga = QuaggaModule.default;
+        // Dynamically import Quagga only on web
+        // Use require with try-catch to handle missing dependencies gracefully
+        let Quagga: any;
+        try {
+          // @ts-ignore - dynamic import for web only
+          const QuaggaModule = await import('@ericblade/quagga2');
+          Quagga = QuaggaModule.default || QuaggaModule;
+        } catch (importError) {
+          console.error('Failed to import Quagga:', importError);
+          onError?.(new Error('Barcode scanner library kon niet worden geladen. Probeer de pagina te verversen.'));
+          return;
+        }
+        
+        if (!Quagga) {
+          onError?.(new Error('Barcode scanner niet beschikbaar'));
+          return;
+        }
+        
         quaggaRef.current = Quagga;
 
         // Wait for container to be available

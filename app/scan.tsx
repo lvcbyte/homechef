@@ -25,8 +25,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
-import { QuaggaScanner } from '../components/barcode/QuaggaScanner';
 import { useAuth } from '../contexts/AuthContext';
+
+// Conditionally import QuaggaScanner only on web to avoid native dependency issues
+let QuaggaScanner: any = null;
+if (Platform.OS === 'web') {
+  try {
+    const QuaggaScannerModule = require('../components/barcode/QuaggaScanner');
+    QuaggaScanner = QuaggaScannerModule.QuaggaScanner;
+  } catch (error) {
+    console.warn('QuaggaScanner not available:', error);
+  }
+}
 import { supabase } from '../lib/supabase';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
 import { generateRecipeFromDescription, runInventoryScan } from '../services/ai';
