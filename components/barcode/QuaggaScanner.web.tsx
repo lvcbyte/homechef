@@ -17,6 +17,7 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
   const lastScannedCode = useRef<string | null>(null);
   const lastScanTime = useRef<number>(0);
   const quaggaRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -98,6 +99,12 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
                 console.log('Quagga initialized successfully');
                 Quagga.start();
                 setIsInitialized(true);
+                
+                // Get the video stream for flash control
+                const videoElement = container.querySelector('video');
+                if (videoElement && videoElement.srcObject) {
+                  streamRef.current = videoElement.srcObject as MediaStream;
+                }
               }
             );
 
@@ -140,8 +147,30 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
           console.error('Error stopping Quagga:', error);
         }
       }
+      // Stop stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
     };
   }, [onDetected, onError, isInitialized, containerId]);
+
+  // Update flash when it changes
+  useEffect(() => {
+    if (streamRef.current && typeof navigator !== 'undefined') {
+      const videoTrack = streamRef.current.getVideoTracks()[0];
+      if (videoTrack && 'applyConstraints' in videoTrack) {
+        const capabilities = videoTrack.getCapabilities();
+        if (capabilities && 'torch' in capabilities) {
+          videoTrack.applyConstraints({
+            advanced: [{ torch: flashEnabled }] as any,
+          } as any).catch((err: any) => {
+            console.log('Flash not supported or failed:', err);
+          });
+        }
+      }
+    }
+  }, [flashEnabled]);
 
   useEffect(() => {
     // Create container div when component mounts (web only)
