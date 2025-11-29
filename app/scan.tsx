@@ -246,18 +246,30 @@ export default function ScanScreen() {
   };
 
   const handleBarcode = async (result: BarcodeScanningResult) => {
+    console.log('Barcode scanned:', result);
     const ean = result.data;
-    // Prevent multiple scans of the same barcode
-    if (scannedBarcode === ean || scanningProduct) return;
     
-    if (!user) return;
+    // Prevent multiple scans of the same barcode
+    if (scannedBarcode === ean || scanningProduct) {
+      console.log('Skipping duplicate scan or already processing');
+      return;
+    }
+    
+    if (!user) {
+      console.log('No user, skipping scan');
+      return;
+    }
     
     // Normalize barcode (remove spaces, ensure it's a string)
     const normalizedBarcode = String(ean).trim().replace(/\s/g, '');
+    console.log('Normalized barcode:', normalizedBarcode);
     
     // Set scanned state to prevent duplicate scans
     setScannedBarcode(normalizedBarcode);
     setScanningProduct(true);
+    
+    // Show feedback
+    Alert.alert('Barcode gedetecteerd', `Scannen van barcode: ${normalizedBarcode}...`, [], { cancelable: false });
     
     // Close scanner immediately for better UX
     setBarcodeMode(false);
@@ -302,13 +314,36 @@ export default function ScanScreen() {
           setProductDetailModalVisible(true);
         }
       } else {
+        // Product not found - log scan anyway
+        if (targetSession) {
+          await supabase.rpc('log_barcode_scan', {
+            p_user_id: user.id,
+            p_barcode: normalizedBarcode,
+            p_product_id: null,
+            p_product_name: null,
+            p_product_brand: null,
+            p_match_confidence: null,
+          });
+        }
+        
         // Product not found
         Alert.alert(
           'Product niet gevonden',
-          `EAN ${normalizedBarcode} is niet gevonden in onze catalogus.`,
+          `Barcode ${normalizedBarcode} is niet gevonden in onze catalogus. Je kunt het product handmatig toevoegen.`,
           [
             {
+              text: 'Handmatig toevoegen',
+              onPress: () => {
+                setManualName('');
+                setManualCategory('pantry');
+                setManualModalVisible(true);
+                setScannedBarcode(null);
+                setScanningProduct(false);
+              },
+            },
+            {
               text: 'OK',
+              style: 'cancel',
               onPress: () => {
                 setScannedBarcode(null);
                 setScanningProduct(false);
@@ -319,7 +354,7 @@ export default function ScanScreen() {
       }
     } catch (error) {
       console.error('Error handling barcode:', error);
-      Alert.alert('Fout', 'Er is een fout opgetreden bij het scannen van de barcode.');
+      Alert.alert('Fout', `Er is een fout opgetreden bij het scannen van de barcode: ${error instanceof Error ? error.message : 'Onbekende fout'}`);
       setScannedBarcode(null);
       setScanningProduct(false);
     }
@@ -781,9 +816,10 @@ export default function ScanScreen() {
                     'upc_e',
                     'code128',
                     'code39',
+                    'qr',
                   ],
                 }}
-                onBarcodeScanned={scannedBarcode ? undefined : handleBarcode}
+                onBarcodeScanned={scannedBarcode || scanningProduct ? undefined : handleBarcode}
               />
               <View style={styles.barcodeOverlay}>
                 <View style={styles.barcodeFrame}>
