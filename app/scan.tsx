@@ -389,8 +389,8 @@ export default function ScanScreen() {
           setBarcodeMode(false);
           setScanningProduct(false);
           
-          // Automatically add product to inventory
-          await handleAddProductToInventory(product);
+          // Show product detail modal for confirmation
+          setProductDetailModalVisible(true);
         }
       } else {
         // Product not found - log scan anyway
@@ -449,38 +449,34 @@ export default function ScanScreen() {
     }
   };
 
-  const handleAddProductToInventory = async (product?: CatalogMatch) => {
-    const productToAdd = product || scannedProduct;
-    if (!user || !productToAdd) return;
+  const handleAddProductToInventory = async () => {
+    if (!user || !scannedProduct) return;
     
     try {
       // Get expiry date from FAVV/HACCP estimation
       const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
-        category_slug: productToAdd.category || 'pantry',
+        category_slug: scannedProduct.category || 'pantry',
       });
       
       const expires = expiryData ? expiryData : null;
       
       const { error: insertError } = await supabase.from('inventory').insert({
         user_id: user.id,
-        name: productToAdd.product_name,
-        category: productToAdd.category || 'pantry',
-        quantity_approx: productToAdd.unit_size || null,
+        name: scannedProduct.product_name,
+        category: scannedProduct.category || 'pantry',
+        quantity_approx: scannedProduct.unit_size || null,
         confidence_score: 0.98,
-        catalog_product_id: productToAdd.id,
-        catalog_price: productToAdd.price || null,
-        catalog_image_url: productToAdd.image_url || null,
+        catalog_product_id: scannedProduct.id,
+        catalog_price: scannedProduct.price || null,
+        catalog_image_url: scannedProduct.image_url || null,
         expires_at: expires,
       });
       
       if (insertError) {
         console.error('Error adding product:', insertError);
         Alert.alert('Fout', `Kon product niet toevoegen: ${insertError.message}`);
-        // Still show product detail modal so user can try again
-        setScannedProduct(productToAdd);
-        setProductDetailModalVisible(true);
       } else {
-        Alert.alert('Toegevoegd', `${productToAdd.product_name} is toegevoegd aan je voorraad.`, [
+        Alert.alert('Toegevoegd', `${scannedProduct.product_name} is toegevoegd aan je voorraad.`, [
           {
             text: 'OK',
             onPress: () => {
@@ -496,9 +492,6 @@ export default function ScanScreen() {
     } catch (error) {
       console.error('Error adding product to inventory:', error);
       Alert.alert('Fout', 'Er is een fout opgetreden bij het toevoegen van het product.');
-      // Still show product detail modal so user can try again
-      setScannedProduct(productToAdd);
-      setProductDetailModalVisible(true);
     }
   };
 

@@ -44,10 +44,18 @@ module.exports = {
       orientation: 'portrait',
       startUrl: '/',
       description: 'Slimme keukenassistent met AI-powered recepten en voorraadbeheer',
+      icons: [
+        {
+          src: './assets/logo.png',
+          sizes: [192, 512],
+          type: 'image/png',
+          purpose: 'any maskable',
+        },
+      ],
       apple: {
         appleMobileWebAppCapable: 'yes',
-        appleMobileWebAppStatusBarStyle: 'default',
-        appleTouchIcon: './assets/icon.png',
+        appleMobileWebAppStatusBarStyle: 'black-translucent',
+        appleTouchIcon: './assets/logo.png',
       },
       meta: {
         viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover',

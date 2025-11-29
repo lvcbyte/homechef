@@ -54,12 +54,27 @@ export default function RootLayout() {
       if (!document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')) {
         const appleStatusBar = document.createElement('meta');
         appleStatusBar.name = 'apple-mobile-web-app-status-bar-style';
-        appleStatusBar.content = 'default';
+        appleStatusBar.content = 'black-translucent';
         document.getElementsByTagName('head')[0].appendChild(appleStatusBar);
+      }
+
+      // Add apple-touch-icon
+      if (!document.querySelector('link[rel="apple-touch-icon"]')) {
+        const appleIcon = document.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = '/assets/logo.png';
+        document.getElementsByTagName('head')[0].appendChild(appleIcon);
       }
 
       // Prevent pull-to-refresh on mobile
       document.body.style.overscrollBehavior = 'none';
+      
+      // Hide browser UI in standalone mode
+      if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+        document.documentElement.style.height = '100%';
+        document.body.style.height = '100%';
+        document.body.style.overflow = 'hidden';
+      }
     }
   }, []);
 
