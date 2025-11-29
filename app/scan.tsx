@@ -884,77 +884,77 @@ export default function ScanScreen() {
           ) : null}
           
           {/* Overlay is shown for both web and native */}
-          {(Platform.OS === 'web' || permission?.granted) && (
+          {Platform.OS === 'web' || permission?.granted ? (
             <View style={styles.barcodeOverlay}>
-                <Animated.View 
-                  style={[
-                    styles.barcodeFrame,
-                    {
-                      transform: [
-                        { scale: pulseAnimation },
-                      ],
-                      opacity: scanAnimation.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, showScanAnimation ? 0.7 : 1],
-                      }),
-                    },
-                  ]}
-                >
-                  <View style={styles.barcodeCorner} />
-                  <View style={[styles.barcodeCorner, { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 }]} />
-                  <View style={[styles.barcodeCorner, { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 }]} />
-                  <View style={[styles.barcodeCorner, { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 }]} />
-                  
-                  {/* Scanning animation overlay */}
-                  {showScanAnimation && (
-                    <Animated.View
-                      style={[
-                        styles.scanningOverlay,
-                        {
-                          opacity: scanAnimation,
-                          transform: [
-                            {
-                              translateY: scanAnimation.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [-140, 140],
-                              }),
-                            },
-                          ],
-                        },
-                      ]}
-                    >
-                      <View style={styles.scanningLine} />
-                    </Animated.View>
-                  )}
-                </Animated.View>
+              <Animated.View 
+                style={[
+                  styles.barcodeFrame,
+                  {
+                    transform: [
+                      { scale: pulseAnimation },
+                    ],
+                    opacity: scanAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [1, showScanAnimation ? 0.7 : 1],
+                    }),
+                  },
+                ]}
+              >
+                <View style={styles.barcodeCorner} />
+                <View style={[styles.barcodeCorner, { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 }]} />
+                <View style={[styles.barcodeCorner, { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 }]} />
+                <View style={[styles.barcodeCorner, { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 }]} />
                 
-                {showScanAnimation ? (
-                  <View style={styles.scanningStatus}>
-                    <ActivityIndicator size="large" color="#047857" />
-                    <Text style={styles.scanningText}>Barcode gedetecteerd...</Text>
-                    <Text style={styles.scanningSubtext}>Product wordt opgezocht</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.barcodeHint}>Richt de camera op de barcode</Text>
+                {/* Scanning animation overlay */}
+                {showScanAnimation && (
+                  <Animated.View
+                    style={[
+                      styles.scanningOverlay,
+                      {
+                        opacity: scanAnimation,
+                        transform: [
+                          {
+                            translateY: scanAnimation.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [-140, 140],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    <View style={styles.scanningLine} />
+                  </Animated.View>
                 )}
-                
-                <Pressable 
-                  style={styles.closeOverlay} 
-                  onPress={() => {
-                    setBarcodeMode(false);
-                    setScannedBarcode(null);
-                    setShowScanAnimation(false);
-                    scanAnimation.setValue(0);
-                    pulseAnimation.setValue(1);
-                  }}
-                  disabled={showScanAnimation}
-                >
-                  <View style={[styles.closeButton, showScanAnimation && styles.closeButtonDisabled]}>
-                    <Ionicons name="close" size={24} color="#fff" />
-                  </View>
-                  <Text style={styles.closeOverlayText}>Stop scannen</Text>
-                </Pressable>
-              </View>
+              </Animated.View>
+              
+              {showScanAnimation ? (
+                <View style={styles.scanningStatus}>
+                  <ActivityIndicator size="large" color="#047857" />
+                  <Text style={styles.scanningText}>Barcode gedetecteerd...</Text>
+                  <Text style={styles.scanningSubtext}>Product wordt opgezocht</Text>
+                </View>
+              ) : (
+                <Text style={styles.barcodeHint}>Richt de camera op de barcode</Text>
+              )}
+              
+              <Pressable 
+                style={styles.closeOverlay} 
+                onPress={() => {
+                  setBarcodeMode(false);
+                  setScannedBarcode(null);
+                  setShowScanAnimation(false);
+                  scanAnimation.setValue(0);
+                  pulseAnimation.setValue(1);
+                }}
+                disabled={showScanAnimation}
+              >
+                <View style={[styles.closeButton, showScanAnimation && styles.closeButtonDisabled]}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </View>
+                <Text style={styles.closeOverlayText}>Stop scannen</Text>
+              </Pressable>
+            </View>
           ) : (
             <View style={styles.barcodePermissionPrompt}>
               <Ionicons name="camera-outline" size={64} color="#94a3b8" />
