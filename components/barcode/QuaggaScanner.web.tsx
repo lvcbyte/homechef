@@ -154,6 +154,29 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
         div.style.height = '100%';
         div.style.position = 'relative';
         div.style.backgroundColor = '#000';
+        div.style.overflow = 'hidden';
+        // Ensure video is visible
+        const styleId = `quagga-style-${containerId}`;
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = `
+            #${containerId} video,
+            #${containerId} canvas {
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: cover !important;
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
+              z-index: 1 !important;
+            }
+            #${containerId} canvas {
+              z-index: 2 !important;
+            }
+          `;
+          document.head.appendChild(style);
+        }
         parent.appendChild(div);
       }
     }
