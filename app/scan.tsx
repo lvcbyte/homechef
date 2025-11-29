@@ -1917,6 +1917,9 @@ const styles = StyleSheet.create({
   barcodeContainer: {
     flex: 1,
     backgroundColor: '#000',
+    width: '100%',
+    height: '100%',
+    position: 'relative',
   },
   barcodeOverlay: {
     position: 'absolute',
