@@ -1,5 +1,8 @@
+// Web-only implementation of QuaggaScanner
+// This file is only loaded on web platform, preventing native bundling issues
+
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 
 interface QuaggaScannerProps {
   onDetected: (code: string) => void;
@@ -15,18 +18,15 @@ export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps
   const quaggaRef = useRef<any>(null);
 
   useEffect(() => {
-    // Only run on web - early return to prevent any imports on native
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
       return;
     }
 
     const initQuagga = async () => {
       try {
         // Dynamically import Quagga only on web
-        // Use require with try-catch to handle missing dependencies gracefully
         let Quagga: any;
         try {
-          // @ts-ignore - dynamic import for web only
           const QuaggaModule = await import('@ericblade/quagga2');
           Quagga = QuaggaModule.default || QuaggaModule;
         } catch (importError) {
@@ -143,7 +143,7 @@ export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps
 
   useEffect(() => {
     // Create container div when component mounts (web only)
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    if (typeof document !== 'undefined') {
       const parent = document.getElementById('quagga-parent');
       if (parent && !document.getElementById(containerId)) {
         const div = document.createElement('div');
@@ -156,10 +156,6 @@ export function QuaggaScanner({ onDetected, onError, style }: QuaggaScannerProps
       }
     }
   }, [containerId]);
-
-  if (Platform.OS !== 'web') {
-    return null;
-  }
 
   return (
     <View 
@@ -178,3 +174,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
 });
+

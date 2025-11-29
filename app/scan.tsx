@@ -230,9 +230,10 @@ export default function ScanScreen() {
   }, [permission, requestPermission]);
 
   // Dynamically load QuaggaScanner only on web
+  // Using .web.tsx extension ensures it's only loaded on web platform
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      import('../components/barcode/QuaggaScanner')
+      import('../components/barcode/QuaggaScanner.web')
         .then((module) => {
           setQuaggaScannerComponent(() => module.QuaggaScanner);
         })
