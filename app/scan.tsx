@@ -358,12 +358,15 @@ export default function ScanScreen() {
             source: (catalogMatch as any).source,
           };
           setScannedProduct(product);
-          // Stop animation and show success
+          // Stop animation
           setShowScanAnimation(false);
           scanAnimation.setValue(0);
           pulseAnimation.setValue(1);
-          setProductDetailModalVisible(true);
+          setBarcodeMode(false);
           setScanningProduct(false);
+          
+          // Automatically add product to inventory
+          await handleAddProductToInventory(product);
         }
       } else {
         // Product not found - log scan anyway
@@ -1855,6 +1858,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
   barcodeFrame: {
     width: 280,
