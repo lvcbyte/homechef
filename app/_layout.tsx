@@ -56,7 +56,7 @@ export default function RootLayout() {
 
           /* Safe area utility classes - only apply where explicitly used */
           .safe-area-top {
-            padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+            padding-top: env(safe-area-inset-top, 0px) !important;
           }
           .safe-area-bottom {
             padding-bottom: env(safe-area-inset-bottom, 0px) !important;
@@ -81,9 +81,9 @@ export default function RootLayout() {
             box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05) !important;
           }
 
-          /* SafeAreaView on web - add top safe area */
+          /* SafeAreaView on web - add top safe area (only safe area inset, no extra padding) */
           .safe-area-top {
-            padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+            padding-top: env(safe-area-inset-top, 0px) !important;
           }
         `;
         document.head.appendChild(style);

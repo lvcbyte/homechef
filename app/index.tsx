@@ -998,7 +998,10 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingTop: 8,
+    paddingTop: Platform.select({
+      web: 0, // Handled by CSS safe-area-top class
+      default: 8,
+    }),
   },
   loadingContainer: {
     flex: 1,

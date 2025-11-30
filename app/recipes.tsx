@@ -1011,7 +1011,13 @@ export default function RecipesScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView 
+        style={styles.safeArea}
+        // @ts-ignore - web-specific prop
+        {...(Platform.OS === 'web' && {
+          className: 'safe-area-top',
+        })}
+      >
         <View style={styles.header}>
           <View style={styles.brandRow}>
             <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
@@ -1583,7 +1589,10 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingTop: 8,
+    paddingTop: Platform.select({
+      web: 0, // Handled by CSS safe-area-top class
+      default: 8,
+    }),
   },
   loadingContainer: {
     flex: 1,
@@ -1671,7 +1680,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
+    paddingBottom: Platform.select({
+      web: 140, // Extra space for fixed bottom nav + safe area
+      default: 120,
+    }),
     gap: 32,
   },
   heroCard: {

@@ -16,6 +16,16 @@ export function GlassDock() {
   const pathname = usePathname();
 
   const handleNavigation = (route: string) => {
+    // Prevent navigation if already on the route
+    if (pathname === route || (route === '/' && pathname === '/')) {
+      return;
+    }
+    
+    // Scroll to top on web when navigating
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+    }
+    
     navigateToRoute(router, route);
   };
 

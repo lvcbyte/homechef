@@ -38,6 +38,22 @@ interface User {
   is_admin: boolean;
   admin_role: string | null;
   archetype: string | null;
+  cooking_skill?: string | null;
+  dietary_restrictions?: string[] | null;
+  total_recipes?: number;
+  total_inventory_items?: number;
+  total_saved_recipes?: number;
+  total_likes?: number;
+}
+
+interface UserDetails extends User {
+  last_sign_in_at?: string;
+  email_confirmed_at?: string;
+  recent_activity?: Array<{
+    action: string;
+    created_at: string;
+    resource_type: string | null;
+  }>;
 }
 
 interface Recipe {
@@ -100,6 +116,12 @@ export default function AdminPage() {
   const [editingRecipe, setEditingRecipe] = useState<Partial<Recipe>>({});
   const [savingRecipe, setSavingRecipe] = useState(false);
   
+  // User Detail State
+  const [selectedUser, setSelectedUser] = useState<UserDetails | null>(null);
+  const [userDetailVisible, setUserDetailVisible] = useState(false);
+  const [loadingUserDetails, setLoadingUserDetails] = useState(false);
+  const [updatingUser, setUpdatingUser] = useState(false);
+  
   // AI Chat State
   const [chatVisible, setChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; action?: any }>>([]);
@@ -113,9 +135,12 @@ export default function AdminPage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchDashboardData();
-      const interval = setInterval(fetchDashboardData, 30000); // Refresh every 30s
+      const interval = setInterval(() => {
+        fetchDashboardData();
+      }, 30000); // Refresh every 30s
       return () => clearInterval(interval);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   const checkAdminAccess = async () => {
@@ -339,10 +364,18 @@ export default function AdminPage() {
 
   const fetchDashboardData = async () => {
     try {
+      // Fetch users separately to handle errors better
+      let usersListResult = await supabase.rpc('get_all_users_for_admin');
+      
+      // If admin function fails, try simple version as fallback
+      if (usersListResult.error) {
+        console.warn('Admin function failed, trying simple version:', usersListResult.error);
+        usersListResult = await supabase.rpc('get_all_users_simple');
+      }
+
       const [
         statsResult,
         logsResult,
-        usersListResult,
         recipesResult,
       ] = await Promise.all([
         supabase.rpc('get_admin_stats'),
@@ -351,7 +384,6 @@ export default function AdminPage() {
           .select('*')
           .order('created_at', { ascending: false })
           .limit(50),
-        supabase.rpc('get_all_users_for_admin'),
         supabase
           .from('recipes')
           .select('id, title, description, author, created_at, updated_at, total_time_minutes, prep_time_minutes, cook_time_minutes, difficulty, servings, image_url, ingredients, instructions, tags, category, nutrition, is_featured')
@@ -367,16 +399,25 @@ export default function AdminPage() {
         setRecentLogs(logsResult.data as AdminLog[]);
       }
 
-      if (usersListResult.data) {
+      if (usersListResult.error) {
+        console.error('Error fetching users:', usersListResult.error);
+        // Don't show alert, just log and set empty array
+        setUsers([]);
+      } else if (usersListResult.data && Array.isArray(usersListResult.data)) {
         const usersWithEmail = usersListResult.data.map((user: any) => ({
-          id: user.user_id,
+          id: user.user_id || user.id,
           email: user.email || 'N/A',
-          created_at: user.created_at,
-          is_admin: user.is_admin || false,
-          admin_role: user.admin_role,
-          archetype: user.archetype,
+          created_at: user.created_at || new Date().toISOString(),
+          is_admin: user.is_admin === true || user.is_admin === 'true',
+          admin_role: user.admin_role || null,
+          archetype: user.archetype || null,
+          total_recipes: user.total_recipes || 0,
+          total_inventory_items: user.total_inventory_items || 0,
         }));
         setUsers(usersWithEmail as User[]);
+      } else {
+        console.warn('No users data returned from RPC - data:', usersListResult.data);
+        setUsers([]);
       }
 
       if (recipesResult.data) {
@@ -458,6 +499,172 @@ export default function AdminPage() {
       applyFilters(allRecipes, searchQuery, filterCategory, filterDifficulty, filterTags, filterFeatured, sortBy, sortOrder);
     }
   }, [searchQuery, filterCategory, filterDifficulty, filterTags, filterFeatured, sortBy, sortOrder, allRecipes]);
+
+  const loadUserDetails = async (userId: string) => {
+    setLoadingUserDetails(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_get_user_details', {
+        p_user_id: userId,
+      });
+      if (error) throw error;
+      if (data) {
+        setSelectedUser(data as UserDetails);
+      }
+    } catch (error: any) {
+      console.error('Error loading user details:', error);
+      Alert.alert('Fout', error.message || 'Kon gebruikersdetails niet laden.');
+    } finally {
+      setLoadingUserDetails(false);
+    }
+  };
+
+  const handleGrantAdmin = async (userId: string, role: string = 'admin') => {
+    if (!userId) {
+      Alert.alert('Fout', 'Geen gebruiker ID opgegeven');
+      return;
+    }
+    
+    console.log('=== GRANTING ADMIN RIGHTS ===');
+    console.log('User ID:', userId);
+    console.log('Role:', role);
+    console.log('Selected User:', selectedUser);
+    
+    setUpdatingUser(true);
+    try {
+      console.log('Calling RPC: admin_grant_admin_rights');
+      const { data, error } = await supabase.rpc('admin_grant_admin_rights', {
+        p_user_id: userId,
+        p_role: role,
+      });
+      
+      console.log('=== RPC RESPONSE ===');
+      console.log('Data:', data);
+      console.log('Error:', error);
+      
+      if (error) {
+        console.error('=== RPC ERROR DETAILS ===');
+        console.error('Message:', error.message);
+        console.error('Details:', error.details);
+        console.error('Hint:', error.hint);
+        console.error('Code:', error.code);
+        throw error;
+      }
+      
+      // Function now returns jsonb, check for success
+      if (data) {
+        console.log('Success! Data received:', data);
+        
+        // Show success alert
+          Alert.alert(
+          'Succes! ✅', 
+          `Admin rechten toegekend als ${role}!`,
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                // Refresh data
+                console.log('Refreshing dashboard data...');
+                await fetchDashboardData();
+                
+                if (selectedUser) {
+                  console.log('Reloading user details...');
+                  await loadUserDetails(userId);
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        console.warn('No data returned, but no error either');
+        // Assume success if no error
+        Alert.alert(
+          'Succes! ✅', 
+          `Admin rechten toegekend als ${role}!`,
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                await fetchDashboardData();
+                if (selectedUser) {
+                  await loadUserDetails(userId);
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error: any) {
+      console.error('=== ERROR IN handleGrantAdmin ===');
+      console.error('Error object:', error);
+      console.error('Error message:', error?.message);
+      console.error('Error details:', error?.details);
+      
+      Alert.alert(
+        'Fout', 
+        error?.message || error?.details || 'Kon admin rechten niet toekennen. Controleer de console voor details.'
+      );
+    } finally {
+      setUpdatingUser(false);
+      console.log('=== GRANT ADMIN RIGHTS COMPLETE ===');
+    }
+  };
+
+  const handleRevokeAdmin = async (userId: string) => {
+          Alert.alert(
+      'Admin Rechten Intrekken',
+      'Weet je zeker dat je de admin rechten wilt intrekken?',
+            [
+              { text: 'Annuleren', style: 'cancel' },
+              {
+          text: 'Intrekken',
+          style: 'destructive',
+                onPress: async () => {
+            setUpdatingUser(true);
+            try {
+              const { error } = await supabase.rpc('admin_revoke_admin_rights', {
+                p_user_id: userId,
+                    });
+                    if (error) throw error;
+              Alert.alert('Succes', 'Admin rechten ingetrokken!');
+                    fetchDashboardData();
+              if (selectedUser) {
+                await loadUserDetails(userId);
+              }
+                  } catch (error: any) {
+              Alert.alert('Fout', error.message || 'Kon admin rechten niet intrekken.');
+            } finally {
+              setUpdatingUser(false);
+                  }
+                },
+              },
+            ]
+          );
+  };
+
+  const handleUpdateUserProfile = async (
+    userId: string,
+    archetype?: string,
+    cookingSkill?: string
+  ) => {
+    setUpdatingUser(true);
+    try {
+      const { error } = await supabase.rpc('admin_update_user_profile', {
+        p_user_id: userId,
+        p_archetype: archetype || null,
+        p_cooking_skill: cookingSkill || null,
+      });
+      if (error) throw error;
+      Alert.alert('Succes', 'Profiel bijgewerkt!');
+      fetchDashboardData();
+      if (selectedUser) {
+        await loadUserDetails(userId);
+      }
+    } catch (error: any) {
+      Alert.alert('Fout', error.message || 'Kon profiel niet bijwerken.');
+    } finally {
+      setUpdatingUser(false);
+    }
+  };
 
   const loadRecipeDetails = async (recipeId: string) => {
     try {
@@ -541,7 +748,7 @@ export default function AdminPage() {
       switch (action.type) {
         case 'create_recipe':
           if (action.data) {
-            const { data, error } = await supabase.rpc('admin_create_recipe', {
+                    const { data, error } = await supabase.rpc('admin_create_recipe', {
               p_title: action.data.title,
               p_description: action.data.description || '',
               p_image_url: action.data.image_url || null,
@@ -554,11 +761,11 @@ export default function AdminPage() {
               p_instructions: action.data.instructions || [],
               p_tags: action.data.tags || [],
               p_category: action.data.category || null,
-              p_author: 'Admin AI',
-            });
-            if (error) throw error;
-            Alert.alert('Succes', 'Recept toegevoegd!');
-            fetchDashboardData();
+                      p_author: 'Admin AI',
+                    });
+                    if (error) throw error;
+                    Alert.alert('Succes', 'Recept toegevoegd!');
+                    fetchDashboardData();
           }
           break;
         case 'update_recipe':
@@ -577,26 +784,26 @@ export default function AdminPage() {
           break;
         case 'delete_recipe':
           if (action.data?.recipe_id) {
-            Alert.alert(
-              'Recept Verwijderen',
+          Alert.alert(
+            'Recept Verwijderen',
               'Weet je zeker dat je dit recept wilt verwijderen?',
-              [
-                { text: 'Annuleren', style: 'cancel' },
-                {
-                  text: 'Verwijderen',
-                  style: 'destructive',
-                  onPress: async () => {
+            [
+              { text: 'Annuleren', style: 'cancel' },
+              {
+                text: 'Verwijderen',
+                style: 'destructive',
+                onPress: async () => {
                     const { error } = await supabase.rpc('admin_delete_recipe', {
                       p_recipe_id: action.data.recipe_id,
                     });
                     if (error) throw error;
                     Alert.alert('Succes', 'Recept verwijderd!');
                     fetchDashboardData();
-                  },
                 },
-              ]
-            );
-          }
+              },
+            ]
+          );
+        }
           break;
       }
     } catch (error: any) {
@@ -688,7 +895,13 @@ export default function AdminPage() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#065f46" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView 
+        style={styles.safeArea}
+        // @ts-ignore - web-specific prop
+        {...(Platform.OS === 'web' && {
+          className: 'safe-area-top',
+        })}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.brandRow}>
@@ -696,7 +909,7 @@ export default function AdminPage() {
             <View>
               <Text style={styles.brandLabel}>STOCKPIT</Text>
               <Text style={styles.brandSubtitle}>Admin Foundry</Text>
-            </View>
+          </View>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.headerButton} onPress={() => setChatVisible(true)}>
@@ -707,7 +920,7 @@ export default function AdminPage() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/')}>
               <Ionicons name="home" size={20} color="#047857" />
-            </TouchableOpacity>
+          </TouchableOpacity>
           </View>
         </View>
 
@@ -717,66 +930,66 @@ export default function AdminPage() {
           {currentView === 'overview' && (
             <View style={styles.overviewContainer}>
               {/* Metrics Grid */}
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricCard}>
+          <View style={styles.metricsGrid}>
+            <View style={styles.metricCard}>
                   <LinearGradient colors={['#047857', '#065f46']} style={styles.metricGradient}>
                     <Ionicons name="people" size={32} color="#fff" />
-                    <Text style={styles.metricValue}>{metrics?.total_users || 0}</Text>
-                    <Text style={styles.metricLabel}>Gebruikers</Text>
+              <Text style={styles.metricValue}>{metrics?.total_users || 0}</Text>
+              <Text style={styles.metricLabel}>Gebruikers</Text>
                   </LinearGradient>
-                </View>
-                <View style={styles.metricCard}>
+            </View>
+            <View style={styles.metricCard}>
                   <LinearGradient colors={['#047857', '#065f46']} style={styles.metricGradient}>
                     <Ionicons name="restaurant" size={32} color="#fff" />
-                    <Text style={styles.metricValue}>{metrics?.total_recipes || 0}</Text>
-                    <Text style={styles.metricLabel}>Recepten</Text>
+              <Text style={styles.metricValue}>{metrics?.total_recipes || 0}</Text>
+              <Text style={styles.metricLabel}>Recepten</Text>
                   </LinearGradient>
-                </View>
-                <View style={styles.metricCard}>
+            </View>
+            <View style={styles.metricCard}>
                   <LinearGradient colors={['#047857', '#065f46']} style={styles.metricGradient}>
                     <Ionicons name="basket" size={32} color="#fff" />
-                    <Text style={styles.metricValue}>{metrics?.total_inventory_items || 0}</Text>
+              <Text style={styles.metricValue}>{metrics?.total_inventory_items || 0}</Text>
                     <Text style={styles.metricLabel}>Inventory</Text>
                   </LinearGradient>
-                </View>
-                <View style={styles.metricCard}>
+            </View>
+            <View style={styles.metricCard}>
                   <LinearGradient colors={['#047857', '#065f46']} style={styles.metricGradient}>
                     <Ionicons name="heart" size={32} color="#fff" />
                     <Text style={styles.metricValue}>{metrics?.total_likes || 0}</Text>
                     <Text style={styles.metricLabel}>Likes</Text>
                   </LinearGradient>
-                </View>
-              </View>
+            </View>
+          </View>
 
-              {/* Quick Actions */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Snelle Acties</Text>
-                <View style={styles.actionsGrid}>
-                  <TouchableOpacity style={styles.actionCard} onPress={() => setChatVisible(true)}>
+          {/* Quick Actions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Snelle Acties</Text>
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => setChatVisible(true)}>
                     <Ionicons name="sparkles" size={28} color="#047857" />
-                    <Text style={styles.actionLabel}>AI Assistent</Text>
+                <Text style={styles.actionLabel}>AI Assistent</Text>
                     <Text style={styles.actionDescription}>Recepten beheren met AI</Text>
-                  </TouchableOpacity>
+              </TouchableOpacity>
                   <TouchableOpacity style={styles.actionCard} onPress={() => setCurrentView('recipes')}>
                     <Ionicons name="restaurant" size={28} color="#047857" />
                     <Text style={styles.actionLabel}>Recepten</Text>
                     <Text style={styles.actionDescription}>Bekijk alle recepten</Text>
-                  </TouchableOpacity>
+              </TouchableOpacity>
                   <TouchableOpacity style={styles.actionCard} onPress={() => setCurrentView('users')}>
                     <Ionicons name="people" size={28} color="#047857" />
                     <Text style={styles.actionLabel}>Gebruikers</Text>
                     <Text style={styles.actionDescription}>Beheer gebruikers</Text>
-                  </TouchableOpacity>
+              </TouchableOpacity>
                   <TouchableOpacity style={styles.actionCard} onPress={() => setCurrentView('analytics')}>
                     <Ionicons name="analytics" size={28} color="#047857" />
                     <Text style={styles.actionLabel}>Analytics</Text>
                     <Text style={styles.actionDescription}>Platform statistieken</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              </TouchableOpacity>
+            </View>
+          </View>
 
               {/* Recent Activity */}
-              <View style={styles.section}>
+          <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Recente Activiteit</Text>
                 <View style={styles.logsContainer}>
                   {recentLogs.length === 0 ? (
@@ -1087,39 +1300,75 @@ export default function AdminPage() {
 
           {currentView === 'users' && (
             <View style={styles.usersContainer}>
-              <Text style={styles.sectionTitle}>Alle Gebruikers ({users.length})</Text>
-              <View style={styles.usersList}>
-                {users.length === 0 ? (
-                  <Text style={styles.emptyText}>Geen gebruikers gevonden</Text>
-                ) : (
-                  users.map((user) => (
-                    <View key={user.id} style={styles.userCard}>
-                      <View style={styles.userHeader}>
-                        <View style={styles.userInfo}>
-                          <Text style={styles.userEmail}>{user.email}</Text>
-                          {user.is_admin && (
-                            <View style={styles.adminBadge}>
-                              <Text style={styles.adminBadgeText}>ADMIN</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={styles.userDate}>
-                          {new Date(user.created_at).toLocaleDateString('nl-NL')}
-                        </Text>
-                      </View>
-                      <View style={styles.userMeta}>
-                        {user.archetype && (
-                          <Text style={styles.userMetaText}>Archetype: {user.archetype}</Text>
-                        )}
-                        {user.admin_role && (
-                          <Text style={styles.userMetaText}>Rol: {user.admin_role}</Text>
-                        )}
-                      </View>
-                    </View>
-                  ))
-                )}
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Alle Gebruikers ({users.length})</Text>
+                <TouchableOpacity style={styles.refreshButton} onPress={fetchDashboardData}>
+                  <Ionicons name="refresh" size={20} color="#047857" />
+                </TouchableOpacity>
               </View>
+              <View style={styles.usersList}>
+              {users.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="people-outline" size={48} color="#94a3b8" />
+                <Text style={styles.emptyText}>Geen gebruikers gevonden</Text>
+                    <Text style={styles.emptySubtext}>
+                      Probeer de pagina te vernieuwen of controleer de database connectie.
+                    </Text>
+                    <TouchableOpacity style={styles.retryButton} onPress={fetchDashboardData}>
+                      <Text style={styles.retryButtonText}>Opnieuw proberen</Text>
+                    </TouchableOpacity>
+                  </View>
+              ) : (
+                users.map((user) => (
+                    <TouchableOpacity 
+                      key={user.id} 
+                      style={styles.userCard}
+                      onPress={async () => {
+                        setSelectedUser(user as UserDetails);
+                        setUserDetailVisible(true);
+                        await loadUserDetails(user.id);
+                      }}
+                    >
+                    <View style={styles.userHeader}>
+                      <View style={styles.userInfo}>
+                          <View style={styles.userAvatar}>
+                            <Text style={styles.userAvatarText}>
+                              {user.email?.charAt(0).toUpperCase() || 'U'}
+                            </Text>
+                          </View>
+                          <View style={styles.userDetails}>
+                        <Text style={styles.userEmail}>{user.email}</Text>
+                        {user.is_admin && (
+                          <View style={styles.adminBadge}>
+                                <Ionicons name="shield" size={12} color="#fff" />
+                            <Text style={styles.adminBadgeText}>ADMIN</Text>
+                          </View>
+                        )}
+                      </View>
+                      </View>
+                      <Text style={styles.userDate}>
+                        {new Date(user.created_at).toLocaleDateString('nl-NL')}
+                      </Text>
+                    </View>
+                    <View style={styles.userMeta}>
+                      {user.archetype && (
+                        <View style={styles.userMetaItem}>
+                          <Ionicons name="person" size={14} color="#64748b" />
+                        <Text style={styles.userMetaText}>Archetype: {user.archetype}</Text>
+                        </View>
+                      )}
+                      {user.admin_role && (
+                        <View style={styles.userMetaItem}>
+                          <Ionicons name="key" size={14} color="#64748b" />
+                        <Text style={styles.userMetaText}>Rol: {user.admin_role}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
+          </View>
           )}
 
           {currentView === 'ai' && (
@@ -1467,13 +1716,13 @@ export default function AdminPage() {
                                 <Ionicons name="time-outline" size={16} color="#047857" />
                                 <Text style={styles.recipeDetailMetaText}>
                                   {selectedRecipe.total_time_minutes} min
-                                </Text>
-                              </View>
+                      </Text>
+                    </View>
                               <View style={styles.recipeDetailMetaPill}>
                                 <Ionicons name="restaurant-outline" size={16} color="#047857" />
                                 <Text style={styles.recipeDetailMetaText}>
                                   {selectedRecipe.difficulty}
-                                </Text>
+                      </Text>
                               </View>
                               {selectedRecipe.servings && (
                                 <View style={styles.recipeDetailMetaPill}>
@@ -1489,10 +1738,10 @@ export default function AdminPage() {
                                   <Text style={[styles.recipeDetailMetaText, styles.featuredText]}>
                                     Featured
                                   </Text>
-                                </View>
-                              )}
-                            </View>
-                          </View>
+                  </View>
+              )}
+            </View>
+          </View>
 
                           {selectedRecipe.description && (
                             <View style={styles.recipeDetailSection}>
@@ -1572,6 +1821,256 @@ export default function AdminPage() {
                               </Text>
                             )}
                           </View>
+                        </View>
+                      </>
+                    )}
+        </ScrollView>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* User Detail Modal */}
+        <Modal
+          visible={userDetailVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => {
+            setUserDetailVisible(false);
+            setSelectedUser(null);
+          }}
+        >
+          <View style={styles.userModalOverlay}>
+            <View style={styles.userModal}>
+              {selectedUser && (
+                <>
+                  <View style={styles.userModalHeader}>
+                    <Text style={styles.userModalTitle}>Gebruikersprofiel</Text>
+                    <TouchableOpacity
+                      style={styles.userModalCloseButton}
+                      onPress={() => {
+                        setUserDetailVisible(false);
+                        setSelectedUser(null);
+                      }}
+                    >
+                      <Ionicons name="close" size={24} color="#0f172a" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView 
+                    showsVerticalScrollIndicator={false} 
+                    style={styles.userModalScroll}
+                    contentContainerStyle={styles.userModalContent}
+                  >
+                    {loadingUserDetails ? (
+                      <View style={styles.userModalLoading}>
+                        <ActivityIndicator size="large" color="#047857" />
+                        <Text style={styles.userModalLoadingText}>Laden...</Text>
+                      </View>
+                    ) : (
+                      <>
+                        {/* User Avatar & Basic Info */}
+                        <View style={styles.userDetailHeader}>
+                          <View style={styles.userDetailAvatar}>
+                            <Text style={styles.userDetailAvatarText}>
+                              {selectedUser.email?.charAt(0).toUpperCase() || 'U'}
+                            </Text>
+                          </View>
+                          <View style={styles.userDetailInfo}>
+                            <Text style={styles.userDetailEmail}>{selectedUser.email}</Text>
+                            {selectedUser.is_admin && (
+                              <View style={styles.userDetailAdminBadge}>
+                                <Ionicons name="shield" size={16} color="#fff" />
+                                <Text style={styles.userDetailAdminBadgeText}>
+                                  {selectedUser.admin_role?.toUpperCase() || 'ADMIN'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+
+                        {/* User Stats */}
+                        <View style={styles.userDetailStats}>
+                          <View style={styles.userDetailStatCard}>
+                            <Ionicons name="restaurant" size={24} color="#047857" />
+                            <Text style={styles.userDetailStatValue}>
+                              {selectedUser.total_recipes || 0}
+                            </Text>
+                            <Text style={styles.userDetailStatLabel}>Recepten</Text>
+                          </View>
+                          <View style={styles.userDetailStatCard}>
+                            <Ionicons name="basket" size={24} color="#047857" />
+                            <Text style={styles.userDetailStatValue}>
+                              {selectedUser.total_inventory_items || 0}
+                            </Text>
+                            <Text style={styles.userDetailStatLabel}>Inventory</Text>
+                          </View>
+                          <View style={styles.userDetailStatCard}>
+                            <Ionicons name="bookmark" size={24} color="#047857" />
+                            <Text style={styles.userDetailStatValue}>
+                              {selectedUser.total_saved_recipes || 0}
+                            </Text>
+                            <Text style={styles.userDetailStatLabel}>Opgeslagen</Text>
+                          </View>
+                          <View style={styles.userDetailStatCard}>
+                            <Ionicons name="heart" size={24} color="#047857" />
+                            <Text style={styles.userDetailStatValue}>
+                              {selectedUser.total_likes || 0}
+                            </Text>
+                            <Text style={styles.userDetailStatLabel}>Likes</Text>
+                          </View>
+                        </View>
+
+                        {/* User Details */}
+                        <View style={styles.userDetailSection}>
+                          <Text style={styles.userDetailSectionTitle}>Account Informatie</Text>
+                          <View style={styles.userDetailInfoRow}>
+                            <Text style={styles.userDetailInfoLabel}>Account aangemaakt:</Text>
+                            <Text style={styles.userDetailInfoValue}>
+                              {new Date(selectedUser.created_at).toLocaleDateString('nl-NL', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })}
+                            </Text>
+                          </View>
+                          {selectedUser.last_sign_in_at && (
+                            <View style={styles.userDetailInfoRow}>
+                              <Text style={styles.userDetailInfoLabel}>Laatste login:</Text>
+                              <Text style={styles.userDetailInfoValue}>
+                                {new Date(selectedUser.last_sign_in_at).toLocaleDateString('nl-NL')}
+                              </Text>
+                            </View>
+                          )}
+                          {selectedUser.email_confirmed_at && (
+                            <View style={styles.userDetailInfoRow}>
+                              <Text style={styles.userDetailInfoLabel}>Email bevestigd:</Text>
+                              <Text style={styles.userDetailInfoValue}>
+                                {new Date(selectedUser.email_confirmed_at).toLocaleDateString('nl-NL')}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Profile Details */}
+                        {(selectedUser.archetype || selectedUser.cooking_skill) && (
+                          <View style={styles.userDetailSection}>
+                            <Text style={styles.userDetailSectionTitle}>Profiel</Text>
+                            {selectedUser.archetype && (
+                              <View style={styles.userDetailInfoRow}>
+                                <Text style={styles.userDetailInfoLabel}>Archetype:</Text>
+                                <Text style={styles.userDetailInfoValue}>{selectedUser.archetype}</Text>
+                              </View>
+                            )}
+                            {selectedUser.cooking_skill && (
+                              <View style={styles.userDetailInfoRow}>
+                                <Text style={styles.userDetailInfoLabel}>Kookniveau:</Text>
+                                <Text style={styles.userDetailInfoValue}>{selectedUser.cooking_skill}</Text>
+                              </View>
+                            )}
+                            {selectedUser.dietary_restrictions && selectedUser.dietary_restrictions.length > 0 && (
+                              <View style={styles.userDetailInfoRow}>
+                                <Text style={styles.userDetailInfoLabel}>Dieetbeperkingen:</Text>
+                                <Text style={styles.userDetailInfoValue}>
+                                  {Array.isArray(selectedUser.dietary_restrictions) 
+                                    ? selectedUser.dietary_restrictions.join(', ')
+                                    : selectedUser.dietary_restrictions}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {/* Recent Activity */}
+                        {selectedUser.recent_activity && selectedUser.recent_activity.length > 0 && (
+                          <View style={styles.userDetailSection}>
+                            <Text style={styles.userDetailSectionTitle}>Recente Activiteit</Text>
+                            {selectedUser.recent_activity.map((activity, idx) => (
+                              <View key={idx} style={styles.userActivityItem}>
+                                <Text style={styles.userActivityAction}>{activity.action}</Text>
+                                <Text style={styles.userActivityTime}>
+                                  {new Date(activity.created_at).toLocaleDateString('nl-NL')}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {/* Admin Actions */}
+                        <View style={styles.userDetailActions}>
+                          <Text style={styles.userDetailSectionTitle}>Acties</Text>
+                          
+                          {!selectedUser.is_admin ? (
+                            <TouchableOpacity
+                              style={styles.userActionButton}
+                              onPress={() => {
+                                console.log('Button pressed! Selected user:', selectedUser);
+                                if (!selectedUser || !selectedUser.id) {
+                                  Alert.alert('Fout', 'Geen gebruiker geselecteerd');
+                                  return;
+                                }
+                                Alert.alert(
+                                  'Admin Rechten Toekennen',
+                                  'Welke rol wil je toekennen?',
+                                  [
+                                    { text: 'Annuleren', style: 'cancel' },
+                                    {
+                                      text: 'Admin',
+                                      onPress: () => {
+                                        console.log('Admin role selected');
+                                        handleGrantAdmin(selectedUser.id, 'admin');
+                                      },
+                                    },
+                                    {
+                                      text: 'Moderator',
+                                      onPress: () => {
+                                        console.log('Moderator role selected');
+                                        handleGrantAdmin(selectedUser.id, 'moderator');
+                                      },
+                                    },
+                                    {
+                                      text: 'Viewer',
+                                      onPress: () => {
+                                        console.log('Viewer role selected');
+                                        handleGrantAdmin(selectedUser.id, 'viewer');
+                                      },
+                                    },
+                                  ]
+                                );
+                              }}
+                              disabled={updatingUser || !selectedUser || !selectedUser.id}
+                            >
+                              <Ionicons name="shield" size={20} color="#fff" />
+                              <Text style={styles.userActionButtonText}>Admin Rechten Toekennen</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity
+                              style={[styles.userActionButton, styles.userActionButtonDanger]}
+                              onPress={() => handleRevokeAdmin(selectedUser.id)}
+                              disabled={updatingUser || selectedUser.id === user?.id}
+                            >
+                              <Ionicons name="shield-outline" size={20} color="#fff" />
+                              <Text style={styles.userActionButtonText}>Admin Rechten Intrekken</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {updatingUser && (
+                            <View style={styles.userActionLoading}>
+                              <ActivityIndicator size="small" color="#047857" />
+                              <Text style={styles.userActionLoadingText}>Bezig met toekennen...</Text>
+                            </View>
+                          )}
+                          
+                          {/* Success Message */}
+                          {!updatingUser && selectedUser && selectedUser.is_admin && (
+                            <View style={styles.userActionSuccess}>
+                              <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                              <Text style={styles.userActionSuccessText}>
+                                Admin rechten actief als {selectedUser.admin_role || 'admin'}
+                              </Text>
+                            </View>
+                          )}
                         </View>
                       </>
                     )}
@@ -2220,36 +2719,101 @@ const styles = StyleSheet.create({
   usersList: {
     gap: 16,
   },
+  refreshButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 12,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#047857',
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   userCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(15,23,42,0.08)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   userHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     flex: 1,
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#dcfce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userAvatarText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  userDetails: {
+    flex: 1,
+    gap: 4,
   },
   userEmail: {
     fontSize: 16,
     fontWeight: '600',
     color: '#0f172a',
-    flex: 1,
   },
   adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#047857',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    alignSelf: 'flex-start',
   },
   adminBadgeText: {
     color: '#fff',
@@ -2263,12 +2827,249 @@ const styles = StyleSheet.create({
   },
   userMeta: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
     flexWrap: 'wrap',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15,23,42,0.08)',
+  },
+  userMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   userMetaText: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  userModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  userModal: {
+    flex: 1,
+    backgroundColor: '#fff',
+    marginTop: 60,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  userModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+  },
+  userModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  userModalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userModalScroll: {
+    flex: 1,
+  },
+  userModalContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  userModalLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 12,
+  },
+  userModalLoadingText: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  userDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 24,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+  },
+  userDetailAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#dcfce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userDetailAvatarText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  userDetailInfo: {
+    flex: 1,
+    gap: 8,
+  },
+  userDetailEmail: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  userDetailAdminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#047857',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  userDetailAdminBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  userDetailStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 24,
+  },
+  userDetailStatCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#f0fdf4',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.1)',
+  },
+  userDetailStatValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#047857',
+  },
+  userDetailStatLabel: {
     fontSize: 12,
     color: '#64748b',
+    fontWeight: '600',
+  },
+  userDetailSection: {
+    marginBottom: 24,
+    gap: 12,
+  },
+  userDetailSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#065f46',
+    marginBottom: 8,
+  },
+  userDetailInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.05)',
+  },
+  userDetailInfoLabel: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  userDetailInfoValue: {
+    fontSize: 14,
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  userActivityItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.05)',
+  },
+  userActivityAction: {
+    fontSize: 14,
+    color: '#0f172a',
+    fontWeight: '500',
+  },
+  userActivityTime: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  userDetailActions: {
+    marginTop: 8,
+    gap: 12,
+  },
+  userActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#047857',
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  userActionButtonDanger: {
+    backgroundColor: '#ef4444',
+  },
+  userActionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  userActionLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  userActionLoadingText: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  userActionSuccess: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#d1fae5',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    marginTop: 8,
+  },
+  userActionSuccessText: {
+    fontSize: 14,
+    color: '#065f46',
+    fontWeight: '600',
   },
   aiContainer: {
     gap: 24,
