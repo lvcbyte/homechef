@@ -791,13 +791,51 @@ export default function SavedScreen() {
 
   const handleRecipePress = async (recipe: SavedRecipe) => {
     const recipeId = recipe.recipe_id || recipe.recipe_payload?.id || recipe.recipe_payload?.recipe_id;
+    const sourceType = recipe.recipe_payload?.source_type;
+    
+    // For AI-generated recipes (variations, experimental, menu items, ai_chat), use payload directly
+    // They don't exist in the recipes table
+    if (sourceType && ['variation', 'experimental', 'menu_item', 'ai_chat'].includes(sourceType)) {
+      if (recipe.recipe_payload && recipe.recipe_payload.title) {
+        setSelectedRecipe({
+          recipe_id: recipeId || recipe.recipe_payload.id || recipe.id,
+          title: recipe.recipe_payload.title,
+          description: recipe.recipe_payload.description || null,
+          author: recipe.recipe_payload.author || 'STOCKPIT AI',
+          image_url: recipe.recipe_payload.image_url || null,
+          total_time_minutes: recipe.recipe_payload.total_time_minutes || 30,
+          difficulty: recipe.recipe_payload.difficulty || 'Gemiddeld',
+          servings: recipe.recipe_payload.servings || null,
+          likes_count: 0,
+          ingredients: recipe.recipe_payload.ingredients || [],
+          instructions: recipe.recipe_payload.instructions || [],
+          nutrition: recipe.recipe_payload.nutrition || null,
+          tags: recipe.recipe_payload.tags || [],
+          category: recipe.recipe_payload.category || null,
+        } as RecipeDetail);
+        setModalVisible(true);
+        return;
+      }
+    }
     
     if (!recipeId) {
       // If it's a saved recipe with full payload, use that
       if (recipe.recipe_payload && recipe.recipe_payload.title) {
         setSelectedRecipe({
           recipe_id: recipeId || recipe.id,
-          ...recipe.recipe_payload,
+          title: recipe.recipe_payload.title,
+          description: recipe.recipe_payload.description || null,
+          author: recipe.recipe_payload.author || 'STOCKPIT AI',
+          image_url: recipe.recipe_payload.image_url || null,
+          total_time_minutes: recipe.recipe_payload.total_time_minutes || 30,
+          difficulty: recipe.recipe_payload.difficulty || 'Gemiddeld',
+          servings: recipe.recipe_payload.servings || null,
+          likes_count: 0,
+          ingredients: recipe.recipe_payload.ingredients || [],
+          instructions: recipe.recipe_payload.instructions || [],
+          nutrition: recipe.recipe_payload.nutrition || null,
+          tags: recipe.recipe_payload.tags || [],
+          category: recipe.recipe_payload.category || null,
         } as RecipeDetail);
         setModalVisible(true);
         return;
@@ -805,7 +843,7 @@ export default function SavedScreen() {
       return;
     }
 
-    // Fetch full recipe data
+    // For regular recipes, try to fetch from recipes table first
     const { data } = await supabase
       .from('recipes')
       .select('*')
@@ -816,10 +854,22 @@ export default function SavedScreen() {
       setSelectedRecipe(data as RecipeDetail);
       setModalVisible(true);
     } else if (recipe.recipe_payload && recipe.recipe_payload.title) {
-      // Fallback to saved payload
+      // Fallback to saved payload (for AI-generated recipes)
       setSelectedRecipe({
         recipe_id: recipeId,
-        ...recipe.recipe_payload,
+        title: recipe.recipe_payload.title,
+        description: recipe.recipe_payload.description || null,
+        author: recipe.recipe_payload.author || 'STOCKPIT AI',
+        image_url: recipe.recipe_payload.image_url || null,
+        total_time_minutes: recipe.recipe_payload.total_time_minutes || 30,
+        difficulty: recipe.recipe_payload.difficulty || 'Gemiddeld',
+        servings: recipe.recipe_payload.servings || null,
+        likes_count: 0,
+        ingredients: recipe.recipe_payload.ingredients || [],
+        instructions: recipe.recipe_payload.instructions || [],
+        nutrition: recipe.recipe_payload.nutrition || null,
+        tags: recipe.recipe_payload.tags || [],
+        category: recipe.recipe_payload.category || null,
       } as RecipeDetail);
       setModalVisible(true);
     }
@@ -832,19 +882,22 @@ export default function SavedScreen() {
     }
 
     try {
-      const { data: isLiked } = await supabase.rpc('toggle_recipe_like', { p_recipe_id: recipeId });
-      const newLiked = new Set(likedRecipes);
+      // Check if this is a regular recipe (exists in recipes table) or AI-generated
+      const { data: recipeData } = await supabase
+        .from('recipes')
+        .select('*')
+        .eq('id', recipeId)
+        .single();
       
-      if (isLiked) {
-        newLiked.add(recipeId);
+      if (recipeData) {
+        // Regular recipe - use toggle_recipe_like function
+        const { data: isLiked } = await supabase.rpc('toggle_recipe_like', { p_recipe_id: recipeId });
+        const newLiked = new Set(likedRecipes);
         
-        const { data: recipeData } = await supabase
-          .from('recipes')
-          .select('*')
-          .eq('id', recipeId)
-          .single();
-        
-        if (recipeData) {
+        if (isLiked) {
+          newLiked.add(recipeId);
+          
+          // Save to saved_recipes (if not already saved by trigger)
           await supabase.from('saved_recipes').upsert({
             user_id: user.id,
             recipe_name: recipeData.title,
@@ -852,32 +905,35 @@ export default function SavedScreen() {
           }, {
             onConflict: 'user_id,recipe_name',
           });
-        }
-      } else {
-        newLiked.delete(recipeId);
-        
-        const { data: recipeData } = await supabase
-          .from('recipes')
-          .select('title')
-          .eq('id', recipeId)
-          .single();
-        
-        if (recipeData) {
+        } else {
+          newLiked.delete(recipeId);
+          
+          // Remove from saved_recipes
           await supabase
             .from('saved_recipes')
             .delete()
             .eq('user_id', user.id)
             .eq('recipe_name', recipeData.title);
         }
-      }
-      
-      setLikedRecipes(newLiked);
-      
-      if (selectedRecipe && selectedRecipe.recipe_id === recipeId) {
-        setSelectedRecipe({
-          ...selectedRecipe,
-          likes_count: isLiked ? selectedRecipe.likes_count + 1 : selectedRecipe.likes_count - 1,
-        });
+        
+        setLikedRecipes(newLiked);
+        
+        if (selectedRecipe && selectedRecipe.recipe_id === recipeId) {
+          setSelectedRecipe({
+            ...selectedRecipe,
+            likes_count: isLiked ? (selectedRecipe.likes_count || 0) + 1 : Math.max(0, (selectedRecipe.likes_count || 0) - 1),
+          });
+        }
+      } else {
+        // AI-generated recipe - already in saved_recipes, just toggle visual state
+        // For AI recipes, "like" is just a visual indicator since they're already saved
+        const newLiked = new Set(likedRecipes);
+        if (newLiked.has(recipeId)) {
+          newLiked.delete(recipeId);
+        } else {
+          newLiked.add(recipeId);
+        }
+        setLikedRecipes(newLiked);
       }
       
       // Refresh recipes list
@@ -974,6 +1030,15 @@ export default function SavedScreen() {
                   )}
                   {recipes.map((recipe) => {
                     const recipeId = recipe.recipe_id || recipe.recipe_payload?.id || recipe.recipe_payload?.recipe_id;
+                    const sourceType = recipe.recipe_payload?.source_type;
+                    const sourceTypeLabels: Record<string, string> = {
+                      'variation': 'Variatie',
+                      'experimental': 'Experimenteel',
+                      'menu_item': 'Menu Item',
+                      'ai_chat': 'AI Chat',
+                    };
+                    const sourceTypeLabel = sourceType ? sourceTypeLabels[sourceType] : null;
+                    
                     return (
                       <TouchableOpacity
                         key={recipe.id}
@@ -986,7 +1051,12 @@ export default function SavedScreen() {
                           }}
                           style={styles.recipeImage}
                         />
-                        {recipeId && (
+                        {sourceTypeLabel && (
+                          <View style={styles.sourceTypeBadge}>
+                            <Text style={styles.sourceTypeBadgeText}>{sourceTypeLabel}</Text>
+                          </View>
+                        )}
+                        {recipeId && !sourceType && (
                           <TouchableOpacity
                             style={styles.heartButtonCard}
                             onPress={(e) => {
@@ -1003,7 +1073,7 @@ export default function SavedScreen() {
                         )}
                         <View style={styles.recipeBody}>
                           <Text style={styles.recipeMood}>
-                            {recipe.recipe_payload?.tags?.[0] || recipe.recipe_payload?.category || recipe.recipe_payload?.mood || 'Recept'}
+                            {sourceTypeLabel || recipe.recipe_payload?.tags?.[0] || recipe.recipe_payload?.category || recipe.recipe_payload?.mood || 'Recept'}
                           </Text>
                           <Text style={styles.recipeTitle}>{recipe.recipe_name}</Text>
                           <View style={styles.recipeMeta}>
@@ -1011,6 +1081,12 @@ export default function SavedScreen() {
                             <Text style={styles.recipeTime}>
                               {recipe.recipe_payload?.total_time_minutes || recipe.recipe_payload?.time || 'n.v.t.'} min
                             </Text>
+                            {recipe.recipe_payload?.difficulty && (
+                              <>
+                                <Text style={styles.recipeMetaSeparator}>•</Text>
+                                <Text style={styles.recipeTime}>{recipe.recipe_payload.difficulty}</Text>
+                              </>
+                            )}
                           </View>
                         </View>
                       </TouchableOpacity>
@@ -1282,9 +1358,38 @@ export default function SavedScreen() {
                   {selectedRecipe.nutrition && (
                     <View style={styles.modalSection}>
                       <Text style={styles.modalSectionTitle}>Voedingswaarden</Text>
-                      <Text style={styles.modalSectionText}>
-                        {JSON.stringify(selectedRecipe.nutrition, null, 2)}
-                      </Text>
+                      {typeof selectedRecipe.nutrition === 'object' && selectedRecipe.nutrition !== null ? (
+                        <View style={styles.nutritionGrid}>
+                          {selectedRecipe.nutrition.protein !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Eiwit</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.protein}g</Text>
+                            </View>
+                          )}
+                          {selectedRecipe.nutrition.carbs !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Koolhydraten</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.carbs}g</Text>
+                            </View>
+                          )}
+                          {selectedRecipe.nutrition.fat !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Vet</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.fat}g</Text>
+                            </View>
+                          )}
+                          {selectedRecipe.nutrition.calories !== undefined && (
+                            <View style={styles.nutritionItem}>
+                              <Text style={styles.nutritionLabel}>Calorieën</Text>
+                              <Text style={styles.nutritionValue}>{selectedRecipe.nutrition.calories}kcal</Text>
+                            </View>
+                          )}
+                        </View>
+                      ) : (
+                        <Text style={styles.modalSectionText}>
+                          {JSON.stringify(selectedRecipe.nutrition, null, 2)}
+                        </Text>
+                      )}
                     </View>
                   )}
                 </>
@@ -2086,6 +2191,22 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 140,
   },
+  sourceTypeBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: '#047857',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 10,
+  },
+  sourceTypeBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
   heartButtonCard: {
     position: 'absolute',
     top: 12,
@@ -2815,6 +2936,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  nutritionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+  nutritionItem: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+  },
+  nutritionLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  nutritionValue: {
+    fontSize: 18,
+    color: '#047857',
+    fontWeight: '700',
   },
 });
 

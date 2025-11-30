@@ -197,6 +197,8 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
         return 'people';
       case 'shopping_list_reminder':
         return 'cart';
+      case 'household_invitation':
+        return 'people';
       default:
         return 'notifications';
     }
@@ -212,8 +214,48 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
         return '#fbbf24';
       case 'challenge_completed':
         return '#10b981';
+      case 'household_invitation':
+        return '#047857';
       default:
         return '#64748b';
+    }
+  };
+
+  const handleInvitationAction = async (notification: Notification, action: 'accept' | 'reject') => {
+    const invitationId = notification.data?.invitation_id;
+    if (!invitationId) {
+      Alert.alert('Fout', 'Uitnodiging ID niet gevonden');
+      return;
+    }
+
+    try {
+      if (action === 'accept') {
+        const { error } = await supabase.rpc('accept_household_invitation', {
+          p_invitation_id: invitationId,
+        });
+
+        if (error) throw error;
+
+        Alert.alert('Succes', 'Uitnodiging geaccepteerd! Je bent nu lid van het gezin.');
+        // Navigate to family tab
+        router.push('/profile?tab=family');
+      } else {
+        const { error } = await supabase.rpc('reject_household_invitation', {
+          p_invitation_id: invitationId,
+        });
+
+        if (error) throw error;
+
+        Alert.alert('Uitnodiging geweigerd', 'De uitnodiging is geweigerd.');
+      }
+
+      // Mark notification as read and remove it
+      await markAsRead(notification.id);
+      await deleteNotification(notification.id);
+      fetchNotifications();
+    } catch (error: any) {
+      console.error('Error handling invitation:', error);
+      Alert.alert('Fout', 'Kon uitnodiging niet verwerken: ' + (error.message || 'Onbekende fout'));
     }
   };
 
@@ -328,6 +370,26 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
                       <Text style={styles.recipeSuggestionText} numberOfLines={1}>
                         {notification.data.suggested_recipe.title}
                       </Text>
+                    </View>
+                  )}
+
+                  {/* Show invitation actions */}
+                  {notification.type === 'household_invitation' && !notification.read && (
+                    <View style={styles.invitationActions}>
+                      <TouchableOpacity
+                        style={styles.acceptButton}
+                        onPress={() => handleInvitationAction(notification, 'accept')}
+                      >
+                        <Ionicons name="checkmark" size={16} color="#fff" />
+                        <Text style={styles.acceptButtonText}>Accepteren</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.rejectButton}
+                        onPress={() => handleInvitationAction(notification, 'reject')}
+                      >
+                        <Ionicons name="close" size={16} color="#ef4444" />
+                        <Text style={styles.rejectButtonText}>Weigeren</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
@@ -486,6 +548,43 @@ const styles = StyleSheet.create({
     color: '#047857',
     fontWeight: '600',
     flex: 1,
+  },
+  invitationActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  acceptButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#047857',
+  },
+  acceptButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  rejectButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    backgroundColor: '#fff',
+  },
+  rejectButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ef4444',
   },
   deleteButton: {
     padding: 8,

@@ -9,6 +9,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
+import { MenuMaker } from '../components/recipes/MenuMaker';
+import { ExperimentalKitchen } from '../components/recipes/ExperimentalKitchen';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
@@ -69,6 +71,7 @@ export default function Home() {
   const [modalVisible, setModalVisible] = useState(false);
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [inventory, setInventory] = useState<any[]>([]);
 
   useEffect(() => {
     // Only redirect if we're on the home page (index) and user is not authenticated
@@ -86,6 +89,7 @@ export default function Home() {
     // Only fetch data if user is authenticated and we're on the home page
     if (user && pathname === '/') {
       fetchData();
+      fetchInventory();
     }
   }, [user, profile, pathname]);
 
@@ -279,6 +283,21 @@ export default function Home() {
       console.error('Error fetching data:', error);
       clearTimeout(maxLoadingTimeout);
       setLoading(false);
+    }
+  };
+
+  const fetchInventory = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      setInventory(data || []);
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
     }
   };
 
@@ -725,6 +744,69 @@ export default function Home() {
             </TouchableOpacity>
           )}
 
+          {/* Chef's Toolkit */}
+          {user && (
+            <View style={styles.section}>
+              <View style={styles.aiFeaturesHeader}>
+                <Ionicons name="construct" size={20} color="#047857" />
+                <Text style={styles.sectionTitle}>Chef's Toolkit</Text>
+              </View>
+              <Text style={styles.aiFeaturesDescription}>
+                Slimme tools om menu's te plannen en nieuwe recepten te creëren op basis van jouw voorraad en voorkeuren.
+              </Text>
+              
+              <View style={styles.aiFeaturesGrid}>
+                <MenuMaker
+                  userId={user.id}
+                  inventory={inventory.map((item: any) => ({
+                    name: item.name,
+                    quantity_approx: item.quantity_approx,
+                    category: item.category,
+                  }))}
+                  profile={{
+                    archetype: profile?.archetype || undefined,
+                    cooking_skill: profile?.cooking_skill || undefined,
+                    dietary_restrictions: (profile?.dietary_restrictions as string[]) || undefined,
+                  }}
+                  onMenuCreated={(menuPlan) => {
+                    Alert.alert('Menu Gemaakt!', `Het ${menuPlan.season} menu is gegenereerd met ${menuPlan.menuItems.length} maaltijden.`);
+                  }}
+                />
+                
+                <ExperimentalKitchen
+                  userId={user.id}
+                  profile={{
+                    archetype: profile?.archetype || undefined,
+                    cooking_skill: profile?.cooking_skill || undefined,
+                    dietary_restrictions: (profile?.dietary_restrictions as string[]) || undefined,
+                  }}
+                  onRecipeCreated={(recipe) => {
+                    const recipeDetail: RecipeDetail = {
+                      recipe_id: `experimental-${Date.now()}`,
+                      title: recipe.name,
+                      description: recipe.description || null,
+                      author: 'STOCKPIT AI',
+                      image_url: recipe.image_url || null,
+                      total_time_minutes: recipe.totalTime || 30,
+                      difficulty: recipe.difficulty || 'Gemiddeld',
+                      servings: recipe.servings || 4,
+                      prep_time_minutes: recipe.prepTime || 0,
+                      cook_time_minutes: recipe.cookTime || recipe.totalTime || 30,
+                      ingredients: recipe.ingredients || [],
+                      instructions: recipe.steps || [],
+                      nutrition: recipe.macros || null,
+                      tags: recipe.tags || [],
+                      category: recipe.tags?.[0] || null,
+                      likes_count: 0,
+                    };
+                    setSelectedRecipe(recipeDetail);
+                    setModalVisible(true);
+                  }}
+                />
+              </View>
+            </View>
+          )}
+
           {/* Categories */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Speciaal voor jou</Text>
@@ -823,43 +905,6 @@ export default function Home() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </View>
-
-          {/* Video lessons */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Leer de Techniek</Text>
-            <View style={styles.videoGrid}>
-              <TouchableOpacity style={styles.videoCard}>
-                <Image
-                  source={{
-                    uri: 'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=800&q=80',
-                  }}
-                  style={styles.videoThumb}
-                />
-                <View style={styles.playButton}>
-                  <Ionicons name="play" size={20} color="#fff" />
-                </View>
-                <View style={styles.videoBody}>
-                  <Text style={styles.videoTitle}>Video: Perfect Eieren Pocheren</Text>
-                  <Text style={styles.videoDuration}>06:12</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.videoCard}>
-                <Image
-                  source={{
-                    uri: 'https://images.unsplash.com/photo-1506368083636-6defb67639b0?auto=format&fit=crop&w=800&q=80',
-                  }}
-                  style={styles.videoThumb}
-                />
-                <View style={styles.playButton}>
-                  <Ionicons name="play" size={20} color="#fff" />
-                </View>
-                <View style={styles.videoBody}>
-                  <Text style={styles.videoTitle}>Video: Deeg kneden als een Pro</Text>
-                  <Text style={styles.videoDuration}>08:44</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -1227,6 +1272,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#065f46',
   },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 4,
+    marginBottom: 12,
+  },
   categoryRow: {
     flexDirection: 'row',
     gap: 12,
@@ -1356,6 +1407,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#047857',
     fontWeight: '600',
+  },
+  aiFeaturesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  aiFeaturesDescription: {
+    fontSize: 14,
+    color: '#64748b',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  aiFeaturesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
   // Modal styles
   modalOverlay: {

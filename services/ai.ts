@@ -1211,3 +1211,871 @@ BELANGRIJK:
   }
 }
 
+// ============================================================================
+// ADVANCED AI FEATURES - Alain.AI-like functionality
+// ============================================================================
+
+export interface RecipeVariationOptions {
+  variationType: 'local_flavor' | 'trend' | 'seasonal' | 'dietary' | 'allergy' | 'custom';
+  localRegion?: string;
+  trendName?: string;
+  season?: 'spring' | 'summer' | 'autumn' | 'winter';
+  dietaryType?: string[];
+  allergies?: string[];
+  customInstructions?: string;
+  language?: string;
+  unitsSystem?: 'metric' | 'imperial';
+}
+
+export interface RecipeVariation extends GeneratedRecipe {
+  variationType: string;
+  variationDetails: any;
+  baseRecipeId?: string;
+}
+
+/**
+ * Generate recipe variations (like Alain.AI)
+ * Adapts existing recipes for local flavors, trends, seasonal ingredients, dietary preferences, allergies
+ */
+export async function generateRecipeVariation(
+  baseRecipe: {
+    title: string;
+    description?: string;
+    ingredients: any[];
+    instructions: any[];
+    prep_time_minutes?: number;
+    cook_time_minutes?: number;
+    total_time_minutes?: number;
+    difficulty?: string;
+    servings?: number;
+    nutrition?: any;
+    tags?: string[];
+    category?: string;
+  },
+  options: RecipeVariationOptions
+): Promise<RecipeVariation | null> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return null;
+  }
+
+  const variationPrompt = buildVariationPrompt(baseRecipe, options);
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een professionele chef en receptenexpert voor STOCKPIT. Je past recepten aan voor verschillende contexten terwijl je de kern van het recept behoudt. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: variationPrompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for recipe variation:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const recipeData = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!recipeData) return null;
+
+    const imageUrl = generateRecipeImageUrl(recipeData.title || baseRecipe.title);
+
+    return {
+      name: recipeData.title || baseRecipe.title,
+      description: recipeData.description || baseRecipe.description || null,
+      image_url: imageUrl,
+      ingredients: (recipeData.ingredients || []).map((ing: any) =>
+        typeof ing === 'string'
+          ? { name: ing, quantity: '', unit: '' }
+          : { name: ing.name || '', quantity: ing.quantity || '', unit: ing.unit || '' }
+      ),
+      steps: recipeData.instructions || baseRecipe.instructions || [],
+      prepTime: recipeData.prep_time_minutes || baseRecipe.prep_time_minutes || 0,
+      cookTime: recipeData.cook_time_minutes || baseRecipe.cook_time_minutes || 0,
+      totalTime: recipeData.total_time_minutes || baseRecipe.total_time_minutes || 30,
+      difficulty: recipeData.difficulty || baseRecipe.difficulty || 'Gemiddeld',
+      servings: recipeData.servings || baseRecipe.servings || 4,
+      macros: recipeData.nutrition || baseRecipe.nutrition || { protein: 0, carbs: 0, fat: 0 },
+      tags: recipeData.tags || baseRecipe.tags || [],
+      missingIngredients: [],
+      relevanceScore: 100,
+      variationType: options.variationType,
+      variationDetails: {
+        localRegion: options.localRegion,
+        trendName: options.trendName,
+        season: options.season,
+        dietaryType: options.dietaryType,
+        allergies: options.allergies,
+        customInstructions: options.customInstructions,
+        language: options.language || 'nl',
+        unitsSystem: options.unitsSystem || 'metric',
+      },
+    } as RecipeVariation;
+  } catch (error) {
+    console.error('Error generating recipe variation:', error);
+    return null;
+  }
+}
+
+function buildVariationPrompt(
+  baseRecipe: any,
+  options: RecipeVariationOptions
+): string {
+  let prompt = `Pas dit recept aan volgens de volgende specificaties:\n\n`;
+  prompt += `Origineel recept: ${baseRecipe.title}\n`;
+  if (baseRecipe.description) prompt += `Beschrijving: ${baseRecipe.description}\n`;
+  prompt += `Ingrediënten: ${JSON.stringify(baseRecipe.ingredients)}\n`;
+  prompt += `Instructies: ${JSON.stringify(baseRecipe.instructions)}\n\n`;
+
+  switch (options.variationType) {
+    case 'local_flavor':
+      prompt += `Aanpassing: Lokale smaken voor ${options.localRegion || 'België/Nederland'}\n`;
+      prompt += `Gebruik lokale ingrediënten en traditionele smaken uit deze regio.\n`;
+      break;
+    case 'trend':
+      prompt += `Aanpassing: Volg de trend "${options.trendName || 'huidige food trends'}"\n`;
+      prompt += `Integreer moderne kooktechnieken en populaire ingrediënten.\n`;
+      break;
+    case 'seasonal':
+      prompt += `Aanpassing: Seizoensgebonden ingrediënten voor ${options.season || 'het huidige seizoen'}\n`;
+      prompt += `Gebruik verse, seizoensgebonden producten die nu beschikbaar zijn.\n`;
+      break;
+    case 'dietary':
+      prompt += `Aanpassing: Dieetvoorkeuren: ${options.dietaryType?.join(', ') || 'algemeen gezond'}\n`;
+      prompt += `Pas het recept aan voor deze dieetvoorkeuren terwijl je de smaak behoudt.\n`;
+      break;
+    case 'allergy':
+      prompt += `Aanpassing: Vermijd allergenen: ${options.allergies?.join(', ') || 'geen'}\n`;
+      prompt += `Vervang ingrediënten die deze allergenen bevatten met veilige alternatieven.\n`;
+      break;
+    case 'custom':
+      prompt += `Aanpassing: ${options.customInstructions || 'Aangepaste wijzigingen'}\n`;
+      break;
+  }
+
+  if (options.language && options.language !== 'nl') {
+    prompt += `\nTaal: Vertaal naar ${options.language}.\n`;
+  }
+
+  if (options.unitsSystem === 'imperial') {
+    prompt += `\nEenheden: Converteer naar imperiale eenheden (cups, ounces, etc.).\n`;
+  }
+
+  prompt += `\nGeef het aangepaste recept terug in JSON formaat:
+{
+  "title": "Aangepaste recept naam",
+  "description": "Beschrijving",
+  "ingredients": [{"name": "ingrediënt", "quantity": "hoeveelheid", "unit": "eenheid"}],
+  "instructions": ["Stap 1", "Stap 2"],
+  "prep_time_minutes": 15,
+  "cook_time_minutes": 20,
+  "total_time_minutes": 35,
+  "difficulty": "Makkelijk",
+  "servings": 4,
+  "nutrition": {"protein": 25, "carbs": 40, "fat": 15},
+  "tags": ["tag1", "tag2"]
+}`;
+
+  return prompt;
+}
+
+/**
+ * Menu Maker - Generate seasonal menus (like Alain.AI Menu Maker)
+ */
+export interface MenuPlanOptions {
+  season: 'spring' | 'summer' | 'autumn' | 'winter';
+  days: number;
+  mealsPerDay?: number;
+  dietaryRestrictions?: string[];
+  cookingSkill?: string;
+  budget?: 'low' | 'medium' | 'high';
+}
+
+export interface MenuPlan {
+  title: string;
+  description: string;
+  season: string;
+  startDate: string;
+  endDate: string;
+  menuItems: Array<{
+    day: number;
+    mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+    recipe: GeneratedRecipe;
+  }>;
+  ingredientList: Array<{
+    name: string;
+    quantity: string;
+    unit: string;
+    category?: string;
+  }>;
+}
+
+export async function generateMenuPlan(
+  inventory: Array<{ name: string; quantity_approx?: string; category?: string }>,
+  profile: { archetype?: string; cooking_skill?: string; dietary_restrictions?: string[] },
+  options: MenuPlanOptions
+): Promise<MenuPlan | null> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return null;
+  }
+
+  const inventoryList = inventory.map(item =>
+    `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''}`
+  ).join('\n') || 'Geen items in voorraad';
+
+  const seasonNames: Record<string, string> = {
+    spring: 'Lente',
+    summer: 'Zomer',
+    autumn: 'Herfst',
+    winter: 'Winter',
+  };
+
+  const prompt = `Je bent de STOCKPIT Menu Maker, een AI die seizoensgebonden menu's maakt.
+
+Gebruikersinventaris:
+${inventoryList}
+
+Gebruikersprofiel:
+- Archetype: ${profile.archetype || 'Niet gespecificeerd'}
+- Kookniveau: ${profile.cooking_skill || options.cookingSkill || 'Niet gespecificeerd'}
+- Dieetbeperkingen: ${(options.dietaryRestrictions && options.dietaryRestrictions.length > 0) 
+  ? options.dietaryRestrictions.join(', ') 
+  : (profile.dietary_restrictions?.join(', ') || 'Geen')}
+
+Menu specificaties:
+- Seizoen: ${seasonNames[options.season] || options.season}
+- Aantal dagen: ${options.days}
+- Maaltijden per dag: ${options.mealsPerDay || 3}
+- Budget: ${options.budget || 'medium'}
+
+Genereer een compleet ${options.days}-daags menu voor ${seasonNames[options.season] || options.season} met:
+1. Seizoensgebonden ingrediënten
+2. Variatie in maaltijden
+3. Gebruik van beschikbare voorraad waar mogelijk
+4. Rekening houden met dieetbeperkingen
+5. Passend bij kookniveau
+
+Voor elke maaltijd: geef een recept met titel, ingrediënten, en korte instructies.
+
+Genereer ook een geaggregeerde boodschappenlijst met alle benodigde ingrediënten.
+
+BELANGRIJK: Antwoord ALLEEN met geldig JSON, zonder extra tekst ervoor of erna. Geen markdown code blocks, alleen pure JSON.
+
+{
+  "title": "Menu naam",
+  "description": "Beschrijving",
+  "menuItems": [
+    {
+      "day": 1,
+      "mealType": "breakfast",
+      "recipe": {
+        "title": "Recept naam",
+        "ingredients": [{"name": "ingrediënt", "quantity": "hoeveelheid", "unit": "eenheid"}],
+        "instructions": ["Stap 1", "Stap 2"],
+        "prep_time_minutes": 15,
+        "total_time_minutes": 20,
+        "difficulty": "Makkelijk",
+        "servings": 2
+      }
+    }
+  ],
+  "ingredientList": [
+    {"name": "ingrediënt", "quantity": "totaal", "unit": "eenheid", "category": "categorie"}
+  ]
+}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent de STOCKPIT Menu Maker. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.8,
+        max_tokens: 4000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenRouter API error for menu plan:', response.status, errorText);
+      throw new Error(`API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    
+    // Try to extract JSON from the response
+    let jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      // Try to find JSON in code blocks
+      jsonMatch = content.match(/```json\s*(\{[\s\S]*?\})\s*```/) || content.match(/```\s*(\{[\s\S]*?\})\s*```/);
+    }
+    
+    if (!jsonMatch) {
+      console.error('No JSON found in response:', content.substring(0, 500));
+      throw new Error('Geen geldig JSON antwoord ontvangen van AI');
+    }
+    
+    let menuData;
+    try {
+      menuData = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError, 'Content:', jsonMatch[0].substring(0, 500));
+      throw new Error('Kon AI antwoord niet parsen');
+    }
+
+    if (!menuData) {
+      throw new Error('Leeg menu data ontvangen');
+    }
+
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setDate(startDate.getDate() + options.days - 1);
+
+    return {
+      title: menuData.title || `${seasonNames[options.season] || options.season} Menu`,
+      description: menuData.description || '',
+      season: options.season,
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0],
+      menuItems: (menuData.menuItems || []).map((item: any) => ({
+        day: item.day || 1,
+        mealType: item.mealType || 'dinner',
+        recipe: {
+          name: item.recipe?.title || '',
+          description: item.recipe?.description || null,
+          image_url: generateRecipeImageUrl(item.recipe?.title || ''),
+          ingredients: (item.recipe?.ingredients || []).map((ing: any) =>
+            typeof ing === 'string'
+              ? { name: ing, quantity: '', unit: '' }
+              : { name: ing.name || '', quantity: ing.quantity || '', unit: ing.unit || '' }
+          ),
+          steps: item.recipe?.instructions || [],
+          prepTime: item.recipe?.prep_time_minutes || 0,
+          cookTime: item.recipe?.cook_time_minutes || 0,
+          totalTime: item.recipe?.total_time_minutes || 30,
+          difficulty: item.recipe?.difficulty || 'Gemiddeld',
+          servings: item.recipe?.servings || 2,
+          macros: item.recipe?.nutrition || { protein: 0, carbs: 0, fat: 0 },
+          tags: item.recipe?.tags || [],
+          missingIngredients: [],
+          relevanceScore: 100,
+        } as GeneratedRecipe,
+      })),
+      ingredientList: (menuData.ingredientList || []).map((item: any) => ({
+        name: item.name || '',
+        quantity: item.quantity || '',
+        unit: item.unit || '',
+        category: item.category || '',
+      })),
+    };
+  } catch (error) {
+    console.error('Error generating menu plan:', error);
+    return null;
+  }
+}
+
+/**
+ * Experimental Kitchen - Generate new recipes or revive old ones (like Alain.AI Experimental Kitchen)
+ */
+export interface ExperimentalRecipeOptions {
+  sourceType: 'new' | 'revived' | 'variation';
+  sourceRecipeId?: string;
+  sourceRecipe?: any;
+  theme?: string;
+  cuisine?: string;
+  ingredients?: string[];
+  dietaryRestrictions?: string[];
+  notes?: string;
+}
+
+export async function generateExperimentalRecipe(
+  profile: { archetype?: string; cooking_skill?: string; dietary_restrictions?: string[] },
+  options: ExperimentalRecipeOptions
+): Promise<GeneratedRecipe | null> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return null;
+  }
+
+  let prompt = '';
+
+  if (options.sourceType === 'revived' && options.sourceRecipe) {
+    prompt = `Je bent de STOCKPIT Chef's Lab. Herstel en verbeter dit oude/onvoltooide recept:\n\n`;
+    prompt += `Origineel recept: ${options.sourceRecipe.title || 'Onbekend'}\n`;
+    if (options.sourceRecipe.description) prompt += `Beschrijving: ${options.sourceRecipe.description}\n`;
+    if (options.sourceRecipe.ingredients) prompt += `Ingrediënten: ${JSON.stringify(options.sourceRecipe.ingredients)}\n`;
+    if (options.sourceRecipe.instructions) prompt += `Instructies: ${JSON.stringify(options.sourceRecipe.instructions)}\n`;
+    prompt += `\nMaak dit recept compleet, modern en uitvoerbaar.`;
+  } else if (options.sourceType === 'variation' && options.sourceRecipe) {
+    prompt = `Je bent de STOCKPIT Chef's Lab. Maak een creatieve variatie op dit recept:\n\n`;
+    prompt += `Basis recept: ${options.sourceRecipe.title || 'Onbekend'}\n`;
+    if (options.theme) prompt += `Thema: ${options.theme}\n`;
+    if (options.cuisine) prompt += `Keuken: ${options.cuisine}\n`;
+    prompt += `\nMaak een originele, experimentele variatie die de kern behoudt maar nieuwe smaken toevoegt.`;
+  } else {
+    prompt = `Je bent de STOCKPIT Chef's Lab. Creëer een volledig nieuw, origineel recept.\n\n`;
+    if (options.theme) prompt += `Thema: ${options.theme}\n`;
+    if (options.cuisine) prompt += `Keuken: ${options.cuisine}\n`;
+    if (options.ingredients && options.ingredients.length > 0) {
+      prompt += `Gebruik deze ingrediënten: ${options.ingredients.join(', ')}\n`;
+    }
+    if (options.notes) prompt += `Notities: ${options.notes}\n`;
+  }
+
+  prompt += `\nGebruikersprofiel:
+- Archetype: ${profile.archetype || 'Niet gespecificeerd'}
+- Kookniveau: ${profile.cooking_skill || 'Niet gespecificeerd'}
+- Dieetbeperkingen: ${profile.dietary_restrictions?.join(', ') || 'Geen'}
+
+Genereer een compleet, experimenteel recept in JSON formaat:
+{
+  "title": "Recept naam",
+  "description": "Beschrijving (benadruk het experimentele aspect)",
+  "ingredients": [{"name": "ingrediënt", "quantity": "hoeveelheid", "unit": "eenheid"}],
+  "instructions": ["Stap 1", "Stap 2"],
+  "prep_time_minutes": 15,
+  "cook_time_minutes": 20,
+  "total_time_minutes": 35,
+  "difficulty": "Makkelijk",
+  "servings": 4,
+  "nutrition": {"protein": 25, "carbs": 40, "fat": 15},
+  "tags": ["Experimenteel", "tag2"]
+}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent de STOCKPIT Chef\'s Lab. Wees creatief en innovatief. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.9, // Higher temperature for creativity
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for experimental recipe:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const recipeData = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!recipeData) return null;
+
+    const imageUrl = generateRecipeImageUrl(recipeData.title || 'experimental recipe');
+
+    return {
+      name: recipeData.title || 'Experimenteel Recept',
+      description: recipeData.description || null,
+      image_url: imageUrl,
+      ingredients: (recipeData.ingredients || []).map((ing: any) =>
+        typeof ing === 'string'
+          ? { name: ing, quantity: '', unit: '' }
+          : { name: ing.name || '', quantity: ing.quantity || '', unit: ing.unit || '' }
+      ),
+      steps: recipeData.instructions || [],
+      prepTime: recipeData.prep_time_minutes || 0,
+      cookTime: recipeData.cook_time_minutes || 0,
+      totalTime: recipeData.total_time_minutes || 30,
+      difficulty: recipeData.difficulty || 'Gemiddeld',
+      servings: recipeData.servings || 4,
+      macros: recipeData.nutrition || { protein: 0, carbs: 0, fat: 0 },
+      tags: ['Experimenteel', ...(recipeData.tags || [])],
+      missingIngredients: [],
+      relevanceScore: 100,
+    } as GeneratedRecipe;
+  } catch (error) {
+    console.error('Error generating experimental recipe:', error);
+    return null;
+  }
+}
+
+/**
+ * Translate and localize recipe (like Alain.AI localization)
+ */
+export async function translateAndLocalizeRecipe(
+  recipe: {
+    title: string;
+    description?: string;
+    ingredients: any[];
+    instructions: any[];
+  },
+  targetLanguage: string,
+  targetUnits: 'metric' | 'imperial' = 'metric'
+): Promise<GeneratedRecipe | null> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return null;
+  }
+
+  const languageNames: Record<string, string> = {
+    nl: 'Nederlands',
+    fr: 'Frans',
+    de: 'Duits',
+    en: 'Engels',
+    es: 'Spaans',
+  };
+
+  const prompt = `Vertaal en lokaliseer dit recept:
+
+Origineel recept:
+Titel: ${recipe.title}
+Beschrijving: ${recipe.description || 'Geen'}
+Ingrediënten: ${JSON.stringify(recipe.ingredients)}
+Instructies: ${JSON.stringify(recipe.instructions)}
+
+Doel:
+- Taal: ${languageNames[targetLanguage] || targetLanguage}
+- Eenheden: ${targetUnits === 'imperial' ? 'Imperiaal (cups, ounces, etc.)' : 'Metrisch (gram, liter, etc.)'}
+
+Vertaal alle tekst naar ${languageNames[targetLanguage] || targetLanguage} en converteer eenheden naar ${targetUnits === 'imperial' ? 'imperiale eenheden' : 'metrische eenheden'}.
+
+Antwoord in JSON formaat:
+{
+  "title": "Vertaalde titel",
+  "description": "Vertaalde beschrijving",
+  "ingredients": [{"name": "vertaald ingrediënt", "quantity": "geconverteerde hoeveelheid", "unit": "geconverteerde eenheid"}],
+  "instructions": ["Vertaalde stap 1", "Vertaalde stap 2"]
+}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een expert in het vertalen en lokaliseren van recepten. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3, // Lower temperature for accurate translation
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for translation:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const recipeData = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!recipeData) return null;
+
+    return {
+      name: recipeData.title || recipe.title,
+      description: recipeData.description || recipe.description || null,
+      image_url: generateRecipeImageUrl(recipeData.title || recipe.title),
+      ingredients: (recipeData.ingredients || []).map((ing: any) =>
+        typeof ing === 'string'
+          ? { name: ing, quantity: '', unit: '' }
+          : { name: ing.name || '', quantity: ing.quantity || '', unit: ing.unit || '' }
+      ),
+      steps: recipeData.instructions || [],
+      prepTime: 0,
+      cookTime: 0,
+      totalTime: 30,
+      difficulty: 'Gemiddeld',
+      servings: 4,
+      macros: { protein: 0, carbs: 0, fat: 0 },
+      tags: [],
+      missingIngredients: [],
+      relevanceScore: 100,
+    } as GeneratedRecipe;
+  } catch (error) {
+    console.error('Error translating recipe:', error);
+    return null;
+  }
+}
+
+/**
+ * Analyze user preferences and generate predictions (like Alain.AI insights)
+ */
+export interface UserPreferenceAnalysis {
+  favoriteCategories: Array<{ category: string; count: number; percentage: number }>;
+  favoriteIngredients: Array<{ ingredient: string; count: number }>;
+  preferredDifficulty: string;
+  averageCookingTime: number;
+  dietaryTrends: Array<{ dietary: string; count: number }>;
+  seasonalPreferences: Record<string, number>;
+  recommendations: string[];
+  predictedPreferences: {
+    likelyToLike: string[];
+    suggestedRecipes: string[];
+    trends: string[];
+  };
+}
+
+export async function analyzeUserPreferences(
+  userId: string,
+  preferences: Array<{
+    recipe_id: string;
+    interaction_type: string;
+    rating?: number;
+    modifications?: any;
+    context?: any;
+    created_at: string;
+  }>,
+  allRecipes: Array<{ id: string; title: string; tags?: string[]; category?: string }>
+): Promise<UserPreferenceAnalysis | null> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return null;
+  }
+
+  // Aggregate data for analysis
+  const categoryCounts: Record<string, number> = {};
+  const ingredientCounts: Record<string, number> = {};
+  const difficultyCounts: Record<string, number> = {};
+  const cookingTimes: number[] = [];
+  const dietaryCounts: Record<string, number> = {};
+  const seasonalCounts: Record<string, number> = {};
+  const likedRecipes: string[] = [];
+  const cookedRecipes: string[] = [];
+
+  preferences.forEach((pref) => {
+    if (pref.interaction_type === 'like' || (pref.rating && pref.rating >= 4)) {
+      likedRecipes.push(pref.recipe_id);
+    }
+    if (pref.interaction_type === 'cook') {
+      cookedRecipes.push(pref.recipe_id);
+    }
+
+    // Extract context data
+    if (pref.context) {
+      if (pref.context.season) {
+        seasonalCounts[pref.context.season] = (seasonalCounts[pref.context.season] || 0) + 1;
+      }
+      if (pref.context.dietary) {
+        const dietary = Array.isArray(pref.context.dietary)
+          ? pref.context.dietary
+          : [pref.context.dietary];
+        dietary.forEach((d: string) => {
+          dietaryCounts[d] = (dietaryCounts[d] || 0) + 1;
+        });
+      }
+    }
+  });
+
+  // Find recipe details for liked/cooked recipes
+  const recipeDetails = allRecipes.filter((r) =>
+    likedRecipes.includes(r.id) || cookedRecipes.includes(r.id)
+  );
+
+  recipeDetails.forEach((recipe) => {
+    if (recipe.category) {
+      categoryCounts[recipe.category] = (categoryCounts[recipe.category] || 0) + 1;
+    }
+    if (recipe.tags) {
+      recipe.tags.forEach((tag) => {
+        if (['Makkelijk', 'Gemiddeld', 'Moeilijk'].includes(tag)) {
+          difficultyCounts[tag] = (difficultyCounts[tag] || 0) + 1;
+        }
+      });
+    }
+  });
+
+  const totalInteractions = preferences.length;
+  const favoriteCategories = Object.entries(categoryCounts)
+    .map(([category, count]) => ({
+      category,
+      count,
+      percentage: totalInteractions > 0 ? (count / totalInteractions) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const favoriteIngredients = Object.entries(ingredientCounts)
+    .map(([ingredient, count]) => ({ ingredient, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const preferredDifficulty =
+    Object.entries(difficultyCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Gemiddeld';
+
+  const averageCookingTime =
+    cookingTimes.length > 0
+      ? Math.round(cookingTimes.reduce((a, b) => a + b, 0) / cookingTimes.length)
+      : 30;
+
+  const dietaryTrends = Object.entries(dietaryCounts)
+    .map(([dietary, count]) => ({ dietary, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Use AI to generate recommendations and predictions
+  const analysisPrompt = `Analyseer deze gebruikersvoorkeuren en geef voorspellingen:
+
+Gebruikersdata:
+- Totaal interacties: ${totalInteractions}
+- Favoriete categorieën: ${favoriteCategories.map((c) => `${c.category} (${c.count}x)`).join(', ')}
+- Voorkeur moeilijkheidsgraad: ${preferredDifficulty}
+- Gemiddelde kooktijd: ${averageCookingTime} minuten
+- Dieettrends: ${dietaryTrends.map((d) => `${d.dietary} (${d.count}x)`).join(', ')}
+- Seizoensvoorkeuren: ${Object.entries(seasonalCounts)
+    .map(([s, c]) => `${s} (${c}x)`)
+    .join(', ')}
+
+Geef een analyse en voorspellingen in JSON formaat:
+{
+  "recommendations": ["Aanbeveling 1", "Aanbeveling 2"],
+  "predictedPreferences": {
+    "likelyToLike": ["Categorie/ingrediënt gebruiker waarschijnlijk leuk vindt"],
+    "suggestedRecipes": ["Type recepten om te proberen"],
+    "trends": ["Trends die de gebruiker volgt"]
+  }
+}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een data-analist voor STOCKPIT. Analyseer gebruikersvoorkeuren en geef voorspellingen. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: analysisPrompt,
+          },
+        ],
+        temperature: 0.5,
+        max_tokens: 1000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for preference analysis:', response.status);
+      // Return basic analysis without AI predictions
+      return {
+        favoriteCategories,
+        favoriteIngredients,
+        preferredDifficulty,
+        averageCookingTime,
+        dietaryTrends,
+        seasonalPreferences: seasonalCounts,
+        recommendations: [],
+        predictedPreferences: {
+          likelyToLike: [],
+          suggestedRecipes: [],
+          trends: [],
+        },
+      };
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const aiAnalysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+
+    return {
+      favoriteCategories,
+      favoriteIngredients,
+      preferredDifficulty,
+      averageCookingTime,
+      dietaryTrends,
+      seasonalPreferences: seasonalCounts,
+      recommendations: aiAnalysis.recommendations || [],
+      predictedPreferences: {
+        likelyToLike: aiAnalysis.predictedPreferences?.likelyToLike || [],
+        suggestedRecipes: aiAnalysis.predictedPreferences?.suggestedRecipes || [],
+        trends: aiAnalysis.predictedPreferences?.trends || [],
+      },
+    };
+  } catch (error) {
+    console.error('Error analyzing user preferences:', error);
+    // Return basic analysis without AI predictions
+    return {
+      favoriteCategories,
+      favoriteIngredients,
+      preferredDifficulty,
+      averageCookingTime,
+      dietaryTrends,
+      seasonalPreferences: seasonalCounts,
+      recommendations: [],
+      predictedPreferences: {
+        likelyToLike: [],
+        suggestedRecipes: [],
+        trends: [],
+      },
+    };
+  }
+}
+

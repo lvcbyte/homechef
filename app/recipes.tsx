@@ -11,6 +11,9 @@ import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { LeftoversGenerator } from '../components/recipes/LeftoversGenerator';
 import { RecipeScaling } from '../components/recipes/RecipeScaling';
 import { CookingMode } from '../components/recipes/CookingMode';
+import { RecipeVariations } from '../components/recipes/RecipeVariations';
+import { MenuMaker } from '../components/recipes/MenuMaker';
+import { ExperimentalKitchen } from '../components/recipes/ExperimentalKitchen';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
@@ -111,6 +114,7 @@ export default function RecipesScreen() {
   const [chefRadarLoadingMessage, setChefRadarLoadingMessage] = useState(CHEF_RADAR_LOADING_MESSAGES[0]);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [inventoryCount, setInventoryCount] = useState<number | null>(null);
+  const [inventory, setInventory] = useState<any[]>([]);
   const [chefRadarExpanded, setChefRadarExpanded] = useState(false);
   const [generatingMore, setGeneratingMore] = useState(false);
   const [cookingModeVisible, setCookingModeVisible] = useState(false);
@@ -253,13 +257,24 @@ export default function RecipesScreen() {
       
       setLoadingProgress(80);
 
-      // Get inventory count (non-blocking, can be 0 initially)
+      // Get inventory count and items (non-blocking, can be 0 initially)
       supabase
         .from('inventory')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .then(({ count }) => {
           setInventoryCount(count ?? 0);
+        });
+
+      // Fetch inventory items for AI features
+      supabase
+        .from('inventory')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .then(({ data }) => {
+          setInventory(data || []);
         });
 
       // Hide loading screen - page is ready to show
@@ -1553,6 +1568,50 @@ export default function RecipesScreen() {
                         onScaled={(ingredients, newServings) => {
                           setScaledIngredients(ingredients);
                           setScaledServings(newServings);
+                        }}
+                      />
+                    </View>
+                  )}
+
+                  {/* Recipe Variations */}
+                  {user && selectedRecipe && !selectedRecipe.recipe_id.startsWith('ai-') && !selectedRecipe.recipe_id.startsWith('leftovers-') && !selectedRecipe.recipe_id.startsWith('experimental-') && (
+                    <View style={styles.modalSection}>
+                      <RecipeVariations
+                        recipe={{
+                          id: selectedRecipe.recipe_id,
+                          title: selectedRecipe.title,
+                          description: selectedRecipe.description || undefined,
+                          ingredients: selectedRecipe.ingredients || [],
+                          instructions: selectedRecipe.instructions || [],
+                          prep_time_minutes: selectedRecipe.prep_time_minutes,
+                          cook_time_minutes: selectedRecipe.cook_time_minutes || undefined,
+                          total_time_minutes: selectedRecipe.total_time_minutes,
+                          difficulty: selectedRecipe.difficulty,
+                          servings: selectedRecipe.servings || undefined,
+                          nutrition: selectedRecipe.nutrition || undefined,
+                          tags: selectedRecipe.tags || undefined,
+                          category: selectedRecipe.category || undefined,
+                        }}
+                        onVariationCreated={(variation) => {
+                          const recipeDetail: RecipeDetail = {
+                            recipe_id: `variation-${Date.now()}`,
+                            title: variation.name,
+                            description: variation.description || null,
+                            author: 'STOCKPIT AI',
+                            image_url: variation.image_url || null,
+                            total_time_minutes: variation.totalTime || 30,
+                            difficulty: variation.difficulty || 'Gemiddeld',
+                            servings: variation.servings || 4,
+                            prep_time_minutes: variation.prepTime || 0,
+                            cook_time_minutes: variation.cookTime || variation.totalTime || 30,
+                            ingredients: variation.ingredients || [],
+                            instructions: variation.steps || [],
+                            nutrition: variation.macros || null,
+                            tags: variation.tags || [],
+                            category: variation.tags?.[0] || null,
+                            likes_count: 0,
+                          };
+                          setSelectedRecipe(recipeDetail);
                         }}
                       />
                     </View>
