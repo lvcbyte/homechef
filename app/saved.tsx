@@ -825,7 +825,7 @@ export default function SavedScreen() {
 
   const handleLike = async (recipeId: string) => {
     if (!user) {
-      router.push('/auth/sign-in');
+      router.push('/sign-in');
       return;
     }
 
@@ -1119,10 +1119,10 @@ export default function SavedScreen() {
             <View style={styles.authCard}>
               <Text style={styles.heroTitle}>Bewaar favorieten</Text>
               <Text style={styles.heroSubtitle}>Maak een account aan om recepten en lijsten te bewaren.</Text>
-              <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/auth/sign-in')}>
+              <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/sign-in')}>
                 <Text style={styles.primaryButtonText}>Sign in</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/auth/sign-up')}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/sign-up')}>
                 <Text style={styles.secondaryText}>Account maken</Text>
               </TouchableOpacity>
             </View>

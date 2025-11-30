@@ -678,7 +678,7 @@ export default function InventoryScreen() {
 
   const requireAuth = () => {
     if (!user) {
-      router.push('/auth/sign-in');
+      router.push('/sign-in');
       return false;
     }
     return true;
@@ -849,7 +849,7 @@ export default function InventoryScreen() {
           <TouchableOpacity
             style={styles.stockpitButton}
             onPress={async () => {
-              if (!user) return router.push('/auth/sign-in');
+              if (!user) return router.push('/sign-in');
               await supabase.from('scan_sessions').insert({ user_id: user.id, processed_status: 'pending' });
               router.push('/scan');
             }}
@@ -1065,7 +1065,7 @@ export default function InventoryScreen() {
                           <TouchableOpacity
                             style={styles.markUsed}
                             onPress={async () => {
-                              if (!user) return router.push('/auth/sign-in');
+                              if (!user) return router.push('/sign-in');
                               await supabase.from('inventory').delete().eq('id', item.id);
                               fetchInventory();
                             }}
@@ -1133,10 +1133,10 @@ export default function InventoryScreen() {
               <Text style={styles.topIntroSubtitle}>
                 Log in om je voorraad te synchroniseren en recepten 1-op-1 te laten aansluiten.
               </Text>
-              <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/auth/sign-in')}>
+              <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/sign-in')}>
                 <Text style={styles.primaryButtonText}>Sign in</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/auth/sign-up')}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/sign-up')}>
                 <Text style={styles.secondaryText}>Account maken</Text>
               </TouchableOpacity>
             </View>

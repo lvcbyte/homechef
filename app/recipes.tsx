@@ -901,7 +901,7 @@ export default function RecipesScreen() {
 
   const handleLike = async (recipeId: string) => {
     if (!user) {
-      router.push('/auth/sign-in');
+      router.push('/sign-in');
       return;
     }
 
@@ -997,7 +997,7 @@ export default function RecipesScreen() {
             </Text>
             <TouchableOpacity
               style={styles.authButton}
-              onPress={() => router.push('/auth/sign-in')}
+              onPress={() => router.push('/sign-in')}
             >
               <Text style={styles.authButtonText}>Inloggen</Text>
             </TouchableOpacity>

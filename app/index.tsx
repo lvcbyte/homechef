@@ -498,7 +498,7 @@ export default function Home() {
 
   const handleLike = async (recipeId: string) => {
     if (!user) {
-      router.push('/auth/sign-in');
+      router.push('/sign-in');
       return;
     }
 

@@ -272,7 +272,7 @@ export default function ScanScreen() {
 
   const ensureAuth = () => {
     if (!user) {
-      navigateToRoute(router, '/auth/sign-in');
+      navigateToRoute(router, '/sign-in');
       return false;
     }
     return true;
@@ -765,10 +765,10 @@ export default function ScanScreen() {
     <View style={styles.authCard}>
       <Text style={styles.heroTitle}>Activeer je STOCKPIT</Text>
       <Text style={styles.heroSubtitle}>Log in om barcodes, shelf shots en snelle invoer te combineren.</Text>
-      <TouchableOpacity style={styles.primaryButton} onPress={() => navigateToRoute(router, '/auth/sign-in')}>
+      <TouchableOpacity style={styles.primaryButton} onPress={() => navigateToRoute(router, '/sign-in')}>
         <Text style={styles.primaryButtonText}>Sign in</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.secondaryButton} onPress={() => navigateToRoute(router, '/auth/sign-up')}>
+      <TouchableOpacity style={styles.secondaryButton} onPress={() => navigateToRoute(router, '/sign-up')}>
         <Text style={styles.secondaryText}>Account maken</Text>
       </TouchableOpacity>
     </View>
