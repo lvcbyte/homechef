@@ -166,7 +166,13 @@ export default function ProfileScreen() {
                   <Text style={styles.accountName}>{displayName}</Text>
                   <Text style={styles.accountEmail}>{user.email}</Text>
                 </View>
-                <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+                <TouchableOpacity 
+                  style={styles.signOutButton} 
+                  onPress={async () => {
+                    await signOut();
+                    router.replace('/welcome');
+                  }}
+                >
                   <Text style={styles.signOutText}>Sign out</Text>
                 </TouchableOpacity>
               </View>
@@ -364,6 +370,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    zIndex: 10,
   },
   signOutText: {
     color: '#e11d48',
