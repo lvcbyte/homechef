@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
+import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
@@ -608,17 +609,18 @@ export default function Home() {
                 <Ionicons name="shield" size={20} color="#047857" />
               </Pressable>
             )}
-            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-              {user ? (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarInitial}>
-                    {user.email?.charAt(0).toUpperCase() ?? 'U'}
-                  </Text>
-                </View>
-              ) : (
+            {user ? (
+              <HeaderAvatar
+                userId={user.id}
+                userEmail={user.email}
+                avatarUrl={profile?.avatar_url}
+                showNotificationBadge={true}
+              />
+            ) : (
+              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
                 <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              )}
-            </Pressable>
+              </Pressable>
+            )}
           </View>
         </View>
 

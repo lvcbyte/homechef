@@ -31,7 +31,7 @@ import { useAuth } from '../contexts/AuthContext';
 // This prevents native builds from trying to load web-only dependencies
 import { supabase } from '../lib/supabase';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
-import { generateRecipeFromDescription, runInventoryScan } from '../services/ai';
+import { generateRecipeFromDescription, runInventoryScan, analyzeShelfPhoto, type ShelfPhotoAnalysisResult } from '../services/ai';
 import type { InventoryItem } from '../types/app';
 
 interface LocalPhoto {
@@ -206,6 +206,13 @@ export default function ScanScreen() {
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [savingProgress, setSavingProgress] = useState(0);
   const [savingMessage, setSavingMessage] = useState('');
+  // AR Recognition states
+  const [arMode, setArMode] = useState(false);
+  const [arDetectedItems, setArDetectedItems] = useState<ShelfPhotoAnalysisResult[]>([]);
+  const [arProcessing, setArProcessing] = useState(false);
+  const [arReviewModalVisible, setArReviewModalVisible] = useState(false);
+  const [arSelectedItems, setArSelectedItems] = useState<Set<number>>(new Set());
+  const [arPhotoUri, setArPhotoUri] = useState<string | null>(null);
   const visibleMonthCalendar = useMemo(
     () => getMonthCalendar(expiryMonthOffset),
     [expiryMonthOffset]
@@ -516,12 +523,33 @@ export default function ScanScreen() {
   const handlePhotoCapture = async () => {
     const session = await ensureSession();
     if (!session || !user) return;
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (result.canceled) return;
+    
+    // Use AR mode for better recognition
+    setArMode(true);
+    setArProcessing(true);
+    
+    const result = await ImagePicker.launchCameraAsync({ 
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    
+    if (result.canceled) {
+      setArMode(false);
+      setArProcessing(false);
+      return;
+    }
+    
     const asset = result.assets?.[0];
-    if (!asset?.uri) return;
+    if (!asset?.uri) {
+      setArMode(false);
+      setArProcessing(false);
+      return;
+    }
 
+    setArPhotoUri(asset.uri);
     setUploading(true);
+    
+    // Upload to storage
     const filePath = `${user.id}/${session}/${Date.now()}.jpg`;
     const file = await fetch(asset.uri).then((res) => res.blob());
     const { error } = await supabase.storage
@@ -530,28 +558,119 @@ export default function ScanScreen() {
 
     if (error) {
       Alert.alert('Upload mislukt', error.message);
-    } else {
-      await supabase.from('scan_photos').insert({
-        session_id: session,
-        storage_path: filePath,
-      });
-      const { data: publicUrlData } = supabase.storage
-        .from('inventory-scans')
-        .getPublicUrl(filePath);
-      const publicUrl = publicUrlData?.publicUrl;
+      setArMode(false);
+      setArProcessing(false);
+      setUploading(false);
+      return;
+    }
 
-      setCapturedPhotos((prev) => [...prev, { id: filePath, preview: asset.uri }]);
+    await supabase.from('scan_photos').insert({
+      session_id: session,
+      storage_path: filePath,
+    });
+    
+    const { data: publicUrlData } = supabase.storage
+      .from('inventory-scans')
+      .getPublicUrl(filePath);
+    const publicUrl = publicUrlData?.publicUrl;
 
-      if (publicUrl) {
-        try {
-          const detectedItems = await runInventoryScan([publicUrl]);
-          await insertDetectedInventoryItems(detectedItems, 'shelf-scan');
-        } catch (scanError) {
-          console.error('Error running shelf scan AI:', scanError);
+    setCapturedPhotos((prev) => [...prev, { id: filePath, preview: asset.uri }]);
+
+    if (publicUrl) {
+      try {
+        // Use improved AR recognition with analyzeShelfPhoto
+        const detectedItems = await analyzeShelfPhoto(publicUrl);
+        
+        if (detectedItems.length > 0) {
+          // Show AR review modal with detected items
+          setArDetectedItems(detectedItems);
+          setArSelectedItems(new Set(detectedItems.map((_, idx) => idx))); // Select all by default
+          setArReviewModalVisible(true);
+        } else {
+          // Fallback to old method if AR recognition fails
+          const fallbackItems = await runInventoryScan([publicUrl]);
+          await insertDetectedInventoryItems(fallbackItems, 'shelf-scan');
         }
+      } catch (scanError) {
+        console.error('Error running AR shelf scan:', scanError);
+        Alert.alert('Fout', 'Kon foto niet analyseren. Probeer opnieuw.');
       }
     }
+    
+    setArProcessing(false);
     setUploading(false);
+  };
+
+  const handleARItemsConfirm = async () => {
+    if (!user || arDetectedItems.length === 0) return;
+    
+    setArProcessing(true);
+    let successCount = 0;
+    
+    for (const idx of arSelectedItems) {
+      const item = arDetectedItems[idx];
+      if (!item) continue;
+      
+      try {
+        // Match with product catalog
+        const { data: catalogMatches } = await supabase.rpc('match_product_catalog', {
+          search_term: item.item_name,
+        });
+        
+        const bestMatch = catalogMatches?.[0];
+        
+        // Detect category
+        const { data: categoryData } = await supabase.rpc('detect_category', {
+          item_name: item.item_name,
+        });
+        const categorySuggestion = categoryData?.[0];
+        
+        // Estimate expiry
+        const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
+          category_slug: item.category || categorySuggestion?.category || 'pantry',
+        });
+        
+        const { error: insertError } = await supabase.from('inventory').insert({
+          user_id: user.id,
+          name: item.item_name,
+          category: item.category || categorySuggestion?.category || 'pantry',
+          quantity_approx: item.quantity_estimate || null,
+          confidence_score: item.confidence_score / 100, // Convert to 0-1 scale
+          catalog_product_id: bestMatch?.id || null,
+          catalog_price: bestMatch?.price || null,
+          catalog_image_url: bestMatch?.image_url || null,
+          expires_at: expiryData || null,
+        });
+        
+        if (!insertError) {
+          successCount++;
+        }
+      } catch (error) {
+        console.error('Error adding AR detected item:', error);
+      }
+    }
+    
+    setArProcessing(false);
+    setArReviewModalVisible(false);
+    setArMode(false);
+    setArDetectedItems([]);
+    setArSelectedItems(new Set());
+    setArPhotoUri(null);
+    
+    if (successCount > 0) {
+      Alert.alert(
+        'Items toegevoegd',
+        `${successCount} ${successCount === 1 ? 'item is' : 'items zijn'} toegevoegd aan je voorraad.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => navigateToRoute(router, '/inventory'),
+          },
+        ]
+      );
+    } else {
+      Alert.alert('Geen items toegevoegd', 'Er is een fout opgetreden bij het toevoegen van de items.');
+    }
   };
 
   const detectCategory = async (name: string) => {
@@ -971,7 +1090,7 @@ export default function ScanScreen() {
           
           {/* Overlay is shown for both web and native - pointer-events: none so it doesn't block camera */}
           {Platform.OS === 'web' || permission?.granted ? (
-            <View style={styles.barcodeOverlay} pointerEvents="box-none">
+            <View style={[styles.barcodeOverlay, { pointerEvents: 'box-none' }]}>
               <Animated.View 
                 style={[
                   styles.barcodeFrame,
@@ -983,9 +1102,9 @@ export default function ScanScreen() {
                       inputRange: [0, 1],
                       outputRange: [1, showScanAnimation ? 0.7 : 1],
                     }),
+                    pointerEvents: 'none',
                   },
                 ]}
-                pointerEvents="none"
               >
                 {/* Top-left corner */}
                 <View style={[styles.barcodeCorner, styles.cornerTopLeft]} />
@@ -1011,9 +1130,9 @@ export default function ScanScreen() {
                             }),
                           },
                         ],
+                        pointerEvents: 'none',
                       },
                     ]}
-                    pointerEvents="none"
                   >
                     <View style={styles.scanningLine} />
                   </Animated.View>
@@ -1034,9 +1153,9 @@ export default function ScanScreen() {
                             }),
                           },
                         ],
+                        pointerEvents: 'none',
                       },
                     ]}
-                    pointerEvents="none"
                   >
                     <View style={[styles.scanningLine, styles.scanningLineActive]} />
                   </Animated.View>
@@ -1044,20 +1163,19 @@ export default function ScanScreen() {
               </Animated.View>
               
               {showScanAnimation ? (
-                <View style={styles.scanningStatus} pointerEvents="none">
+                <View style={[styles.scanningStatus, { pointerEvents: 'none' }]}>
                   <ActivityIndicator size="large" color="#047857" />
                   <Text style={styles.scanningText}>Barcode gedetecteerd...</Text>
                   <Text style={styles.scanningSubtext}>Product wordt opgezocht</Text>
                 </View>
               ) : (
-                <Text style={styles.barcodeHint} pointerEvents="none">Richt de camera op de barcode</Text>
+                <Text style={[styles.barcodeHint, { pointerEvents: 'none' }]}>Richt de camera op de barcode</Text>
               )}
               
               {/* Flash toggle button */}
               <Pressable
-                style={styles.flashButton}
+                style={[styles.flashButton, { pointerEvents: 'auto' }]}
                 onPress={() => setFlashEnabled(!flashEnabled)}
-                pointerEvents="auto"
               >
                 <View style={[styles.flashButtonInner, flashEnabled && styles.flashButtonActive]}>
                   <Ionicons 
@@ -1069,7 +1187,7 @@ export default function ScanScreen() {
               </Pressable>
               
               {/* Close button */}
-              <View style={styles.closeOverlay} pointerEvents="box-none">
+              <View style={[styles.closeOverlay, { pointerEvents: 'box-none' }]}>
                 <Pressable 
                   onPress={() => {
                     setBarcodeMode(false);
@@ -1081,7 +1199,7 @@ export default function ScanScreen() {
                     scanningLineAnimation.setValue(0);
                   }}
                   disabled={showScanAnimation}
-                  pointerEvents="auto"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   <View style={[styles.closeButton, showScanAnimation && styles.closeButtonDisabled]}>
                     <Ionicons name="close" size={24} color="#fff" />
@@ -1781,6 +1899,136 @@ export default function ScanScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* AR Recognition Review Modal */}
+      <Modal
+        visible={arReviewModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => {
+          setArReviewModalVisible(false);
+          setArMode(false);
+        }}
+      >
+        <SafeAreaView style={styles.productDetailBackdrop}>
+          <Pressable
+            style={styles.productDetailBackdropPressable}
+            onPress={() => {
+              setArReviewModalVisible(false);
+              setArMode(false);
+            }}
+          />
+          <View style={styles.productDetailCard}>
+            <View style={styles.productDetailHeader}>
+              <Text style={styles.productDetailTitle}>📸 AR Herkenning</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setArReviewModalVisible(false);
+                  setArMode(false);
+                }}
+                style={styles.productDetailClose}
+              >
+                <Ionicons name="close" size={24} color="#0f172a" />
+              </TouchableOpacity>
+            </View>
+
+            {arPhotoUri && (
+              <Image source={{ uri: arPhotoUri }} style={styles.arPreviewImage} />
+            )}
+
+            <ScrollView style={styles.productDetailScrollView} contentContainerStyle={styles.productDetailScrollContent}>
+              <Text style={styles.modalSubtitle}>
+                {arDetectedItems.length} {arDetectedItems.length === 1 ? 'item gedetecteerd' : 'items gedetecteerd'}
+              </Text>
+              <Text style={[styles.sectionSub, { marginBottom: 16 }]}>
+                Selecteer de items die je wilt toevoegen aan je voorraad:
+              </Text>
+
+              {arDetectedItems.map((item, idx) => {
+                const isSelected = arSelectedItems.has(idx);
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      styles.matchCard,
+                      isSelected && styles.matchCardSelected,
+                      { marginBottom: 12 },
+                    ]}
+                    onPress={() => {
+                      const newSelected = new Set(arSelectedItems);
+                      if (isSelected) {
+                        newSelected.delete(idx);
+                      } else {
+                        newSelected.add(idx);
+                      }
+                      setArSelectedItems(newSelected);
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <Text style={styles.matchCardTitle}>{item.item_name}</Text>
+                        {isSelected && (
+                          <Ionicons name="checkmark-circle" size={20} color="#047857" />
+                        )}
+                      </View>
+                      {item.quantity_estimate && (
+                        <Text style={styles.matchCardSubtitle}>Hoeveelheid: {item.quantity_estimate}</Text>
+                      )}
+                      {item.category && (
+                        <Text style={styles.matchCardSubtitle}>Categorie: {getCategoryLabel(item.category)}</Text>
+                      )}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <View
+                          style={{
+                            backgroundColor: item.confidence_score > 80 ? '#10b981' : item.confidence_score > 60 ? '#f59e0b' : '#ef4444',
+                            paddingHorizontal: 8,
+                            paddingVertical: 2,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>
+                            {item.confidence_score}% zekerheid
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  (arProcessing || arSelectedItems.size === 0) && { opacity: 0.6 },
+                ]}
+                disabled={arProcessing || arSelectedItems.size === 0}
+                onPress={handleARItemsConfirm}
+              >
+                {arProcessing ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.modalButtonText}>Items toevoegen...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.modalButtonText}>
+                    {arSelectedItems.size} {arSelectedItems.size === 1 ? 'item toevoegen' : 'items toevoegen'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: 'transparent', marginTop: 8 }]}
+                onPress={() => {
+                  setArReviewModalVisible(false);
+                  setArMode(false);
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: '#64748b' }]}>Annuleren</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -2526,6 +2774,12 @@ const styles = StyleSheet.create({
   },
   productDetailScrollContent: {
     paddingBottom: 40,
+  },
+  arPreviewImage: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#f1f5f9',
+    resizeMode: 'cover',
   },
   productDetailClose: {
     position: 'absolute',

@@ -506,7 +506,7 @@ export function QuaggaScanner({ onDetected, onError, style, flashEnabled = false
       style={[styles.container, style]}
       // @ts-ignore - web-only prop
       id="quagga-parent"
-      pointerEvents="box-none"
+      style={{ pointerEvents: 'box-none' }}
     />
   );
 }

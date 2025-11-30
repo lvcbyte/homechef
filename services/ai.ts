@@ -638,6 +638,159 @@ Genereer een boodschappenlijst in JSON:
   }
 }
 
+// Generate leftovers recipes using AI
+export async function generateLeftoversRecipes(
+  inventory: Array<{ name: string; quantity_approx?: string; expires_at?: string; category?: string }>,
+  profile: { archetype?: string; cooking_skill?: string; dietary_restrictions?: string[] },
+  count: number = 1
+): Promise<GeneratedRecipe[]> {
+  if (!OPENROUTER_KEY) {
+    console.warn('OpenRouter not configured');
+    return [];
+  }
+
+  // Focus on items expiring soon (within 7 days)
+  const expiringItems = inventory.filter(item => {
+    if (!item.expires_at) return false;
+    const expiryDate = new Date(item.expires_at);
+    const daysUntilExpiry = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return daysUntilExpiry >= 0 && daysUntilExpiry <= 7;
+  });
+
+  if (expiringItems.length === 0) {
+    return [];
+  }
+
+  const inventoryList = expiringItems.map(item => 
+    `${item.name}${item.quantity_approx ? ` (${item.quantity_approx})` : ''} - vervalt: ${new Date(item.expires_at!).toLocaleDateString('nl-NL')}`
+  ).join('\n');
+
+  const prompt = `Je bent een zero-waste chef expert voor STOCKPIT. De gebruiker heeft restjes die bijna verlopen.
+
+Restjes die gebruikt moeten worden:
+${inventoryList}
+
+Gebruikersprofiel:
+- Archetype: ${profile.archetype || 'Niet gespecificeerd'}
+- Kookniveau: ${profile.cooking_skill || 'Niet gespecificeerd'}
+- Dieetbeperkingen: ${profile.dietary_restrictions?.join(', ') || 'Geen'}
+
+Genereer precies ${count} originele, praktische recept${count === 1 ? '' : 'en'} die:
+1. Zoveel mogelijk gebruik maken van de restjes die bijna verlopen
+2. Zero-waste zijn (geen verspilling)
+3. Passen bij het kookniveau en archetype
+4. Rekening houden met dieetbeperkingen
+5. Realistisch en uitvoerbaar zijn
+
+Geef voor elk recept:
+- Titel (Nederlands, focus op zero-waste/restjes)
+- Korte beschrijving (1-2 zinnen, benadruk dat het restjes gebruikt)
+- Ingrediëntenlijst (met hoeveelheden, focus op restjes)
+- Stap-voor-stap instructies (genummerd)
+- Bereidingstijd in minuten
+- Moeilijkheidsgraad (Makkelijk, Gemiddeld, Moeilijk)
+- Aantal porties
+- Voedingswaarden (eiwitten, koolhydraten, vetten in gram per portie)
+
+Antwoord in JSON formaat:
+{
+  "recipes": [
+    {
+      "title": "Recept naam (met restjes focus)",
+      "description": "Korte beschrijving die benadrukt dat het restjes gebruikt",
+      "ingredients": [
+        {"name": "restje ingrediënt", "quantity": "hoeveelheid", "unit": "eenheid"},
+        {"name": "ander ingrediënt", "quantity": "hoeveelheid", "unit": "eenheid"}
+      ],
+      "instructions": ["Stap 1", "Stap 2"],
+      "prep_time_minutes": 15,
+      "cook_time_minutes": 20,
+      "total_time_minutes": 35,
+      "difficulty": "Makkelijk",
+      "servings": 4,
+      "nutrition": {
+        "protein": 25,
+        "carbs": 40,
+        "fat": 15
+      },
+      "tags": ["Zero-Waste", "Restjes", "tag2"]
+    }
+  ]
+}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een zero-waste chef expert. Antwoord altijd in geldig JSON formaat.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.8, // Slightly higher for creativity
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('OpenRouter API error for leftovers recipes:', response.status);
+      return [];
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '{"recipes": []}';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const payload = jsonMatch ? JSON.parse(jsonMatch[0]) : { recipes: [] };
+
+    return (payload.recipes ?? []).map((recipe: any) => {
+      const inventoryHits = (recipe.ingredients || []).filter((ingredient: any) =>
+        expiringItems.some((item) => 
+          item.name.toLowerCase().includes((ingredient.name || ingredient).toLowerCase()) ||
+          (ingredient.name || ingredient).toLowerCase().includes(item.name.toLowerCase())
+        )
+      ).length;
+
+      const imageUrl = generateRecipeImageUrl(recipe.title);
+
+      return {
+        name: recipe.title,
+        description: recipe.description,
+        image_url: imageUrl,
+        ingredients: (recipe.ingredients || []).map((ing: any) => 
+          typeof ing === 'string' 
+            ? { name: ing, quantity: '', unit: '' }
+            : { name: ing.name || '', quantity: ing.quantity || '', unit: ing.unit || '' }
+        ),
+        steps: recipe.instructions || [],
+        prepTime: recipe.prep_time_minutes || 0,
+        cookTime: recipe.cook_time_minutes || 0,
+        totalTime: recipe.total_time_minutes || 30,
+        difficulty: recipe.difficulty || 'Gemiddeld',
+        servings: recipe.servings || 4,
+        macros: recipe.nutrition || { protein: 0, carbs: 0, fat: 0 },
+        missingIngredients: [],
+        relevanceScore: inventoryHits * 20, // Higher score for leftovers recipes
+        tags: recipe.tags || ['Zero-Waste', 'Restjes'],
+      } as GeneratedRecipe;
+    });
+  } catch (error) {
+    console.error('Error generating leftovers recipes:', error);
+    return [];
+  }
+}
+
 // Chat with AI assistant about inventory and recipes
 export async function chatWithAI(
   message: string,
@@ -772,6 +925,132 @@ BELANGRIJK:
     }
     
     return `Er is een fout opgetreden: ${error?.message || 'Onbekende fout'}. Controleer de console voor meer details.`;
+  }
+}
+
+/**
+ * Improve voice transcription with AI
+ * Takes a raw transcription and improves it for better parsing
+ */
+export async function transcribeVoiceCommand(rawTranscript: string): Promise<string> {
+  if (!rawTranscript || rawTranscript.trim().length === 0) {
+    return rawTranscript;
+  }
+
+  if (!OPENROUTER_KEY) {
+    // If no AI available, return original
+    return rawTranscript;
+  }
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een expert in het verbeteren van spraaktranscripties voor Nederlandse commando\'s. Corrigeer spelfouten, voeg ontbrekende woorden toe, en zorg dat het commando duidelijk is. Antwoord alleen met de verbeterde transcriptie, zonder extra uitleg.',
+          },
+          {
+            role: 'user',
+            content: `Verbeter deze spraaktranscriptie voor een voorraadbeheer commando: "${rawTranscript}"`,
+          },
+        ],
+        temperature: 0.3, // Lower temperature for more accurate corrections
+        max_tokens: 200,
+      }),
+    });
+
+    if (!response.ok) {
+      return rawTranscript; // Return original on error
+    }
+
+    const result = await response.json();
+    const improved = result.choices?.[0]?.message?.content?.trim();
+    
+    return improved || rawTranscript;
+  } catch (error) {
+    console.error('Error improving transcription:', error);
+    return rawTranscript; // Return original on error
+  }
+}
+
+/**
+ * Parse voice command with AI to extract inventory items
+ * Returns array of items with name and quantity
+ */
+export async function parseVoiceCommandWithAI(command: string): Promise<Array<{ name: string; quantity?: string }>> {
+  if (!command || command.trim().length === 0) {
+    return [];
+  }
+
+  if (!OPENROUTER_KEY) {
+    return [];
+  }
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://stockpit.app',
+        'X-Title': 'STOCKPIT',
+      },
+      body: JSON.stringify({
+        model: FREE_LLM_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'Je bent een expert in het parsen van Nederlandse spraakcommando\'s voor voorraadbeheer. Extracteer alle items en hoeveelheden uit het commando. Antwoord ALLEEN met geldig JSON, geen andere tekst.',
+          },
+          {
+            role: 'user',
+            content: `Parseer dit commando en extracteer alle items met hoeveelheden: "${command}"
+
+Antwoord in dit JSON formaat:
+{
+  "items": [
+    {"name": "item naam", "quantity": "hoeveelheid"},
+    {"name": "ander item", "quantity": "hoeveelheid"}
+  ]
+}
+
+Voorbeelden:
+- "voeg een banaan toe" -> {"items": [{"name": "banaan", "quantity": "1"}]}
+- "twee uien en één kilo rijst" -> {"items": [{"name": "ui", "quantity": "2"}, {"name": "rijst", "quantity": "1 kg"}]}
+- "drie appels" -> {"items": [{"name": "appel", "quantity": "3"}]}`,
+          },
+        ],
+        temperature: 0.2, // Low temperature for consistent parsing
+        max_tokens: 300,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content;
+    
+    if (!content) {
+      return [];
+    }
+
+    const parsed = JSON.parse(content);
+    return parsed.items || [];
+  } catch (error) {
+    console.error('Error parsing voice command with AI:', error);
+    return [];
   }
 }
 

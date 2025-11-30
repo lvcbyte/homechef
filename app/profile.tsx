@@ -5,9 +5,15 @@ import { Alert, Image, Platform, Pressable, ScrollView, StatusBar, StyleSheet, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
+import { NotificationCenter } from '../components/notifications/NotificationCenter';
+import { BadgesAndChallenges } from '../components/gamification/BadgesAndChallenges';
+import { FamilySharing } from '../components/family/FamilySharing';
+import { AvatarUpload, uploadAvatarImage } from '../components/profile/AvatarUpload';
+import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { navigateToRoute } from '../utils/navigation';
+import { getUnreadNotificationCount, triggerExpiryNotificationsCheck } from '../services/notifications';
 
 const archetypes = [
   {
@@ -65,6 +71,9 @@ export default function ProfileScreen() {
   const [selectedRestrictions, setSelectedRestrictions] = useState<string[]>(['Gluten-Free']);
   const [skillLevel, setSkillLevel] = useState('Intermediate');
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'badges' | 'family'>('profile');
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -72,6 +81,30 @@ export default function ProfileScreen() {
     setSelectedRestrictions((profile.dietary_restrictions as string[]) ?? []);
     setSkillLevel(profile.cooking_skill ?? 'Intermediate');
   }, [profile]);
+
+  // Fetch unread notification count
+  useEffect(() => {
+    if (user) {
+      loadUnreadCount();
+      
+      // Refresh count when switching to notifications tab
+      if (activeTab === 'notifications') {
+        // Trigger expiry notifications check when user opens notifications
+        triggerExpiryNotificationsCheck().catch(console.error);
+        loadUnreadCount();
+      }
+    }
+  }, [user, activeTab]);
+
+  const loadUnreadCount = async () => {
+    if (!user) return;
+    try {
+      const count = await getUnreadNotificationCount(user.id);
+      setUnreadNotificationCount(count);
+    } catch (error) {
+      console.error('Error loading unread count:', error);
+    }
+  };
 
   const toggleRestriction = (restriction: string) => {
     setSelectedRestrictions((prev) =>
@@ -90,11 +123,27 @@ export default function ProfileScreen() {
     }
     setSaving(true);
     try {
+      // Upload avatar first if there's a local image
+      let avatarUrl = profile?.avatar_url || null;
+      if (localAvatarUri) {
+        try {
+          avatarUrl = await uploadAvatarImage(user.id, localAvatarUri, profile?.avatar_url || null);
+          setLocalAvatarUri(null); // Clear local URI after successful upload
+        } catch (avatarError: any) {
+          console.error('Error uploading avatar:', avatarError);
+          Alert.alert('Fout', `Kon profielfoto niet uploaden: ${avatarError.message || 'Onbekende fout'}`);
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Save profile preferences
       const { error } = await supabase.from('profiles').upsert({
         id: user.id,
         archetype: selectedArchetype,
         dietary_restrictions: selectedRestrictions,
         cooking_skill: skillLevel,
+        avatar_url: avatarUrl, // Include avatar URL in update
       }, {
         onConflict: 'id'
       });
@@ -109,7 +158,7 @@ export default function ProfileScreen() {
       // Refresh profile in AuthContext
       await refreshProfile();
       
-      Alert.alert('Opgeslagen', 'Je voorkeuren zijn opgeslagen en worden nu toegepast op je feed.');
+      Alert.alert('Opgeslagen', 'Je voorkeuren en profielfoto zijn opgeslagen!');
     } catch (err) {
       console.error('Exception saving profile:', err);
       Alert.alert('Fout', 'Er is een fout opgetreden. Probeer het opnieuw.');
@@ -145,22 +194,94 @@ export default function ProfileScreen() {
                 <Ionicons name="shield" size={20} color="#047857" />
               </Pressable>
             )}
-            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-              {user ? (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarInitial}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>
-                </View>
-              ) : (
+            {user ? (
+              <HeaderAvatar
+                userId={user.id}
+                userEmail={user.email}
+                avatarUrl={profile?.avatar_url}
+                showNotificationBadge={true}
+              />
+            ) : (
+              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
                 <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              )}
-            </Pressable>
+              </Pressable>
+            )}
           </View>
         </View>
+
+        {/* Tabs */}
+        {user && (
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'profile' && styles.tabActive]}
+              onPress={() => setActiveTab('profile')}
+            >
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={activeTab === 'profile' ? '#047857' : '#64748b'}
+              />
+              <Text style={[styles.tabText, activeTab === 'profile' && styles.tabTextActive]}>
+                Profiel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'notifications' && styles.tabActive]}
+              onPress={() => setActiveTab('notifications')}
+            >
+              <View style={styles.tabIconContainer}>
+                <Ionicons
+                  name="notifications-outline"
+                  size={18}
+                  color={activeTab === 'notifications' ? '#047857' : '#64748b'}
+                />
+                {unreadNotificationCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.tabText, activeTab === 'notifications' && styles.tabTextActive]}>
+                Meldingen
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'badges' && styles.tabActive]}
+              onPress={() => setActiveTab('badges')}
+            >
+              <Ionicons
+                name="trophy-outline"
+                size={18}
+                color={activeTab === 'badges' ? '#047857' : '#64748b'}
+              />
+              <Text style={[styles.tabText, activeTab === 'badges' && styles.tabTextActive]}>
+                Badges
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'family' && styles.tabActive]}
+              onPress={() => setActiveTab('family')}
+            >
+              <Ionicons
+                name="people-outline"
+                size={18}
+                color={activeTab === 'family' ? '#047857' : '#64748b'}
+              />
+              <Text style={[styles.tabText, activeTab === 'family' && styles.tabTextActive]}>
+                Gezin
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {user ? (
             <>
-              <View style={styles.accountCard}>
+              {activeTab === 'profile' && (
+                <>
+                  <View style={styles.accountCard}>
                 <View>
                   <Text style={styles.accountEyebrow}>Account</Text>
                   <Text style={styles.accountName}>{displayName}</Text>
@@ -255,9 +376,37 @@ export default function ProfileScreen() {
                   })}
                 </View>
               </View>
+              
+              <AvatarUpload
+                userId={user.id}
+                currentAvatarUrl={profile?.avatar_url}
+                onAvatarChange={(localUri) => {
+                  setLocalAvatarUri(localUri);
+                }}
+                onAvatarUploaded={async (avatarUrl) => {
+                  await refreshProfile();
+                }}
+              />
+              
               <TouchableOpacity style={styles.primaryButton} onPress={handleSave} disabled={saving}>
                 <Text style={styles.primaryButtonText}>{saving ? 'Opslaan...' : 'Bewaar voorkeuren'}</Text>
               </TouchableOpacity>
+                </>
+              )}
+
+              {activeTab === 'notifications' && (
+                <NotificationCenter
+                  userId={user.id}
+                  onNotificationPress={(notification) => {
+                    // Refresh unread count after notification interaction
+                    loadUnreadCount();
+                  }}
+                />
+              )}
+
+              {activeTab === 'badges' && <BadgesAndChallenges userId={user.id} />}
+
+              {activeTab === 'family' && <FamilySharing userId={user.id} />}
             </>
           ) : (
             <View style={styles.authCard}>
@@ -508,6 +657,57 @@ const styles = StyleSheet.create({
     color: '#047857',
     fontWeight: '700',
     fontSize: 16,
+  },
+  tabs: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
+    gap: 8,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+  },
+  tabActive: {
+    backgroundColor: '#ecfdf5',
+  },
+  tabIconContainer: {
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    backgroundColor: '#f97316',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  notificationBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  tabTextActive: {
+    color: '#047857',
   },
 });
 

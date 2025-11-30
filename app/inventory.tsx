@@ -5,7 +5,9 @@ import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, ScrollView
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
+import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
+import { VoiceInput } from '../components/inventory/VoiceInput';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { InventoryRecord, InventoryItem } from '../types/app';
@@ -790,15 +792,18 @@ export default function InventoryScreen() {
                 <Ionicons name="shield" size={20} color="#047857" />
               </Pressable>
             )}
-            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-              {user ? (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarInitial}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>
-                </View>
-              ) : (
+            {user ? (
+              <HeaderAvatar
+                userId={user.id}
+                userEmail={user.email}
+                avatarUrl={profile?.avatar_url}
+                showNotificationBadge={true}
+              />
+            ) : (
+              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
                 <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              )}
-            </Pressable>
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -862,6 +867,17 @@ export default function InventoryScreen() {
           >
             <Text style={styles.stockpitTitle}>STOCKPIT MODE</Text>
           </TouchableOpacity>
+
+          {/* Voice Input */}
+          {user && (
+            <VoiceInput
+              userId={user.id}
+              onItemsAdded={async (count) => {
+                // Refresh inventory after items are added
+                await fetchInventory();
+              }}
+            />
+          )}
 
           {user ? (
             <>

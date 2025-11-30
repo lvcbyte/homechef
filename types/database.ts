@@ -10,6 +10,8 @@ export interface Database {
           dietary_restrictions: Json;
           cooking_skill: string | null;
           created_at: string;
+          avatar_url: string | null;
+          is_admin: boolean | null;
         };
         Insert: {
           id: string;
@@ -17,6 +19,8 @@ export interface Database {
           dietary_restrictions?: Json;
           cooking_skill?: string | null;
           created_at?: string;
+          avatar_url?: string | null;
+          is_admin?: boolean | null;
         };
         Update: {
           id?: string;
@@ -24,6 +28,8 @@ export interface Database {
           dietary_restrictions?: Json;
           cooking_skill?: string | null;
           created_at?: string;
+          avatar_url?: string | null;
+          is_admin?: boolean | null;
         };
       };
       inventory: {

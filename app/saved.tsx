@@ -5,7 +5,9 @@ import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Platform, Pres
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GlassDock } from '../components/navigation/GlassDock';
+import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
+import { PriceComparison } from '../components/shopping/PriceComparison';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateShoppingListFromInventory } from '../services/ai';
@@ -931,15 +933,18 @@ export default function SavedScreen() {
                 <Ionicons name="shield" size={20} color="#047857" />
               </Pressable>
             )}
-            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-              {user ? (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarInitial}>{user.email?.charAt(0).toUpperCase() ?? 'U'}</Text>
-                </View>
-              ) : (
+            {user ? (
+              <HeaderAvatar
+                userId={user.id}
+                userEmail={user.email}
+                avatarUrl={profile?.avatar_url}
+                showNotificationBadge={true}
+              />
+            ) : (
+              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
                 <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              )}
-            </Pressable>
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -1090,17 +1095,37 @@ export default function SavedScreen() {
                   {lists.map((list) => (
                     <View key={list.id} style={styles.listCard}>
                       <TouchableOpacity 
-                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                        style={styles.listCardContent}
                         onPress={() => handleListPress(list)}
+                        activeOpacity={0.7}
                       >
-                        <Ionicons name="list-circle" size={26} color="#047857" />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.listName}>{list.name}</Text>
-                          <Text style={styles.listMeta}>
-                            {list.items_count ?? '-'} items • {new Date(list.updated_at).toLocaleDateString()}
-                          </Text>
+                        <View style={styles.listCardHeader}>
+                          <View style={styles.listCardIconContainer}>
+                            <Ionicons name="list" size={24} color="#047857" />
+                          </View>
+                          <View style={styles.listCardInfo}>
+                            <Text style={styles.listName} numberOfLines={1}>{list.name}</Text>
+                            <View style={styles.listCardMetaRow}>
+                              <View style={styles.listCardMetaItem}>
+                                <Ionicons name="cube-outline" size={14} color="#64748b" />
+                                <Text style={styles.listMeta}>
+                                  {list.items_count ?? 0} {list.items_count === 1 ? 'item' : 'items'}
+                                </Text>
+                              </View>
+                              <Text style={styles.listMetaSeparator}>•</Text>
+                              <View style={styles.listCardMetaItem}>
+                                <Ionicons name="calendar-outline" size={14} color="#64748b" />
+                                <Text style={styles.listMeta}>
+                                  {new Date(list.updated_at).toLocaleDateString('nl-NL', { 
+                                    day: 'numeric', 
+                                    month: 'short' 
+                                  })}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                          <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
                         </View>
-                        <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
                       </TouchableOpacity>
                       <View style={styles.listCardActions}>
                         <TouchableOpacity
@@ -1109,17 +1134,21 @@ export default function SavedScreen() {
                             handleEditList(list);
                           }}
                           style={styles.listActionButton}
+                          activeOpacity={0.7}
                         >
-                          <Ionicons name="create-outline" size={18} color="#047857" />
+                          <Ionicons name="create-outline" size={20} color="#047857" />
+                          <Text style={styles.listActionButtonText}>Bewerken</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={(e) => {
                             e.stopPropagation();
                             handleDeleteList(list.id, list.name);
                           }}
-                          style={styles.listActionButton}
+                          style={[styles.listActionButton, styles.listActionButtonDelete]}
+                          activeOpacity={0.7}
                         >
-                          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                          <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                          <Text style={[styles.listActionButtonText, styles.listActionButtonTextDelete]}>Verwijderen</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -1467,26 +1496,27 @@ export default function SavedScreen() {
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} style={styles.listDetailItems}>
                 {filteredItems.map((item) => (
-                  <View key={item.id} style={[styles.listDetailItem, item.completed && styles.listDetailItemCompleted]}>
-                    <TouchableOpacity
-                      style={styles.listDetailCheckbox}
-                      onPress={() => handleToggleItemComplete(item.id, item.completed)}
-                    >
-                      <Ionicons
-                        name={item.completed ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={24}
-                        color={item.completed ? '#047857' : '#94a3b8'}
-                      />
-                    </TouchableOpacity>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.listDetailItemName, item.completed && styles.listDetailItemNameCompleted]}>
-                        {item.name}
-                      </Text>
-                      <View style={styles.listDetailItemMeta}>
-                        {item.quantity && (
-                          <Text style={styles.listDetailItemQuantity}>{item.quantity}</Text>
-                        )}
-                        {item.category && (
+                  <View key={item.id}>
+                    <View style={[styles.listDetailItem, item.completed && styles.listDetailItemCompleted]}>
+                      <TouchableOpacity
+                        style={styles.listDetailCheckbox}
+                        onPress={() => handleToggleItemComplete(item.id, item.completed)}
+                      >
+                        <Ionicons
+                          name={item.completed ? 'checkmark-circle' : 'ellipse-outline'}
+                          size={24}
+                          color={item.completed ? '#047857' : '#94a3b8'}
+                        />
+                      </TouchableOpacity>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.listDetailItemName, item.completed && styles.listDetailItemNameCompleted]}>
+                          {item.name}
+                        </Text>
+                        <View style={styles.listDetailItemMeta}>
+                          {item.quantity && (
+                            <Text style={styles.listDetailItemQuantity}>{item.quantity}</Text>
+                          )}
+                          {item.category && (
                           <View style={styles.listDetailItemCategory}>
                             <Text style={styles.listDetailItemCategoryText}>{item.category}</Text>
                           </View>
@@ -1500,6 +1530,33 @@ export default function SavedScreen() {
                       <Ionicons name="trash-outline" size={18} color="#ef4444" />
                     </TouchableOpacity>
                   </View>
+                  {/* Price Comparison */}
+                  {!item.completed && user && (
+                    <PriceComparison
+                      itemName={item.name}
+                      onSelect={async (productId, store, price) => {
+                        // Update shopping list item with selected product
+                        try {
+                          await supabase
+                            .from('shopping_list_items')
+                            .update({
+                              catalog_product_id: productId,
+                              estimated_price: price,
+                              store_source: store,
+                            })
+                            .eq('id', item.id);
+                          
+                          // Refresh items
+                          if (selectedList) {
+                            handleListPress(selectedList);
+                          }
+                        } catch (error) {
+                          console.error('Error updating item with price:', error);
+                        }
+                      }}
+                    />
+                  )}
+                </View>
                 ))}
               </ScrollView>
             )}
@@ -2064,39 +2121,105 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#475569',
   },
+  recipeMetaSeparator: {
+    fontSize: 13,
+    color: '#cbd5e1',
+  },
   listGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 12,
   },
   listCard: {
-    flexBasis: '48%',
+    width: '100%',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(15,23,42,0.08)',
-    backgroundColor: '#f8fafc',
-    padding: 14,
-    gap: 8,
+    backgroundColor: '#fff',
+    padding: 16,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  listCardContent: {
+    flex: 1,
+  },
+  listCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 4,
+  },
+  listCardIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#ecfdf5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listCardInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  listCardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  listCardMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   listCardActions: {
     flexDirection: 'row',
     gap: 8,
-    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15,23,42,0.08)',
   },
   listActionButton: {
-    padding: 6,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
+  },
+  listActionButtonDelete: {
+    backgroundColor: '#fef2f2',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  listActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#047857',
+  },
+  listActionButtonTextDelete: {
+    color: '#ef4444',
   },
   listName: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
     color: '#0f172a',
   },
   listMeta: {
     fontSize: 13,
-    color: '#475569',
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  listMetaSeparator: {
+    fontSize: 13,
+    color: '#cbd5e1',
   },
   placeholderCard: {
     width: 220,
@@ -2376,6 +2499,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  modalButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
   },
   listDetailCard: {
     backgroundColor: '#fff',

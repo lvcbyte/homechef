@@ -7,6 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
+import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
+import { LeftoversGenerator } from '../components/recipes/LeftoversGenerator';
+import { RecipeScaling } from '../components/recipes/RecipeScaling';
+import { CookingMode } from '../components/recipes/CookingMode';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
@@ -109,6 +113,9 @@ export default function RecipesScreen() {
   const [inventoryCount, setInventoryCount] = useState<number | null>(null);
   const [chefRadarExpanded, setChefRadarExpanded] = useState(false);
   const [generatingMore, setGeneratingMore] = useState(false);
+  const [cookingModeVisible, setCookingModeVisible] = useState(false);
+  const [scaledIngredients, setScaledIngredients] = useState<any[]>([]);
+  const [scaledServings, setScaledServings] = useState<number>(4);
 
   // Load Chef Radar recipes from session storage on mount
   useEffect(() => {
@@ -1032,13 +1039,12 @@ export default function RecipesScreen() {
                 <Ionicons name="shield" size={20} color="#047857" />
               </Pressable>
             )}
-            <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarInitial}>
-                  {user.email?.charAt(0).toUpperCase() ?? 'U'}
-                </Text>
-              </View>
-            </Pressable>
+            <HeaderAvatar
+              userId={user.id}
+              userEmail={user.email}
+              avatarUrl={profile?.avatar_url}
+              showNotificationBadge={true}
+            />
           </View>
         </View>
 
@@ -1076,6 +1082,36 @@ export default function RecipesScreen() {
                 </View>
               </View>
             </TouchableOpacity>
+          )}
+
+          {/* Leftovers Generator */}
+          {user && (
+            <LeftoversGenerator
+              userId={user.id}
+              onRecipeSelect={(recipe) => {
+                // Convert GeneratedRecipe to RecipeDetail format
+                const recipeDetail: RecipeDetail = {
+                  recipe_id: `leftovers-${Date.now()}`,
+                  title: recipe.name,
+                  description: recipe.description || null,
+                  author: 'STOCKPIT AI',
+                  image_url: recipe.image_url || null,
+                  total_time_minutes: recipe.totalTime || 30,
+                  difficulty: recipe.difficulty || 'Gemiddeld',
+                  servings: recipe.servings || 4,
+                  prep_time_minutes: recipe.prepTime || 0,
+                  cook_time_minutes: recipe.cookTime || recipe.totalTime || 30,
+                  ingredients: recipe.ingredients || [],
+                  instructions: recipe.steps || [],
+                  nutrition: recipe.macros || null,
+                  tags: recipe.tags || [],
+                  category: recipe.tags?.[0] || null,
+                  likes_count: 0,
+                };
+                setSelectedRecipe(recipeDetail);
+                setModalVisible(true);
+              }}
+            />
           )}
 
           <View style={styles.hero}>
@@ -1493,8 +1529,34 @@ export default function RecipesScreen() {
                           {likedRecipes.has(selectedRecipe.recipe_id) ? 'Opgeslagen' : 'Opslaan'} • {selectedRecipe.likes_count}
                         </Text>
                       </TouchableOpacity>
+                      {user && (
+                        <TouchableOpacity
+                          style={styles.cookButton}
+                          onPress={() => {
+                            setScaledServings(selectedRecipe.servings || 4);
+                            setCookingModeVisible(true);
+                          }}
+                        >
+                          <Ionicons name="restaurant" size={20} color="#fff" />
+                          <Text style={styles.cookButtonText}>Start Koken</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
+
+                  {/* Recipe Scaling */}
+                  {user && selectedRecipe && (
+                    <View style={styles.modalSection}>
+                      <RecipeScaling
+                        recipeId={selectedRecipe.recipe_id}
+                        originalServings={selectedRecipe.servings || 4}
+                        onScaled={(ingredients, newServings) => {
+                          setScaledIngredients(ingredients);
+                          setScaledServings(newServings);
+                        }}
+                      />
+                    </View>
+                  )}
 
                   {selectedRecipe.description && (
                     <View style={styles.modalSection}>
@@ -1506,16 +1568,29 @@ export default function RecipesScreen() {
                   {selectedRecipe.ingredients && Array.isArray(selectedRecipe.ingredients) && (
                     <View style={styles.modalSection}>
                       <Text style={styles.modalSectionTitle}>Ingrediënten</Text>
-                      {selectedRecipe.ingredients.map((ing: any, idx: number) => (
-                        <View key={idx} style={styles.ingredientRow}>
-                          <Text style={styles.ingredientBullet}>•</Text>
-                          <Text style={styles.ingredientText}>
-                            {typeof ing === 'string' 
-                              ? ing 
-                              : `${ing.quantity || ''} ${ing.unit || ''} ${ing.name || ''}`.trim()}
-                          </Text>
-                        </View>
-                      ))}
+                      {(scaledIngredients.length > 0 ? scaledIngredients : selectedRecipe.ingredients).map((ing: any, idx: number) => {
+                        const isScaled = scaledIngredients.length > 0;
+                        return (
+                          <View key={idx} style={styles.ingredientRow}>
+                            <Text style={styles.ingredientBullet}>•</Text>
+                            <Text style={[styles.ingredientText, isScaled && styles.ingredientTextScaled]}>
+                              {typeof ing === 'string' 
+                                ? ing 
+                                : `${ing.quantity || ''} ${ing.unit || ''} ${ing.name || ''}`.trim()}
+                            </Text>
+                            {isScaled && (
+                              <View style={styles.scaledBadge}>
+                                <Text style={styles.scaledBadgeText}>Aangepast</Text>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                      {scaledIngredients.length > 0 && (
+                        <Text style={styles.scaledNote}>
+                          Ingrediënten aangepast voor {scaledServings} {scaledServings === 1 ? 'persoon' : 'personen'}
+                        </Text>
+                      )}
                     </View>
                   )}
 
@@ -1578,6 +1653,33 @@ export default function RecipesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Cooking Mode Modal */}
+      {cookingModeVisible && selectedRecipe && user && (
+        <Modal
+          visible={cookingModeVisible}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setCookingModeVisible(false)}
+        >
+          <CookingMode
+            recipe={{
+              id: selectedRecipe.recipe_id,
+              title: selectedRecipe.title,
+              instructions: selectedRecipe.instructions || [],
+              ingredients: scaledIngredients.length > 0 ? scaledIngredients : selectedRecipe.ingredients || [],
+              servings: scaledServings || selectedRecipe.servings || 4,
+            }}
+            userId={user.id}
+            onComplete={() => {
+              setCookingModeVisible(false);
+              setModalVisible(false);
+              Alert.alert('Klaar!', 'Je kooksessie is opgeslagen. Goed gedaan! 🎉');
+            }}
+            onExit={() => setCookingModeVisible(false)}
+          />
+        </Modal>
+      )}
     </View>
   );
 }
@@ -2384,6 +2486,45 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  cookButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#047857',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  cookButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  ingredientTextScaled: {
+    color: '#047857',
+    fontWeight: '600',
+  },
+  scaledBadge: {
+    marginLeft: 8,
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  scaledBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  scaledNote: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#047857',
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });
 
