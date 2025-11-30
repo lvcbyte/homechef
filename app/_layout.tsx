@@ -25,43 +25,19 @@ export default function RootLayout() {
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
-          /* Base fullscreen setup */
+          /* Base setup - minimal interference, preserve native layout */
           html {
             height: 100%;
-            height: 100dvh;
             overflow-x: hidden;
-            width: 100%;
-            margin: 0;
-            padding: 0;
           }
 
           body {
             height: 100%;
-            height: 100dvh;
             overflow-x: hidden;
             margin: 0;
             padding: 0;
             /* Prevent pull-to-refresh */
             overscroll-behavior: none;
-            /* Prevent text selection on double tap (iOS zoom prevention) */
-            touch-action: pan-y pinch-zoom;
-            /* Use dynamic viewport height for mobile browsers */
-            min-height: -webkit-fill-available;
-          }
-
-          /* Support for iOS Safari dynamic viewport */
-          @supports (-webkit-touch-callout: none) {
-            html, body {
-              height: -webkit-fill-available;
-            }
-          }
-
-          /* Root container - Expo Router structure */
-          #root, [data-reactroot], [data-expo-root], div[style*="flex"] {
-            height: 100%;
-            min-height: 100%;
-            display: flex;
-            flex-direction: column;
           }
 
           /* Hide scrollbars but allow scrolling */
@@ -74,31 +50,40 @@ export default function RootLayout() {
           }
 
           /* Prevent zoom on double tap (iOS) */
-          * {
-            touch-action: manipulation;
-          }
           input, textarea, select {
-            touch-action: auto;
             font-size: 16px !important; /* Prevents iOS zoom on focus */
           }
 
-          /* Ensure content doesn't get clipped by safe areas */
+          /* Safe area utility classes - only apply where explicitly used */
           .safe-area-top {
-            padding-top: env(safe-area-inset-top);
+            padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
           }
           .safe-area-bottom {
-            padding-bottom: env(safe-area-inset-bottom);
+            padding-bottom: env(safe-area-inset-bottom, 0px) !important;
           }
           .safe-area-left {
-            padding-left: env(safe-area-inset-left);
+            padding-left: env(safe-area-inset-left, 0px);
           }
           .safe-area-right {
-            padding-right: env(safe-area-inset-right);
+            padding-right: env(safe-area-inset-right, 0px);
           }
 
-          /* Navigation dock safe area handling */
+          /* Navigation dock - fixed at bottom with safe area */
           .glass-dock {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            width: 100% !important;
+            z-index: 1000 !important;
             padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+            background-color: #fff !important;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05) !important;
+          }
+
+          /* SafeAreaView on web - add top safe area */
+          .safe-area-top {
+            padding-top: calc(8px + env(safe-area-inset-top, 0px)) !important;
           }
         `;
         document.head.appendChild(style);

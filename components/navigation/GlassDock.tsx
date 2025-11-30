@@ -19,25 +19,14 @@ export function GlassDock() {
     navigateToRoute(router, route);
   };
 
-  // On web, use a regular View with CSS safe area handling via className
+  // On web, use fixed positioning with CSS
   // On native, use SafeAreaView
-  const Container = Platform.OS === 'web' ? View : SafeAreaView;
-  const containerProps = Platform.OS === 'web' 
-    ? { 
-        style: styles.safeAreaWeb,
-        // @ts-ignore - web-specific prop
-        className: 'safe-area-bottom',
-      }
-    : { edges: ['bottom'] as const, style: styles.safeArea };
-
-  return (
-    <Container {...containerProps}>
+  if (Platform.OS === 'web') {
+    return (
       <View 
-        style={styles.dock}
+        style={styles.dockWeb}
         // @ts-ignore - web-specific prop
-        {...(Platform.OS === 'web' && {
-          className: 'glass-dock',
-        })}
+        className="glass-dock"
       >
         {tabs.map((tab) => {
           const isActive = tab.route === '/' ? pathname === '/' : pathname === tab.route;
@@ -57,15 +46,37 @@ export function GlassDock() {
           );
         })}
       </View>
-    </Container>
+    );
+  }
+
+  // Native: use SafeAreaView
+  return (
+    <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+      <View style={styles.dock}>
+        {tabs.map((tab) => {
+          const isActive = tab.route === '/' ? pathname === '/' : pathname === tab.route;
+          return (
+            <Pressable
+              key={tab.key}
+              style={styles.tab}
+              onPress={() => handleNavigation(tab.route)}
+            >
+              <Ionicons
+                name={tab.icon as any}
+                size={22}
+                color={isActive ? '#047857' : '#6b7280'}
+              />
+              <Text style={[styles.label, isActive && styles.activeLabel]}>{tab.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#fff',
-  },
-  safeAreaWeb: {
     backgroundColor: '#fff',
   },
   dock: {
@@ -78,7 +89,18 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(15,23,42,0.08)',
     backgroundColor: '#fff',
-    position: 'relative',
+  },
+  dockWeb: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    paddingTop: 10,
+    paddingBottom: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15,23,42,0.08)',
+    backgroundColor: '#fff',
+    // Position will be handled by CSS class
   },
   tab: {
     alignItems: 'center',
