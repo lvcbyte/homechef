@@ -1002,6 +1002,7 @@ const styles = StyleSheet.create({
       web: 0, // Handled by CSS safe-area-top class
       default: 8,
     }),
+    paddingBottom: 0,
   },
   loadingContainer: {
     flex: 1,
@@ -1010,10 +1011,12 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   brandRow: {
     flexDirection: 'row',

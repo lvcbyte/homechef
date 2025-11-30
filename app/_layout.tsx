@@ -76,14 +76,14 @@ export default function RootLayout() {
             right: 0 !important;
             width: 100% !important;
             z-index: 1000 !important;
-            padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+            padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
             background-color: #fff !important;
-            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05) !important;
+            box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.05) !important;
           }
 
-          /* SafeAreaView on web - add top safe area (only safe area inset, no extra padding) */
+          /* SafeAreaView on web - add top safe area with consistent spacing */
           .safe-area-top {
-            padding-top: env(safe-area-inset-top, 0px) !important;
+            padding-top: calc(16px + env(safe-area-inset-top, 0px)) !important;
           }
         `;
         document.head.appendChild(style);
