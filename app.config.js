@@ -70,7 +70,7 @@ module.exports = {
         appleTouchIcon: './assets/apple-touch-icon.png',
       },
       meta: {
-        viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, minimal-ui',
+        viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover',
         'mobile-web-app-capable': 'yes',
         'apple-mobile-web-app-capable': 'yes',
         'apple-mobile-web-app-status-bar-style': 'black-translucent',

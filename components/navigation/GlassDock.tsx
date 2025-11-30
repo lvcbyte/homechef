@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { navigateToRoute } from '../../utils/navigation';
 
@@ -19,9 +19,26 @@ export function GlassDock() {
     navigateToRoute(router, route);
   };
 
+  // On web, use a regular View with CSS safe area handling via className
+  // On native, use SafeAreaView
+  const Container = Platform.OS === 'web' ? View : SafeAreaView;
+  const containerProps = Platform.OS === 'web' 
+    ? { 
+        style: styles.safeAreaWeb,
+        // @ts-ignore - web-specific prop
+        className: 'safe-area-bottom',
+      }
+    : { edges: ['bottom'] as const, style: styles.safeArea };
+
   return (
-    <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-      <View style={styles.dock}>
+    <Container {...containerProps}>
+      <View 
+        style={styles.dock}
+        // @ts-ignore - web-specific prop
+        {...(Platform.OS === 'web' && {
+          className: 'glass-dock',
+        })}
+      >
         {tabs.map((tab) => {
           const isActive = tab.route === '/' ? pathname === '/' : pathname === tab.route;
           return (
@@ -40,12 +57,15 @@ export function GlassDock() {
           );
         })}
       </View>
-    </SafeAreaView>
+    </Container>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
+    backgroundColor: '#fff',
+  },
+  safeAreaWeb: {
     backgroundColor: '#fff',
   },
   dock: {
