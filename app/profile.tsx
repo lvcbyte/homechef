@@ -169,8 +169,16 @@ export default function ProfileScreen() {
                 <TouchableOpacity 
                   style={styles.signOutButton} 
                   onPress={async () => {
-                    await signOut();
-                    router.replace('/welcome');
+                    try {
+                      await signOut();
+                      // Small delay to ensure state is cleared
+                      await new Promise(resolve => setTimeout(resolve, 100));
+                      router.replace('/welcome');
+                    } catch (error) {
+                      console.error('Error during sign out:', error);
+                      // Still redirect even if there's an error
+                      router.replace('/welcome');
+                    }
                   }}
                 >
                   <Text style={styles.signOutText}>Sign out</Text>

@@ -151,8 +151,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setProfile(null);
+    try {
+      // Clear profile and session state first
+      setProfile(null);
+      setSession(null);
+      
+      // Sign out from Supabase - this will trigger onAuthStateChange
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Error signing out:', error);
+      }
+      
+      // Clear Supabase session from localStorage on web
+      // Supabase stores session in a specific format: `sb-<project-ref>-auth-token`
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+          // Remove Supabase auth tokens
+          if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error during sign out:', error);
+      // Even if there's an error, clear local state
+      setProfile(null);
+      setSession(null);
+    }
   };
 
   const refreshProfile = async () => {
