@@ -5,10 +5,11 @@ import { Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, refreshProfile } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -62,11 +63,23 @@ export default function SignInScreen() {
               setSubmitting(true);
               setErrorMessage(null);
               const { error } = await signIn(email, password);
-              setSubmitting(false);
               if (error) {
+                setSubmitting(false);
                 setErrorMessage(error);
               } else {
-                router.replace('/');
+                // Wait a bit for auth state to update and profile to load
+                setTimeout(async () => {
+                  // Refresh profile to get latest onboarding status
+                  await refreshProfile();
+                  
+                  // Small delay to ensure profile is loaded
+                  setTimeout(() => {
+                    setSubmitting(false);
+                    // Let the index.tsx handle the redirect based on onboarding status
+                    // This ensures the profile is fully loaded
+                    router.replace('/');
+                  }, 200);
+                }, 300);
               }
             }}
           >

@@ -110,7 +110,7 @@ function initSupabase() {
       storage: createStorageAdapter(),
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: false,
+      detectSessionInUrl: true, // Enable to detect auth tokens in URL
     },
   });
   

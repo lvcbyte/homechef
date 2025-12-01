@@ -12,6 +12,9 @@ export interface Database {
           created_at: string;
           avatar_url: string | null;
           is_admin: boolean | null;
+          onboarding_completed: boolean | null;
+          onboarding_started_at: string | null;
+          onboarding_completed_at: string | null;
         };
         Insert: {
           id: string;
@@ -21,6 +24,9 @@ export interface Database {
           created_at?: string;
           avatar_url?: string | null;
           is_admin?: boolean | null;
+          onboarding_completed?: boolean | null;
+          onboarding_started_at?: string | null;
+          onboarding_completed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -30,6 +36,9 @@ export interface Database {
           created_at?: string;
           avatar_url?: string | null;
           is_admin?: boolean | null;
+          onboarding_completed?: boolean | null;
+          onboarding_started_at?: string | null;
+          onboarding_completed_at?: string | null;
         };
       };
       inventory: {

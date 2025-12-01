@@ -11,7 +11,7 @@ export default function WelcomeScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const segments = useSegments();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [isMounted, setIsMounted] = useState(false);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -32,9 +32,19 @@ export default function WelcomeScreen() {
     // 3. We're actually on the welcome page (pathname check)
     // This prevents redirects when user is on other pages
     if (isMounted && user && pathname === '/welcome') {
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         try {
-          router.replace('/');
+          // Check onboarding status before redirecting
+          if (profile) {
+            if (profile.onboarding_completed === false || profile.onboarding_completed === null) {
+              router.replace('/onboarding');
+            } else {
+              router.replace('/');
+            }
+          } else {
+            // Profile not loaded yet, go to home and let it handle the redirect
+            router.replace('/');
+          }
         } catch (error) {
           // Router might not be ready yet, ignore error
           console.log('Router not ready yet');
@@ -42,7 +52,7 @@ export default function WelcomeScreen() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [user, isMounted, pathname]);
+  }, [user, profile, isMounted, pathname]);
 
   useEffect(() => {
     // Subtle fade-in animation

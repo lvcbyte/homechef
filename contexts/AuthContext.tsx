@@ -39,10 +39,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      } = supabase.auth.onAuthStateChange(async (event, newSession) => {
         setSession(newSession);
         if (!newSession) {
           setProfile(null);
+        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          // Refresh profile when user signs in (including after email confirmation)
+          // This ensures onboarding status is up to date
+          if (newSession?.user) {
+            try {
+              const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', newSession.user.id)
+                .single();
+              if (data) {
+                setProfile(data as Profile);
+              }
+            } catch (error) {
+              console.error('Error refreshing profile on auth change:', error);
+            }
+          }
         }
       });
 
@@ -75,7 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(({ data, error }) => {
         if (mounted) {
           if (error && error.code === 'PGRST116') {
-            // Profile doesn't exist, create it
+            // Profile doesn't exist, create it with onboarding not completed
+            // This will be set up during onboarding
             supabase
               .from('profiles')
               .insert({
@@ -83,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 archetype: 'Minimalist',
                 dietary_restrictions: [],
                 cooking_skill: 'Intermediate',
+                onboarding_completed: false,
               })
               .select()
               .single()
@@ -127,6 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, name?: string) => {
+    // Get the current origin for redirect URL
+    const redirectTo = typeof window !== 'undefined' 
+      ? `${window.location.origin}/auth-callback`
+      : '/auth-callback';
+    
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -134,17 +158,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: {
           full_name: name,
         },
+        emailRedirectTo: redirectTo,
       },
     });
     if (error) {
       return { error: error.message };
     }
     if (data.user) {
+      // Create profile with onboarding not completed
+      // User will complete onboarding after email confirmation
       await supabase.from('profiles').upsert({
         id: data.user.id,
         archetype: 'Minimalist',
         dietary_restrictions: [],
-        cooking_skill: 'Beginner',
+        cooking_skill: 'Intermediate',
+        onboarding_completed: false,
       });
     }
     return {};

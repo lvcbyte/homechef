@@ -86,8 +86,23 @@ export default function Home() {
       }, 300);
       return () => clearTimeout(timer);
     }
-    // Only fetch data if user is authenticated and we're on the home page
-    if (user && pathname === '/') {
+    
+    // Check if user needs to complete onboarding
+    // Only show onboarding on first login after email confirmation
+    // Check for both false and null (null means not set yet)
+    if (user && profile && pathname === '/' && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
+      const timer = setTimeout(() => {
+        try {
+          router.replace('/onboarding');
+        } catch (error) {
+          // Router might not be ready, ignore
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+    
+    // Only fetch data if user is authenticated, onboarding is completed, and we're on the home page
+    if (user && profile && profile.onboarding_completed === true && pathname === '/') {
       fetchData();
       fetchInventory();
     }
@@ -586,6 +601,11 @@ export default function Home() {
   // Only redirect if we're on the home page and not authenticated
   // Don't render anything if redirecting
   if (pathname === '/' && !user) {
+    return null;
+  }
+
+  // Don't render if user needs to complete onboarding (will redirect)
+  if (user && profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
     return null;
   }
 
