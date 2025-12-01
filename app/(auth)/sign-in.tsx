@@ -12,7 +12,7 @@ const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn, refreshProfile } = useAuth();
+  const { signIn, refreshProfile, user, profile, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -87,26 +87,48 @@ export default function SignInScreen() {
                   setSubmitting(false);
                   setErrorMessage(result.error);
                 } else {
-                  // Wait a bit for auth state to update and profile to load
-                  setTimeout(async () => {
-                    try {
-                      // Refresh profile to get latest onboarding status
-                      await refreshProfile();
-                      
-                      // Small delay to ensure profile is loaded
-                      setTimeout(() => {
-                        setSubmitting(false);
-                        // Let the index.tsx handle the redirect based on onboarding status
-                        // This ensures the profile is fully loaded
-                        router.replace('/');
-                      }, 200);
-                    } catch (profileErr) {
-                      console.error('Error refreshing profile:', profileErr);
+                  // Wait for auth state to update and profile to load
+                  // Poll for user and profile to be available (max 5 seconds)
+                  let attempts = 0;
+                  const maxAttempts = 50; // 50 attempts * 100ms = 5 seconds max
+                  
+                  const checkAuthAndRedirect = async () => {
+                    attempts++;
+                    
+                    // Check if we have a user and profile loaded
+                    // The onAuthStateChange listener should have updated these
+                    if (user && profile !== null) {
+                      // Profile is loaded (even if null, we know it's been checked)
                       setSubmitting(false);
-                      // Still redirect, profile will load later
                       router.replace('/');
+                      return;
                     }
-                  }, 300);
+                    
+                    // If we have a user but profile is still null, try to refresh
+                    if (user && profile === null && attempts < 10) {
+                      try {
+                        await refreshProfile();
+                        // Give it a moment to update
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                      } catch (profileErr) {
+                        console.error('Error refreshing profile:', profileErr);
+                      }
+                    }
+                    
+                    // If we've tried too many times, redirect anyway
+                    if (attempts >= maxAttempts) {
+                      console.warn('Auth state check timed out, redirecting anyway');
+                      setSubmitting(false);
+                      router.replace('/');
+                      return;
+                    }
+                    
+                    // Check again in 100ms
+                    setTimeout(checkAuthAndRedirect, 100);
+                  };
+                  
+                  // Start checking after a short delay to let onAuthStateChange fire
+                  setTimeout(checkAuthAndRedirect, 200);
                 }
               } catch (err: any) {
                 if (timeoutId) clearTimeout(timeoutId);

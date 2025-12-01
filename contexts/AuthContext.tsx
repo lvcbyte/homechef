@@ -315,19 +315,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (!session?.user) {
+    // Use the current session, or try to get it fresh
+    const currentSession = session || (await supabase.auth.getSession()).data.session;
+    
+    if (!currentSession?.user) {
       setProfile(null);
       return;
     }
     
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
-    
-    if (data) {
-      setProfile(data as Profile);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentSession.user.id)
+        .single();
+      
+      if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .insert({
+            id: currentSession.user.id,
+            archetype: 'Minimalist',
+            dietary_restrictions: [],
+            cooking_skill: 'Intermediate',
+            onboarding_completed: false,
+          })
+          .select()
+          .single();
+        
+        if (newProfile) {
+          setProfile(newProfile as Profile);
+        }
+      } else if (data) {
+        setProfile(data as Profile);
+      }
+    } catch (error) {
+      console.error('Error refreshing profile:', error);
+      // Don't throw, just log the error
     }
   };
 
