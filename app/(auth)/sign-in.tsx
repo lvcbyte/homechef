@@ -1,11 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -18,7 +21,7 @@ export default function SignInScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaViewComponent style={styles.safeArea}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color="#0f172a" />
@@ -62,24 +65,49 @@ export default function SignInScreen() {
             onPress={async () => {
               setSubmitting(true);
               setErrorMessage(null);
-              const { error } = await signIn(email, password);
-              if (error) {
+              
+              let timeoutId: NodeJS.Timeout | null = null;
+              
+              // Add timeout to prevent infinite loading
+              timeoutId = setTimeout(() => {
+                setErrorMessage('Het duurt langer dan verwacht. Probeer het opnieuw.');
                 setSubmitting(false);
-                setErrorMessage(error);
-              } else {
-                // Wait a bit for auth state to update and profile to load
-                setTimeout(async () => {
-                  // Refresh profile to get latest onboarding status
-                  await refreshProfile();
-                  
-                  // Small delay to ensure profile is loaded
-                  setTimeout(() => {
-                    setSubmitting(false);
-                    // Let the index.tsx handle the redirect based on onboarding status
-                    // This ensures the profile is fully loaded
-                    router.replace('/');
-                  }, 200);
-                }, 300);
+              }, 10000); // 10 second timeout
+              
+              try {
+                const { error } = await signIn(email, password);
+                if (timeoutId) clearTimeout(timeoutId);
+                
+                if (error) {
+                  setSubmitting(false);
+                  setErrorMessage(error);
+                } else {
+                  // Wait a bit for auth state to update and profile to load
+                  setTimeout(async () => {
+                    try {
+                      // Refresh profile to get latest onboarding status
+                      await refreshProfile();
+                      
+                      // Small delay to ensure profile is loaded
+                      setTimeout(() => {
+                        setSubmitting(false);
+                        // Let the index.tsx handle the redirect based on onboarding status
+                        // This ensures the profile is fully loaded
+                        router.replace('/');
+                      }, 200);
+                    } catch (profileErr) {
+                      console.error('Error refreshing profile:', profileErr);
+                      setSubmitting(false);
+                      // Still redirect, profile will load later
+                      router.replace('/');
+                    }
+                  }, 300);
+                }
+              } catch (err: any) {
+                if (timeoutId) clearTimeout(timeoutId);
+                console.error('Sign in error:', err);
+                setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden');
+                setSubmitting(false);
               }
             }}
           >
@@ -92,7 +120,7 @@ export default function SignInScreen() {
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
     </View>
   );
 }

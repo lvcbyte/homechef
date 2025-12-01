@@ -27,13 +27,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     // Wrap in try-catch to handle missing credentials gracefully
     try {
-      supabase.auth.getSession().then(({ data }) => {
+      supabase.auth.getSession().then(({ data, error }) => {
         if (!mounted) return;
+        
+        // If there's an error (like invalid refresh token), clear the session
+        if (error) {
+          console.warn('Error getting session, clearing:', error);
+          // Clear invalid tokens
+          if (typeof window !== 'undefined' && window.localStorage) {
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+              if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+                localStorage.removeItem(key);
+              }
+            });
+          }
+          setSession(null);
+          setLoading(false);
+          return;
+        }
+        
         setSession(data.session);
         setLoading(false);
       }).catch((error) => {
         console.error('Error getting session:', error);
         if (!mounted) return;
+        // Clear invalid tokens on error
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const keys = Object.keys(localStorage);
+          keys.forEach(key => {
+            if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+              localStorage.removeItem(key);
+            }
+          });
+        }
+        setSession(null);
         setLoading(false);
       });
 
@@ -138,11 +166,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session?.user]);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      return { error: error.message };
+    try {
+      // Clear any invalid tokens first
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+          if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
+      
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        console.error('Sign in error:', error);
+        return { error: error.message };
+      }
+      
+      console.log('Sign in successful:', data.user?.email);
+      return {};
+    } catch (err: any) {
+      console.error('Sign in exception:', err);
+      return { error: err.message || 'Er ging iets mis bij het inloggen' };
     }
-    return {};
   };
 
   const signUp = async (email: string, password: string, name?: string) => {

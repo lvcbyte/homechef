@@ -1,7 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
@@ -11,7 +14,7 @@ export default function VerifyEmailScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaViewComponent style={styles.safeArea}>
         <View style={styles.content}>
           <View style={styles.iconContainer}>
             <View style={styles.iconCircle}>
@@ -66,7 +69,7 @@ export default function VerifyEmailScreen() {
             </Text>
           </View>
         </View>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
     </View>
   );
 }
