@@ -404,10 +404,18 @@ export default function OnboardingScreen() {
         console.log('[onboarding] Onboarding RPC completed successfully:', data);
       }
 
-      console.log('Onboarding completed successfully:', data);
+      // Try to refresh profile, but don't wait too long
+      try {
+        await Promise.race([
+          refreshProfile(),
+          new Promise((resolve) => setTimeout(resolve, 2000)) // Max 2 seconds
+        ]);
+      } catch (refreshError) {
+        console.warn('[onboarding] Profile refresh failed, continuing:', refreshError);
+      }
 
-      await refreshProfile();
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait a moment for profile to update
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
