@@ -31,86 +31,67 @@ export default function AuthCallbackScreen() {
       
       // Handle various auth events that indicate successful authentication
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+        if (isHandled) {
+          console.log('[auth-callback] Already handled, ignoring duplicate event');
+          return;
+        }
+        
         isHandled = true;
         if (timeoutId) clearTimeout(timeoutId);
         
+        console.log('[auth-callback] Processing sign in via auth state change, event:', event, 'user:', session.user?.email);
+        
+        // For email verification (SIGNED_IN after email confirmation), always go to onboarding
+        // Don't wait for profile - just redirect immediately
+        if (event === 'SIGNED_IN') {
+          console.log('[auth-callback] Email verification detected - redirecting to onboarding');
+          // Small delay to ensure state is set
+          setTimeout(() => {
+            router.replace('/onboarding');
+          }, 300);
+          return;
+        }
+        
+        // For other events, check profile status
         try {
-          console.log('Processing sign in via auth state change, event:', event);
-          setStatus('loading'); // Keep loading state visible
+          // Try to refresh profile, but don't wait too long
+          const profileCheckPromise = refreshProfile().catch(err => {
+            console.warn('[auth-callback] Profile refresh failed, continuing anyway:', err);
+          });
           
-          await refreshProfile();
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          // Check onboarding status and ensure profile exists
-          let profile = null;
-          let profileError = null;
+          // Also check profile directly
+          const profileQueryPromise = supabase
+            .from('profiles')
+            .select('onboarding_completed')
+            .eq('id', session.user.id)
+            .single()
+            .catch(err => {
+              console.warn('[auth-callback] Profile query failed:', err);
+              return { data: null, error: err };
+            });
           
-          try {
-            const profileResult = await supabase
-              .from('profiles')
-              .select('onboarding_completed')
-              .eq('id', session.user.id)
-              .single();
-            
-            profile = profileResult.data;
-            profileError = profileResult.error;
-            
-            // If profile doesn't exist, try to create it
-            if (profileError && profileError.code === 'PGRST116') {
-              console.log('[auth-callback] Profile not found in auth state change, creating...');
-              try {
-                const { error: createError } = await supabase.rpc('create_user_profile', {
-                  p_user_id: session.user.id,
-                  p_email: session.user.email || null,
-                  p_full_name: session.user.user_metadata?.full_name || null,
-                });
-                
-                if (createError) {
-                  console.error('[auth-callback] Error creating profile via RPC:', createError);
-                  // Try direct insert
-                  const { error: insertError } = await supabase.from('profiles').insert({
-                    id: session.user.id,
-                    email: session.user.email || '',
-                    full_name: session.user.user_metadata?.full_name || null,
-                    archetype: 'Minimalist',
-                    dietary_restrictions: [],
-                    cooking_skill: 'Intermediate',
-                    onboarding_completed: false,
-                  });
-                  
-                  if (!insertError) {
-                    profile = { onboarding_completed: false };
-                  }
-                } else {
-                  profile = { onboarding_completed: false };
-                }
-              } catch (createErr: any) {
-                console.error('[auth-callback] Exception creating profile:', createErr);
-              }
-            } else if (profileError) {
-              console.error('[auth-callback] Error fetching profile:', profileError);
-            }
-          } catch (err: any) {
-            console.error('[auth-callback] Exception checking profile:', err);
-          }
-
+          // Wait max 1 second for profile check
+          const [_, profileResult] = await Promise.race([
+            Promise.all([profileCheckPromise, profileQueryPromise]),
+            new Promise((resolve) => setTimeout(() => resolve([null, { data: null, error: null }]), 1000))
+          ]) as any;
+          
+          const profile = profileResult?.data;
+          
           // Redirect based on profile status
-          if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
+          if (profile && profile.onboarding_completed === true) {
+            console.log('[auth-callback] Onboarding completed - redirecting to home');
+            router.replace('/');
+          } else {
+            // Profile doesn't exist or onboarding not completed - go to onboarding
             console.log('[auth-callback] Redirecting to onboarding');
             router.replace('/onboarding');
-          } else if (!profile) {
-            // Profile doesn't exist - redirect to onboarding
-            console.log('[auth-callback] Profile not found, redirecting to onboarding');
-            router.replace('/onboarding');
-          } else {
-            console.log('[auth-callback] Redirecting to home');
-            router.replace('/');
           }
         } catch (err) {
-          console.error('Error in auth state change handler:', err);
-          isHandled = false; // Allow retry
-          setError('Er ging iets mis bij het inloggen.');
-          setStatus('error');
+          console.error('[auth-callback] Error in auth state change handler:', err);
+          // On error, redirect to onboarding anyway
+          console.log('[auth-callback] Error occurred - redirecting to onboarding');
+          router.replace('/onboarding');
         }
       }
     });
@@ -170,26 +151,17 @@ export default function AuthCallbackScreen() {
               // Continue to try getSession as fallback
             } else if (sessionData?.session) {
               console.log('[auth-callback] Session set successfully via setSession');
-              // Session is set, the auth state change listener will handle the redirect
-              // But we can also handle it here
+              // Session is set - for email verification, always go to onboarding
               if (!isHandled) {
                 isHandled = true;
                 if (timeoutId) clearTimeout(timeoutId);
                 
-                await refreshProfile();
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                const { data: profile } = await supabase
-                  .from('profiles')
-                  .select('onboarding_completed')
-                  .eq('id', sessionData.session.user.id)
-                  .single();
-
-                if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
+                // For email verification, always redirect to onboarding
+                // Don't wait for profile - onboarding will handle it
+                console.log('[auth-callback] Email verification - redirecting to onboarding immediately');
+                setTimeout(() => {
                   router.replace('/onboarding');
-                } else {
-                  router.replace('/');
-                }
+                }, 300);
                 return;
               }
             }
@@ -221,101 +193,22 @@ export default function AuthCallbackScreen() {
 
         // If we have a session, handle it
         if (session) {
-          if (isHandled) return;
+          if (isHandled) {
+            console.log('[auth-callback] Already handled, skipping duplicate session handling');
+            return;
+          }
+          
           isHandled = true;
           if (timeoutId) clearTimeout(timeoutId);
           
           console.log('[auth-callback] Session found, user:', session.user?.email);
-          // Session is set, refresh profile
-          await refreshProfile();
-
-          // Wait for profile to load
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          // Check onboarding status
-          // First ensure profile exists
-          let profile = null;
-          let profileError = null;
           
-          try {
-            const profileResult = await supabase
-              .from('profiles')
-              .select('onboarding_completed')
-              .eq('id', session.user.id)
-              .single();
-            
-            profile = profileResult.data;
-            profileError = profileResult.error;
-            
-            // If profile doesn't exist, try to create it
-            if (profileError && profileError.code === 'PGRST116') {
-              console.log('[auth-callback] Profile not found, creating...');
-              try {
-                // Try to create profile using the helper function
-                const { error: createError } = await supabase.rpc('create_user_profile', {
-                  p_user_id: session.user.id,
-                  p_email: session.user.email || null,
-                  p_full_name: session.user.user_metadata?.full_name || null,
-                });
-                
-                if (createError) {
-                  console.error('[auth-callback] Error creating profile via RPC:', createError);
-                  // Try direct insert as fallback
-                  const { error: insertError } = await supabase.from('profiles').insert({
-                    id: session.user.id,
-                    email: session.user.email || '',
-                    full_name: session.user.user_metadata?.full_name || null,
-                    archetype: 'Minimalist',
-                    dietary_restrictions: [],
-                    cooking_skill: 'Intermediate',
-                    onboarding_completed: false,
-                  });
-                  
-                  if (insertError) {
-                    console.error('[auth-callback] Error creating profile via insert:', insertError);
-                  } else {
-                    // Profile created, fetch it again
-                    const retryResult = await supabase
-                      .from('profiles')
-                      .select('onboarding_completed')
-                      .eq('id', session.user.id)
-                      .single();
-                    profile = retryResult.data;
-                  }
-                } else {
-                  // Profile created via RPC, fetch it
-                  const retryResult = await supabase
-                    .from('profiles')
-                    .select('onboarding_completed')
-                    .eq('id', session.user.id)
-                    .single();
-                  profile = retryResult.data;
-                }
-              } catch (createErr: any) {
-                console.error('[auth-callback] Exception creating profile:', createErr);
-              }
-            } else if (profileError) {
-              console.error('[auth-callback] Error fetching profile:', profileError);
-            }
-          } catch (err: any) {
-            console.error('[auth-callback] Exception checking profile:', err);
-          }
-
-          // Redirect based on profile status, or to onboarding if profile is null
-          if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
-            // Redirect to onboarding
-            console.log('[auth-callback] Redirecting to onboarding');
+          // For email verification (first time login), always redirect to onboarding
+          // Don't wait for profile checks - just redirect immediately
+          console.log('[auth-callback] Email verification detected - redirecting to onboarding immediately');
+          setTimeout(() => {
             router.replace('/onboarding');
-          } else if (!profile) {
-            // Profile doesn't exist or couldn't be created - redirect to onboarding anyway
-            // Onboarding will handle profile creation
-            console.log('[auth-callback] Profile not found, redirecting to onboarding');
-            router.replace('/onboarding');
-          } else {
-            // Redirect to home
-            console.log('[auth-callback] Redirecting to home');
-            router.replace('/');
-          }
+          }, 300);
         } else {
           // No session yet - check if we have tokens
           if (!accessToken || !refreshToken) {
@@ -334,23 +227,22 @@ export default function AuthCallbackScreen() {
           // The auth state change listener should fire when Supabase processes the tokens
           console.log('[auth-callback] Have tokens but no session yet, waiting for auth state change...');
           
-          // Set a timeout to show error if nothing happens
+          // Set a timeout - if nothing happens in 3 seconds, redirect to onboarding anyway
           timeoutId = setTimeout(() => {
             if (isHandled) return;
             isHandled = true;
             
-            console.error('[auth-callback] Timeout waiting for session after 5 seconds');
-            console.error('[auth-callback] URL details:', {
+            console.warn('[auth-callback] Timeout waiting for session after 3 seconds');
+            console.warn('[auth-callback] URL details:', {
               hash: hash.substring(0, 100) + '...',
               hasAccessToken: !!accessToken,
               hasRefreshToken: !!refreshToken,
             });
             
-            // Even if we timeout, try to redirect to onboarding
-            // The user can sign in manually if needed
-            console.log('[auth-callback] Timeout - redirecting to onboarding anyway');
+            // Redirect to onboarding - user can sign in manually if needed
+            console.log('[auth-callback] Timeout - redirecting to onboarding');
             router.replace('/onboarding');
-          }, 5000); // Wait 5 seconds before redirecting anyway
+          }, 3000); // Wait 3 seconds before redirecting anyway
         }
       } catch (err: any) {
         if (isHandled) return;
