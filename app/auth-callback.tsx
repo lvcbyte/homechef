@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { Image } from 'expo-image';
 
 // Fallback SafeAreaView for web
 const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
@@ -15,6 +16,7 @@ export default function AuthCallbackScreen() {
   const { refreshProfile } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     let isHandled = false;
@@ -29,102 +31,15 @@ export default function AuthCallbackScreen() {
         return;
       }
       
-      // Handle various auth events that indicate successful authentication
+      // Handle successful email verification
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
-        if (isHandled) {
-          console.log('[auth-callback] Already handled, ignoring duplicate event');
-          return;
-        }
-        
         isHandled = true;
         if (timeoutId) clearTimeout(timeoutId);
         
-        console.log('[auth-callback] Processing sign in via auth state change, event:', event, 'user:', session.user?.email);
-        
-        // For email verification (SIGNED_IN after email confirmation), always go to onboarding
-        // Don't wait for profile - just redirect immediately
-        if (event === 'SIGNED_IN') {
-          console.log('[auth-callback] Email verification detected - redirecting to onboarding');
-          // Delay to ensure router is mounted
-          setTimeout(() => {
-            try {
-              router.replace('/onboarding');
-            } catch (error) {
-              console.warn('[auth-callback] Router not ready, retrying...');
-              setTimeout(() => {
-                try {
-                  router.replace('/onboarding');
-                } catch (retryError) {
-                  console.error('[auth-callback] Redirect failed:', retryError);
-                }
-              }, 500);
-            }
-          }, 500);
-          return;
-        }
-        
-        // For other events, check profile status
-        try {
-          // Try to refresh profile, but don't wait too long
-          const profileCheckPromise = refreshProfile().catch(err => {
-            console.warn('[auth-callback] Profile refresh failed, continuing anyway:', err);
-          });
-          
-          // Also check profile directly
-          const profileQueryPromise = supabase
-            .from('profiles')
-            .select('onboarding_completed')
-            .eq('id', session.user.id)
-            .single()
-            .catch(err => {
-              console.warn('[auth-callback] Profile query failed:', err);
-              return { data: null, error: err };
-            });
-          
-          // Wait max 1 second for profile check
-          const [_, profileResult] = await Promise.race([
-            Promise.all([profileCheckPromise, profileQueryPromise]),
-            new Promise((resolve) => setTimeout(() => resolve([null, { data: null, error: null }]), 1000))
-          ]) as any;
-          
-          const profile = profileResult?.data;
-          
-          // Redirect based on profile status
-          if (profile && profile.onboarding_completed === true) {
-            console.log('[auth-callback] Onboarding completed - redirecting to home');
-            setTimeout(() => {
-              try {
-                router.replace('/');
-              } catch (error) {
-                console.warn('[auth-callback] Router not ready, retrying...');
-                setTimeout(() => router.replace('/'), 500);
-              }
-            }, 500);
-          } else {
-            // Profile doesn't exist or onboarding not completed - go to onboarding
-            console.log('[auth-callback] Redirecting to onboarding');
-            setTimeout(() => {
-              try {
-                router.replace('/onboarding');
-              } catch (error) {
-                console.warn('[auth-callback] Router not ready, retrying...');
-                setTimeout(() => router.replace('/onboarding'), 500);
-              }
-            }, 500);
-          }
-        } catch (err) {
-          console.error('[auth-callback] Error in auth state change handler:', err);
-          // On error, redirect to onboarding anyway
-          console.log('[auth-callback] Error occurred - redirecting to onboarding');
-          setTimeout(() => {
-            try {
-              router.replace('/onboarding');
-            } catch (error) {
-              console.warn('[auth-callback] Router not ready, retrying...');
-              setTimeout(() => router.replace('/onboarding'), 500);
-            }
-          }, 500);
-        }
+        console.log('[auth-callback] Email verification successful, user:', session.user?.email);
+        setUserEmail(session.user?.email || null);
+        setStatus('success');
+        return;
       }
     });
 
@@ -139,7 +54,6 @@ export default function AuthCallbackScreen() {
         console.log('[auth-callback] Search:', window.location.search);
 
         // Extract tokens from URL hash or query params
-        // Supabase email confirmation uses hash fragments: #access_token=...&refresh_token=...
         const hash = window.location.hash.substring(1);
         const search = window.location.search.substring(1);
         const hashParams = new URLSearchParams(hash);
@@ -148,24 +62,21 @@ export default function AuthCallbackScreen() {
         const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
         const type = hashParams.get('type') || searchParams.get('type');
-        const error = hashParams.get('error') || searchParams.get('error');
-        const errorDescription = hashParams.get('error_description') || searchParams.get('error_description');
+        const error = hashParams.get('error') || searchParams.get('error_description');
 
         console.log('[auth-callback] Tokens found:', {
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
           type,
           error,
-          errorDescription,
         });
 
         // If there's an error in the URL, show it
         if (error) {
-          console.error('[auth-callback] Error in URL:', error, errorDescription);
+          console.error('[auth-callback] Error in URL:', error);
           isHandled = true;
-          setError(errorDescription || error || 'Er ging iets mis bij de verificatie.');
+          setError(error || 'Er ging iets mis bij de verificatie.');
           setStatus('error');
-          setTimeout(() => router.replace('/welcome'), 3000);
           return;
         }
 
@@ -174,42 +85,33 @@ export default function AuthCallbackScreen() {
           console.log('[auth-callback] Found tokens, setting session...');
           try {
             const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
 
-          if (setSessionError) {
+            if (setSessionError) {
               console.error('[auth-callback] Error setting session:', setSessionError);
-              // Continue to try getSession as fallback
             } else if (sessionData?.session) {
               console.log('[auth-callback] Session set successfully via setSession');
-              // Session is set - for email verification, always go to onboarding
               if (!isHandled) {
                 isHandled = true;
                 if (timeoutId) clearTimeout(timeoutId);
-                
-                // For email verification, always redirect to onboarding
-                // Don't wait for profile - onboarding will handle it
-                console.log('[auth-callback] Email verification - redirecting to onboarding immediately');
-                setTimeout(() => {
-                  router.replace('/onboarding');
-                }, 300);
+                setUserEmail(sessionData.session.user?.email || null);
+                setStatus('success');
                 return;
               }
             }
           } catch (setSessionErr: any) {
             console.error('[auth-callback] Exception setting session:', setSessionErr);
-            // Continue to try getSession as fallback
           }
         }
 
         // Also try getSession - Supabase might have already processed the URL
-        // Wait a bit for Supabase to initialize and process the URL
         await new Promise(resolve => setTimeout(resolve, 300));
 
         let { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        // If still no session, wait a bit more and try again (Supabase might need more time)
+        // If still no session, wait a bit more and try again
         if (!session) {
           console.log('[auth-callback] No session yet, waiting and retrying...');
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -223,7 +125,7 @@ export default function AuthCallbackScreen() {
           sessionError: sessionError?.message,
         });
 
-        // If we have a session, handle it
+        // If we have a session, show success
         if (session) {
           if (isHandled) {
             console.log('[auth-callback] Already handled, skipping duplicate session handling');
@@ -234,24 +136,8 @@ export default function AuthCallbackScreen() {
           if (timeoutId) clearTimeout(timeoutId);
           
           console.log('[auth-callback] Session found, user:', session.user?.email);
-          
-          // For email verification (first time login), always redirect to onboarding
-          // Don't wait for profile checks - just redirect immediately
-          console.log('[auth-callback] Email verification detected - redirecting to onboarding immediately');
-          setTimeout(() => {
-            try {
-              router.replace('/onboarding');
-            } catch (error) {
-              console.warn('[auth-callback] Router not ready, retrying...');
-              setTimeout(() => {
-                try {
-                  router.replace('/onboarding');
-                } catch (retryError) {
-                  console.error('[auth-callback] Redirect failed:', retryError);
-                }
-              }, 500);
-            }
-          }, 500);
+          setUserEmail(session.user?.email || null);
+          setStatus('success');
         } else {
           // No session yet - check if we have tokens
           if (!accessToken || !refreshToken) {
@@ -259,40 +145,22 @@ export default function AuthCallbackScreen() {
             console.error('[auth-callback] No tokens found in URL');
             isHandled = true;
             setError('Geen authenticatie tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
-          setStatus('error');
-          setTimeout(() => {
-            router.replace('/welcome');
-            }, 3000);
+            setStatus('error');
             return;
           }
           
           // We have tokens but no session - wait for auth state change
-          // The auth state change listener should fire when Supabase processes the tokens
           console.log('[auth-callback] Have tokens but no session yet, waiting for auth state change...');
           
-          // Set a timeout - if nothing happens in 3 seconds, redirect to onboarding anyway
+          // Set a timeout - if nothing happens in 5 seconds, show error
           timeoutId = setTimeout(() => {
             if (isHandled) return;
             isHandled = true;
             
-            console.warn('[auth-callback] Timeout waiting for session after 3 seconds');
-            console.warn('[auth-callback] URL details:', {
-              hash: hash.substring(0, 100) + '...',
-              hasAccessToken: !!accessToken,
-              hasRefreshToken: !!refreshToken,
-            });
-            
-            // Redirect to onboarding - user can sign in manually if needed
-            console.log('[auth-callback] Timeout - redirecting to onboarding');
-            setTimeout(() => {
-              try {
-                router.replace('/onboarding');
-              } catch (error) {
-                console.warn('[auth-callback] Router not ready, retrying...');
-                setTimeout(() => router.replace('/onboarding'), 500);
-              }
-            }, 500);
-          }, 3000); // Wait 3 seconds before redirecting anyway
+            console.warn('[auth-callback] Timeout waiting for session after 5 seconds');
+            setError('Het duurt langer dan verwacht. Probeer de link opnieuw te openen of neem contact op met support.');
+            setStatus('error');
+          }, 5000);
         }
       } catch (err: any) {
         if (isHandled) return;
@@ -302,9 +170,6 @@ export default function AuthCallbackScreen() {
         console.error('Auth callback error:', err);
         setError(err.message || 'Er ging iets mis bij het inloggen. Probeer opnieuw of neem contact op met support.');
         setStatus('error');
-        setTimeout(() => {
-          router.replace('/welcome');
-        }, 3000);
       }
     };
 
@@ -322,7 +187,7 @@ export default function AuthCallbackScreen() {
         <SafeAreaViewComponent style={styles.safeArea}>
           <View style={styles.content}>
             <ActivityIndicator size="large" color="#047857" />
-            <Text style={styles.text}>Bezig met inloggen...</Text>
+            <Text style={styles.loadingText}>E-mail bevestigen...</Text>
           </View>
         </SafeAreaViewComponent>
       </View>
@@ -347,10 +212,53 @@ export default function AuthCallbackScreen() {
               </Text>
             </View>
             <Pressable
-              style={styles.retryButton}
+              style={styles.primaryButton}
               onPress={() => router.replace('/welcome')}
             >
-              <Text style={styles.retryButtonText}>Terug naar start</Text>
+              <Text style={styles.primaryButtonText}>Terug naar start</Text>
+            </Pressable>
+          </View>
+        </SafeAreaViewComponent>
+      </View>
+    );
+  }
+
+  // Success screen - professional Stockpit branded
+  if (status === 'success') {
+    return (
+      <View style={styles.container}>
+        <SafeAreaViewComponent style={styles.safeArea}>
+          <View style={styles.successContent}>
+            <View style={styles.successIconContainer}>
+              <View style={styles.successIconCircle}>
+                <Ionicons name="checkmark" size={48} color="#047857" />
+              </View>
+            </View>
+            
+            <Text style={styles.successTitle}>E-mail bevestigd!</Text>
+            <Text style={styles.successSubtitle}>
+              Je account is succesvol aangemaakt. Je kunt nu inloggen en beginnen met het ontdekken van heerlijke recepten.
+            </Text>
+
+            {userEmail && (
+              <View style={styles.emailBox}>
+                <Ionicons name="mail-outline" size={20} color="#047857" />
+                <Text style={styles.emailText}>{userEmail}</Text>
+              </View>
+            )}
+
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle-outline" size={20} color="#047857" />
+              <Text style={styles.infoText}>
+                Na het inloggen kun je je voorkeuren instellen en beginnen met het ontdekken van recepten op basis van je voorraad.
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.primaryButton}
+              onPress={() => router.replace('/welcome')}
+            >
+              <Text style={styles.primaryButtonText}>Ga naar inloggen</Text>
             </Pressable>
           </View>
         </SafeAreaViewComponent>
@@ -373,12 +281,105 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 24,
     gap: 16,
   },
-  text: {
+  loadingText: {
     fontSize: 16,
     color: '#64748b',
     marginTop: 16,
+    fontWeight: '500',
+  },
+  successContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    gap: 24,
+  },
+  successIconContainer: {
+    marginBottom: 8,
+  },
+  successIconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 3,
+    borderColor: '#047857',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  successSubtitle: {
+    fontSize: 16,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 24,
+    maxWidth: 400,
+  },
+  emailBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.1)',
+    width: '100%',
+    maxWidth: 400,
+  },
+  emailText: {
+    fontSize: 15,
+    color: '#047857',
+    fontWeight: '600',
+    flex: 1,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    width: '100%',
+    maxWidth: 400,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+    flex: 1,
+  },
+  primaryButton: {
+    backgroundColor: '#047857',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: '#047857',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   errorIconContainer: {
     marginBottom: 24,
@@ -412,19 +413,4 @@ const styles = StyleSheet.create({
     color: '#991b1b',
     lineHeight: 20,
   },
-  retryButton: {
-    backgroundColor: '#047857',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
 });
-

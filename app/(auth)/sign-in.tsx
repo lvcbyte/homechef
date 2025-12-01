@@ -23,11 +23,22 @@ export default function SignInScreen() {
   useEffect(() => {
     // Only redirect if we're waiting for auth and user/profile are loaded
     if (waitingForAuth && user && !authLoading) {
-      // Profile might be null (not created yet) or loaded
-      // Either way, we can redirect - index.tsx will handle onboarding check
       setWaitingForAuth(false);
       setSubmitting(false);
-      router.replace('/');
+      
+      // Check onboarding status - if not completed, go to onboarding
+      if (profile) {
+        if (profile.onboarding_completed === false || profile.onboarding_completed === null) {
+          // User needs to complete onboarding
+          router.replace('/onboarding');
+        } else {
+          // Onboarding completed - go to home
+          router.replace('/');
+        }
+      } else {
+        // Profile not loaded yet - assume onboarding not completed
+        router.replace('/onboarding');
+      }
     }
   }, [waitingForAuth, user, profile, authLoading, router]);
 
