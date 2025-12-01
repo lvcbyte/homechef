@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
@@ -222,12 +225,12 @@ export default function AuthCallbackScreen() {
   if (status === 'loading') {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <View style={styles.content}>
             <ActivityIndicator size="large" color="#047857" />
             <Text style={styles.text}>Bezig met inloggen...</Text>
           </View>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -235,7 +238,7 @@ export default function AuthCallbackScreen() {
   if (status === 'error') {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <View style={styles.content}>
             <View style={styles.errorIconContainer}>
               <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
@@ -256,7 +259,7 @@ export default function AuthCallbackScreen() {
               <Text style={styles.retryButtonText}>Terug naar start</Text>
             </Pressable>
           </View>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
