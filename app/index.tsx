@@ -683,9 +683,11 @@ export default function Home() {
     }
   };
 
-  // IMMEDIATE redirect if we're on the home page and not authenticated
+  // IMMEDIATE redirect if we're on the home page and not authenticated OR profile is null
   // Don't render anything - redirect immediately to prevent session creation
-  if (pathname === '/' && !user) {
+  // CRITICAL: If user exists but profile is null, also redirect to welcome
+  // This handles cases where profile loading failed or user is in invalid state
+  if (pathname === '/' && (!user || (user && !profile && !authLoading))) {
     // If auth is still loading, show loading screen and wait
     if (authLoading) {
       return (
@@ -697,13 +699,17 @@ export default function Home() {
       );
     }
     
-    // Auth is done loading and no user - redirect immediately
+    // Auth is done loading and (no user OR user but no profile) - redirect immediately
     // On web, use window.location.replace for hard redirect (no session preservation)
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       // Prevent multiple redirects
       if (!(window as any).__redirectingToWelcome) {
         (window as any).__redirectingToWelcome = true;
-        console.log('[index] No user after auth load, redirecting to /welcome');
+        if (!user) {
+          console.log('[index] No user after auth load, redirecting to /welcome');
+        } else {
+          console.log('[index] User exists but profile is null, redirecting to /welcome');
+        }
         try {
           window.location.replace('/welcome');
         } catch (e) {
