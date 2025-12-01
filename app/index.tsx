@@ -650,7 +650,10 @@ export default function Home() {
     return null;
   }
 
-  if (loading) {
+  // Show loading only for data loading, not auth loading
+  // This prevents the page from being stuck after refresh
+  // Only show loading if we have user and profile (data is loading)
+  if (loading && user && profile && profile.onboarding_completed === true) {
     return (
       <View style={styles.container}>
         <SafeAreaViewComponent style={styles.safeArea}>
@@ -658,6 +661,15 @@ export default function Home() {
         </SafeAreaViewComponent>
       </View>
     );
+  }
+
+  // If we have a user but profile is null and we're not loading, 
+  // still show the page (profile might load later or might have failed)
+  // This prevents the page from being stuck in loading state
+  if (user && profile === null && !authLoading) {
+    // Profile is null but not loading - might be a permission issue
+    // Show the page anyway, but log a warning
+    console.warn('[index] User authenticated but profile is null - showing page anyway');
   }
 
   // Don't render if not authenticated (will redirect)
