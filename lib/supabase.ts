@@ -111,21 +111,29 @@ function initSupabase() {
   }
   
   console.log('[supabase] Creating full client with auth');
-  supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      storage: createStorageAdapter(),
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true, // Enable to detect auth tokens in URL
-    },
-    global: {
-      headers: {
-        'x-client-info': 'stockpit-web',
-      },
-    },
-  });
   
-  return supabaseInstance;
+  try {
+    supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        storage: createStorageAdapter(),
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true, // Enable to detect auth tokens in URL
+        flowType: 'pkce', // Use PKCE flow for better security
+      },
+      global: {
+        headers: {
+          'x-client-info': 'stockpit-web',
+        },
+      },
+    });
+    
+    console.log('[supabase] Client created successfully');
+    return supabaseInstance;
+  } catch (error) {
+    console.error('[supabase] Error creating client:', error);
+    throw error;
+  }
 }
 
 // Export getter that initializes on first access
