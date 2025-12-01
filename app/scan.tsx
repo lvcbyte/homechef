@@ -28,6 +28,7 @@ const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 import { GlassDock } from '../components/navigation/GlassDock';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
+import { ReceiptOCR } from '../components/inventory/ReceiptOCR';
 import { useAuth } from '../contexts/AuthContext';
 
 // QuaggaScanner will be loaded dynamically only on web
@@ -989,6 +990,15 @@ export default function ScanScreen() {
                     ))}
                   </ScrollView>
                 )}
+              </View>
+
+              <View style={styles.section}>
+                <ReceiptOCR
+                  userId={user.id}
+                  onItemsAdded={async (count) => {
+                    Alert.alert('Toegevoegd', `${count} item(s) toegevoegd aan je voorraad.`);
+                  }}
+                />
               </View>
 
               <View style={styles.section}>

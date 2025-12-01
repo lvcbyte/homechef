@@ -84,13 +84,15 @@ export default function Home() {
       // User is not authenticated and auth is done loading - redirect to welcome immediately
       console.log('[index] No user, redirecting to welcome immediately');
       
+      // On web, use window.location.replace immediately (synchronous redirect)
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         // Use hard redirect on web to prevent session preservation
+        // This must happen immediately, not in a timeout
         window.location.replace('/welcome');
         return;
       }
       
-      // For native, use router
+      // For native, use router with minimal delay
       const timer = setTimeout(() => {
         try {
           router.replace('/welcome');
@@ -105,7 +107,7 @@ export default function Home() {
             }
           }, 500);
         }
-      }, 100); // Shorter delay for native
+      }, 50); // Very short delay for native
       return () => clearTimeout(timer);
     }
     
