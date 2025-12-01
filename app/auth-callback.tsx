@@ -183,30 +183,35 @@ export default function AuthCallbackScreen() {
             sessionError: sessionError?.message,
           });
 
-        // If we have a session, show success
-        if (session) {
-          if (isHandled) {
-            console.log('[auth-callback] Already handled, skipping duplicate session handling');
-            return;
-          }
-          
-          isHandled = true;
-          if (timeoutId) clearTimeout(timeoutId);
-          
-          console.log('[auth-callback] Session found, user:', session.user?.email);
-          setUserEmail(session.user?.email || null);
-          setStatus('success');
-        } else {
-          // No session yet - check if we have code or tokens
-          if (!code && !accessToken && !refreshToken) {
-            // No code or tokens in URL - this is an error
-            console.error('[auth-callback] No code or tokens found in URL');
+          // If we have a session, show success
+          if (session) {
+            if (isHandled) {
+              console.log('[auth-callback] Already handled, skipping duplicate session handling');
+              return;
+            }
+            
             isHandled = true;
-            setError('Geen authenticatie code of tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
-            setStatus('error');
-            return;
+            if (timeoutId) clearTimeout(timeoutId);
+            
+            console.log('[auth-callback] Session found, user:', session.user?.email);
+            setUserEmail(session.user?.email || null);
+            setStatus('success');
           }
-          
+        }
+        
+        // If we still don't have a session and we have a code, that's an error
+        if (!isHandled && code) {
+          console.error('[auth-callback] Code found but no session after exchange');
+          isHandled = true;
+          setError('Code uitwisseling mislukt. Controleer of de link nog geldig is en probeer opnieuw.');
+          setStatus('error');
+        } else if (!isHandled && !code && !accessToken && !refreshToken) {
+          // No code or tokens in URL - this is an error
+          console.error('[auth-callback] No code or tokens found in URL');
+          isHandled = true;
+          setError('Geen authenticatie code of tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
+          setStatus('error');
+        } else if (!isHandled) {
           // We have code or tokens but no session - wait for auth state change
           console.log('[auth-callback] Have code/tokens but no session yet, waiting for auth state change...');
           
