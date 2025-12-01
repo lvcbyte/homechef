@@ -427,9 +427,15 @@ export default function OnboardingScreen() {
       await refreshProfile();
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      console.log('Redirecting to home...');
-
-      router.replace('/?onboarding_completed=true');
+      console.log('[onboarding] Redirecting to home...');
+      
+      // Always redirect, even if verification failed
+      // Use window.location for more reliable redirect on web
+      if (typeof window !== 'undefined') {
+        window.location.href = '/?onboarding_completed=true';
+      } else {
+        router.replace('/?onboarding_completed=true');
+      }
     } catch (error: any) {
       console.error('[onboarding] Error completing onboarding:', error);
       
