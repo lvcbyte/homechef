@@ -41,21 +41,69 @@ export default function AuthCallbackScreen() {
           await refreshProfile();
           await new Promise(resolve => setTimeout(resolve, 500));
 
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('onboarding_completed')
-            .eq('id', session.user.id)
-            .single();
-
-          if (profileError && profileError.code !== 'PGRST116') {
-            console.error('Error fetching profile:', profileError);
+          // Check onboarding status and ensure profile exists
+          let profile = null;
+          let profileError = null;
+          
+          try {
+            const profileResult = await supabase
+              .from('profiles')
+              .select('onboarding_completed')
+              .eq('id', session.user.id)
+              .single();
+            
+            profile = profileResult.data;
+            profileError = profileResult.error;
+            
+            // If profile doesn't exist, try to create it
+            if (profileError && profileError.code === 'PGRST116') {
+              console.log('[auth-callback] Profile not found in auth state change, creating...');
+              try {
+                const { error: createError } = await supabase.rpc('create_user_profile', {
+                  p_user_id: session.user.id,
+                  p_email: session.user.email || null,
+                  p_full_name: session.user.user_metadata?.full_name || null,
+                });
+                
+                if (createError) {
+                  console.error('[auth-callback] Error creating profile via RPC:', createError);
+                  // Try direct insert
+                  const { error: insertError } = await supabase.from('profiles').insert({
+                    id: session.user.id,
+                    email: session.user.email || '',
+                    full_name: session.user.user_metadata?.full_name || null,
+                    archetype: 'Minimalist',
+                    dietary_restrictions: [],
+                    cooking_skill: 'Intermediate',
+                    onboarding_completed: false,
+                  });
+                  
+                  if (!insertError) {
+                    profile = { onboarding_completed: false };
+                  }
+                } else {
+                  profile = { onboarding_completed: false };
+                }
+              } catch (createErr: any) {
+                console.error('[auth-callback] Exception creating profile:', createErr);
+              }
+            } else if (profileError) {
+              console.error('[auth-callback] Error fetching profile:', profileError);
+            }
+          } catch (err: any) {
+            console.error('[auth-callback] Exception checking profile:', err);
           }
 
+          // Redirect based on profile status
           if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
-            console.log('Redirecting to onboarding');
+            console.log('[auth-callback] Redirecting to onboarding');
+            router.replace('/onboarding');
+          } else if (!profile) {
+            // Profile doesn't exist - redirect to onboarding
+            console.log('[auth-callback] Profile not found, redirecting to onboarding');
             router.replace('/onboarding');
           } else {
-            console.log('Redirecting to home');
+            console.log('[auth-callback] Redirecting to home');
             router.replace('/');
           }
         } catch (err) {
