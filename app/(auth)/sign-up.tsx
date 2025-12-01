@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Platform, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../contexts/AuthContext';
+
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -23,7 +26,7 @@ export default function SignUpScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaViewComponent style={styles.safeArea}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color="#0f172a" />
@@ -80,8 +83,19 @@ export default function SignUpScreen() {
             onPress={async () => {
               setSubmitting(true);
               setErrorMessage(null);
+              
+              let timeoutId: NodeJS.Timeout | null = null;
+              
+              // Add timeout to prevent infinite loading
+              timeoutId = setTimeout(() => {
+                setErrorMessage('Het duurt langer dan verwacht. Probeer het opnieuw.');
+                setSubmitting(false);
+              }, 10000); // 10 second timeout
+              
               try {
                 const result = await signUp(email, password, name);
+                if (timeoutId) clearTimeout(timeoutId);
+                
                 console.log('Sign up result:', result);
                 if (result.error) {
                   setErrorMessage(result.error);
@@ -93,9 +107,10 @@ export default function SignUpScreen() {
                   setShowSuccessModal(true);
                   console.log('showSuccessModal set to:', true);
                 }
-              } catch (err) {
+              } catch (err: any) {
+                if (timeoutId) clearTimeout(timeoutId);
                 console.error('Sign up error:', err);
-                setErrorMessage('Er is een onverwachte fout opgetreden');
+                setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden');
                 setSubmitting(false);
               }
             }}
@@ -109,7 +124,7 @@ export default function SignUpScreen() {
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
 
       {/* Success Modal */}
       <Modal

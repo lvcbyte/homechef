@@ -146,36 +146,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, name?: string) => {
-    // Get the current origin for redirect URL
-    const redirectTo = typeof window !== 'undefined' 
-      ? `${window.location.origin}/auth-callback`
-      : '/auth-callback';
-    
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: name,
+    try {
+      // Get the current origin for redirect URL
+      const redirectTo = typeof window !== 'undefined' 
+        ? `${window.location.origin}/auth-callback`
+        : '/auth-callback';
+      
+      console.log('Signing up user:', email);
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+          emailRedirectTo: redirectTo,
         },
-        emailRedirectTo: redirectTo,
-      },
-    });
-    if (error) {
-      return { error: error.message };
-    }
-    if (data.user) {
-      // Create profile with onboarding not completed
-      // User will complete onboarding after email confirmation
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        archetype: 'Minimalist',
-        dietary_restrictions: [],
-        cooking_skill: 'Intermediate',
-        onboarding_completed: false,
       });
+      
+      if (error) {
+        console.error('Sign up error:', error);
+        return { error: error.message };
+      }
+      
+      if (data.user) {
+        console.log('User created, creating profile:', data.user.id);
+        
+        // Create profile with onboarding not completed
+        // User will complete onboarding after email confirmation
+        // Use a timeout to prevent hanging
+        const profilePromise = supabase.from('profiles').upsert({
+          id: data.user.id,
+          archetype: 'Minimalist',
+          dietary_restrictions: [],
+          cooking_skill: 'Intermediate',
+          onboarding_completed: false,
+        }, {
+          onConflict: 'id'
+        });
+        
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
+        );
+        
+        try {
+          const { error: profileError } = await Promise.race([profilePromise, timeoutPromise]) as any;
+          
+          if (profileError) {
+            console.error('Profile creation error:', profileError);
+            // Don't fail signup if profile creation fails - it can be created later
+            // The profile will be created automatically when user confirms email
+          } else {
+            console.log('Profile created successfully');
+          }
+        } catch (profileErr: any) {
+          console.error('Profile creation failed:', profileErr);
+          // Don't fail signup - profile can be created later
+        }
+      }
+      
+      return {};
+    } catch (err: any) {
+      console.error('Sign up exception:', err);
+      return { error: err.message || 'Er ging iets mis bij het aanmaken van je account' };
     }
-    return {};
   };
 
   const signOut = async () => {
