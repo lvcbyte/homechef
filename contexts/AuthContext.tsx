@@ -300,35 +300,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.user) {
         console.log('[auth] User created:', data.user.id);
         
-        // Create profile with onboarding not completed
-        // User will complete onboarding after email confirmation
-        // Use a timeout to prevent hanging, but don't fail signup if it fails
+        // Profile should be created automatically by the database trigger
+        // But we'll try to create it manually as a backup
+        // Don't fail signup if profile creation fails - trigger should handle it
         try {
-          const profilePromise = supabase.from('profiles').upsert({
-            id: data.user.id,
-            archetype: 'Minimalist',
-            dietary_restrictions: [],
-            cooking_skill: 'Intermediate',
-            onboarding_completed: false,
-          }, {
-            onConflict: 'id'
-          });
+          // Wait a moment for the trigger to potentially create the profile
+          await new Promise(resolve => setTimeout(resolve, 500));
           
-          const profileTimeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
-          );
+          // Check if profile already exists (created by trigger)
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', data.user.id)
+            .single();
           
-          const { error: profileError } = await Promise.race([profilePromise, profileTimeoutPromise]) as any;
-          
-          if (profileError) {
-            console.warn('[auth] Profile creation error (non-critical):', profileError);
-            // Don't fail signup - profile will be created by trigger or later
+          if (existingProfile) {
+            console.log('[auth] Profile already exists (created by trigger)');
           } else {
-            console.log('[auth] Profile created successfully');
+            // Profile doesn't exist, try to create it manually
+            console.log('[auth] Profile not found, creating manually...');
+            const profilePromise = supabase.from('profiles').insert({
+              id: data.user.id,
+              email: data.user.email || '',
+              full_name: name || null,
+              archetype: 'Minimalist',
+              dietary_restrictions: [],
+              cooking_skill: 'Intermediate',
+              onboarding_completed: false,
+            });
+            
+            const profileTimeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
+            );
+            
+            const { error: profileError } = await Promise.race([profilePromise, profileTimeoutPromise]) as any;
+            
+            if (profileError) {
+              console.error('[auth] Profile creation error:', profileError);
+              console.error('[auth] Error details:', {
+                code: profileError.code,
+                message: profileError.message,
+                details: profileError.details,
+                hint: profileError.hint,
+              });
+              
+              // If it's a permission/RLS error, the trigger should still create it
+              // Don't fail signup - user can still verify email and profile will be created
+              if (profileError.code === '42501' || profileError.message?.includes('permission') || profileError.message?.includes('policy')) {
+                console.warn('[auth] Profile creation blocked by RLS - trigger should handle it');
+              } else {
+                // Other errors - log but don't fail
+                console.warn('[auth] Profile creation failed but signup continues');
+              }
+            } else {
+              console.log('[auth] Profile created successfully');
+            }
           }
         } catch (profileErr: any) {
-          console.warn('[auth] Profile creation failed (non-critical):', profileErr);
-          // Don't fail signup - profile can be created later
+          console.error('[auth] Profile creation exception:', profileErr);
+          // Don't fail signup - profile can be created by trigger or later
+          // The database trigger should handle profile creation automatically
         }
       }
       
