@@ -81,16 +81,26 @@ export default function SignUpScreen() {
             style={[styles.primaryButton, submitting && { opacity: 0.6 }]}
             disabled={submitting}
             onPress={async () => {
+              if (!email || !password) {
+                setErrorMessage('Vul alstublieft je e-mail en wachtwoord in.');
+                return;
+              }
+              
+              if (password.length < 8) {
+                setErrorMessage('Wachtwoord moet minimaal 8 tekens lang zijn.');
+                return;
+              }
+              
               setSubmitting(true);
               setErrorMessage(null);
               
               let timeoutId: NodeJS.Timeout | null = null;
               
-              // Add timeout to prevent infinite loading
+              // Add timeout to prevent infinite loading (backup timeout)
               timeoutId = setTimeout(() => {
-                setErrorMessage('Het duurt langer dan verwacht. Probeer het opnieuw.');
+                setErrorMessage('Het duurt langer dan verwacht. Controleer je internetverbinding en probeer het opnieuw.');
                 setSubmitting(false);
-              }, 10000); // 10 second timeout
+              }, 20000); // 20 second backup timeout (auth call has 15s timeout)
               
               try {
                 const result = await signUp(email, password, name);
@@ -110,7 +120,7 @@ export default function SignUpScreen() {
               } catch (err: any) {
                 if (timeoutId) clearTimeout(timeoutId);
                 console.error('Sign up error:', err);
-                setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden');
+                setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden. Probeer het opnieuw.');
                 setSubmitting(false);
               }
             }}

@@ -63,24 +63,29 @@ export default function SignInScreen() {
             style={[styles.primaryButton, submitting && { opacity: 0.6 }]}
             disabled={submitting}
             onPress={async () => {
+              if (!email || !password) {
+                setErrorMessage('Vul alstublieft je e-mail en wachtwoord in.');
+                return;
+              }
+              
               setSubmitting(true);
               setErrorMessage(null);
               
               let timeoutId: NodeJS.Timeout | null = null;
               
-              // Add timeout to prevent infinite loading
+              // Add timeout to prevent infinite loading (backup timeout)
               timeoutId = setTimeout(() => {
-                setErrorMessage('Het duurt langer dan verwacht. Probeer het opnieuw.');
+                setErrorMessage('Het duurt langer dan verwacht. Controleer je internetverbinding en probeer het opnieuw.');
                 setSubmitting(false);
-              }, 10000); // 10 second timeout
+              }, 20000); // 20 second backup timeout (auth call has 15s timeout)
               
               try {
-                const { error } = await signIn(email, password);
+                const result = await signIn(email, password);
                 if (timeoutId) clearTimeout(timeoutId);
                 
-                if (error) {
+                if (result.error) {
                   setSubmitting(false);
-                  setErrorMessage(error);
+                  setErrorMessage(result.error);
                 } else {
                   // Wait a bit for auth state to update and profile to load
                   setTimeout(async () => {
@@ -106,7 +111,7 @@ export default function SignInScreen() {
               } catch (err: any) {
                 if (timeoutId) clearTimeout(timeoutId);
                 console.error('Sign in error:', err);
-                setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden');
+                setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden. Probeer het opnieuw.');
                 setSubmitting(false);
               }
             }}

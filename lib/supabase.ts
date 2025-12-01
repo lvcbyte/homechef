@@ -81,15 +81,20 @@ function initSupabase() {
   
   // Validate credentials before creating client
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error(
-      'Supabase credentials are missing. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY as environment variables in your Vercel project settings.'
-    );
+    const errorMsg = 'Supabase credentials are missing. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY as environment variables in your Vercel project settings.';
+    console.error('[supabase]', errorMsg);
+    console.error('[supabase] SUPABASE_URL:', SUPABASE_URL ? '✅' : '❌');
+    console.error('[supabase] SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? '✅' : '❌');
+    throw new Error(errorMsg);
   }
+  
+  console.log('[supabase] Initializing client with URL:', SUPABASE_URL.substring(0, 30) + '...');
   
   // Don't initialize during SSR (when window is undefined and we're in Node.js)
   const isSSR = typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node;
   
   if (isSSR) {
+    console.log('[supabase] SSR mode - creating minimal client');
     // Return a minimal mock client for SSR
     return createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
@@ -105,12 +110,18 @@ function initSupabase() {
     });
   }
   
+  console.log('[supabase] Creating full client with auth');
   supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       storage: createStorageAdapter(),
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true, // Enable to detect auth tokens in URL
+    },
+    global: {
+      headers: {
+        'x-client-info': 'stockpit-web',
+      },
     },
   });
   
@@ -120,9 +131,24 @@ function initSupabase() {
 // Export getter that initializes on first access
 export const supabase = new Proxy({} as SupabaseClient<Database>, {
   get(_target, prop) {
-    const client = initSupabase();
-    const value = client[prop as keyof SupabaseClient<Database>];
-    return typeof value === 'function' ? value.bind(client) : value;
+    try {
+      const client = initSupabase();
+      const value = client[prop as keyof SupabaseClient<Database>];
+      if (typeof value === 'function') {
+        return value.bind(client);
+      }
+      return value;
+    } catch (error) {
+      console.error('[supabase] Error accessing Supabase client:', error);
+      // Return a mock that throws helpful errors
+      if (typeof prop === 'string' && prop.includes('auth')) {
+        return {
+          signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
+          signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
+        };
+      }
+      throw error;
+    }
   },
 });
 

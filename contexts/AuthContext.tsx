@@ -167,6 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
+      console.log('[auth] Starting sign in for:', email);
+      
       // Clear any invalid tokens first
       if (typeof window !== 'undefined' && window.localStorage) {
         const keys = Object.keys(localStorage);
@@ -177,30 +179,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
       
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      // Add timeout to prevent hanging
+      const signInPromise = supabase.auth.signInWithPassword({ email, password });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign in timeout - het duurt te lang. Controleer je internetverbinding.')), 15000)
+      );
+      
+      const { data, error } = await Promise.race([signInPromise, timeoutPromise]) as any;
+      
       if (error) {
-        console.error('Sign in error:', error);
-        return { error: error.message };
+        console.error('[auth] Sign in error:', error);
+        return { error: error.message || 'Inloggen mislukt. Controleer je e-mail en wachtwoord.' };
       }
       
-      console.log('Sign in successful:', data.user?.email);
+      console.log('[auth] Sign in successful:', data.user?.email);
       return {};
     } catch (err: any) {
-      console.error('Sign in exception:', err);
-      return { error: err.message || 'Er ging iets mis bij het inloggen' };
+      console.error('[auth] Sign in exception:', err);
+      if (err.message && err.message.includes('timeout')) {
+        return { error: err.message };
+      }
+      return { error: err.message || 'Er ging iets mis bij het inloggen. Probeer het opnieuw.' };
     }
   };
 
   const signUp = async (email: string, password: string, name?: string) => {
     try {
+      console.log('[auth] Starting sign up for:', email);
+      
       // Get the current origin for redirect URL
       const redirectTo = typeof window !== 'undefined' 
         ? `${window.location.origin}/auth-callback`
         : '/auth-callback';
       
-      console.log('Signing up user:', email);
+      console.log('[auth] Redirect URL:', redirectTo);
       
-      const { data, error } = await supabase.auth.signUp({
+      // Add timeout to prevent hanging
+      const signUpPromise = supabase.auth.signUp({
         email,
         password,
         options: {
@@ -211,52 +226,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
       
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign up timeout - het duurt te lang. Controleer je internetverbinding.')), 15000)
+      );
+      
+      const { data, error } = await Promise.race([signUpPromise, timeoutPromise]) as any;
+      
       if (error) {
-        console.error('Sign up error:', error);
-        return { error: error.message };
+        console.error('[auth] Sign up error:', error);
+        return { error: error.message || 'Account aanmaken mislukt. Probeer het opnieuw.' };
       }
       
       if (data.user) {
-        console.log('User created, creating profile:', data.user.id);
+        console.log('[auth] User created:', data.user.id);
         
         // Create profile with onboarding not completed
         // User will complete onboarding after email confirmation
-        // Use a timeout to prevent hanging
-        const profilePromise = supabase.from('profiles').upsert({
-          id: data.user.id,
-          archetype: 'Minimalist',
-          dietary_restrictions: [],
-          cooking_skill: 'Intermediate',
-          onboarding_completed: false,
-        }, {
-          onConflict: 'id'
-        });
-        
-        // Add timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
-        );
-        
+        // Use a timeout to prevent hanging, but don't fail signup if it fails
         try {
-          const { error: profileError } = await Promise.race([profilePromise, timeoutPromise]) as any;
+          const profilePromise = supabase.from('profiles').upsert({
+            id: data.user.id,
+            archetype: 'Minimalist',
+            dietary_restrictions: [],
+            cooking_skill: 'Intermediate',
+            onboarding_completed: false,
+          }, {
+            onConflict: 'id'
+          });
+          
+          const profileTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
+          );
+          
+          const { error: profileError } = await Promise.race([profilePromise, profileTimeoutPromise]) as any;
           
           if (profileError) {
-            console.error('Profile creation error:', profileError);
-            // Don't fail signup if profile creation fails - it can be created later
-            // The profile will be created automatically when user confirms email
+            console.warn('[auth] Profile creation error (non-critical):', profileError);
+            // Don't fail signup - profile will be created by trigger or later
           } else {
-            console.log('Profile created successfully');
+            console.log('[auth] Profile created successfully');
           }
         } catch (profileErr: any) {
-          console.error('Profile creation failed:', profileErr);
+          console.warn('[auth] Profile creation failed (non-critical):', profileErr);
           // Don't fail signup - profile can be created later
         }
       }
       
+      console.log('[auth] Sign up successful');
       return {};
     } catch (err: any) {
-      console.error('Sign up exception:', err);
-      return { error: err.message || 'Er ging iets mis bij het aanmaken van je account' };
+      console.error('[auth] Sign up exception:', err);
+      if (err.message && err.message.includes('timeout')) {
+        return { error: err.message };
+      }
+      return { error: err.message || 'Er ging iets mis bij het aanmaken van je account. Probeer het opnieuw.' };
     }
   };
 
