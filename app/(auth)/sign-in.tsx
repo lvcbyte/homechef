@@ -110,21 +110,23 @@ export default function SignInScreen() {
                 
                 if (result.error) {
                   setSubmitting(false);
+                  setWaitingForAuth(false);
                   setErrorMessage(result.error);
-              } else {
+                } else {
                   // Sign-in successful, wait for auth state to update
                   // The useEffect will handle the redirect once user is loaded
                   setWaitingForAuth(true);
                   
-                  // Fallback: if after 3 seconds we still don't have a user, redirect anyway
+                  // Fallback: if after 5 seconds we still don't have a user, redirect anyway
                   setTimeout(() => {
-                    if (waitingForAuth && !user) {
-                      console.warn('Auth state update taking too long, redirecting anyway');
+                    if (waitingForAuth && !user && !authLoading) {
+                      console.warn('[sign-in] Auth state update taking too long, redirecting anyway');
                       setWaitingForAuth(false);
-                    setSubmitting(false);
-                    router.replace('/');
+                      setSubmitting(false);
+                      // Redirect to home - it will handle onboarding check
+                      router.replace('/');
                     }
-                  }, 3000);
+                  }, 5000);
                 }
               } catch (err: any) {
                 if (timeoutId) clearTimeout(timeoutId);

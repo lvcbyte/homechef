@@ -362,6 +362,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
+      console.log('[auth] Starting sign out...');
+      
       // Clear profile and session state first
       setProfile(null);
       setSession(null);
@@ -369,25 +371,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Sign out from Supabase - this will trigger onAuthStateChange
       const { error } = await supabase.auth.signOut();
       if (error) {
-        console.error('Error signing out:', error);
+        console.error('[auth] Error signing out from Supabase:', error);
+      } else {
+        console.log('[auth] Signed out from Supabase successfully');
       }
       
-      // Clear Supabase session from localStorage on web
-      // Supabase stores session in a specific format: `sb-<project-ref>-auth-token`
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const keys = Object.keys(localStorage);
-        keys.forEach(key => {
-          // Remove Supabase auth tokens
-          if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
-            localStorage.removeItem(key);
+      // Clear all Supabase-related data from storage (both localStorage and sessionStorage)
+      // This ensures a clean state for the next sign-in
+      if (typeof window !== 'undefined') {
+        const clearStorage = (storage: Storage) => {
+          try {
+            const keys = Object.keys(storage);
+            keys.forEach(key => {
+              // Remove Supabase auth tokens and related data
+              if (
+                key.includes('supabase') || 
+                key.includes('auth-token') || 
+                key.includes('auth-token-code-verifier') ||
+                key.startsWith('sb-') ||
+                key.includes('supabase.auth')
+              ) {
+                storage.removeItem(key);
+              }
+            });
+            console.log('[auth] Cleared storage:', storage === window.localStorage ? 'localStorage' : 'sessionStorage');
+          } catch (e) {
+            console.warn('[auth] Error clearing storage:', e);
           }
-        });
+        };
+        
+        clearStorage(window.localStorage);
+        clearStorage(window.sessionStorage);
       }
+      
+      console.log('[auth] Sign out completed');
     } catch (error) {
-      console.error('Error during sign out:', error);
-      // Even if there's an error, clear local state
+      console.error('[auth] Error during sign out:', error);
+      // Even if there's an error, clear local state and storage
       setProfile(null);
       setSession(null);
+      
+      // Force clear storage on error
+      if (typeof window !== 'undefined') {
+        try {
+          const clearStorage = (storage: Storage) => {
+            const keys = Object.keys(storage);
+            keys.forEach(key => {
+              if (
+                key.includes('supabase') || 
+                key.includes('auth-token') || 
+                key.startsWith('sb-')
+              ) {
+                storage.removeItem(key);
+              }
+            });
+          };
+          clearStorage(window.localStorage);
+          clearStorage(window.sessionStorage);
+        } catch (e) {
+          // Ignore storage errors
+        }
+      }
     }
   };
 
