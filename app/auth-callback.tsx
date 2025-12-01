@@ -73,13 +73,12 @@ export default function AuthCallbackScreen() {
           return;
         }
 
-        console.log('Auth callback - Full URL:', window.location.href);
-        console.log('Auth callback - Hash:', window.location.hash);
-        console.log('Auth callback - Search:', window.location.search);
+        console.log('[auth-callback] Full URL:', window.location.href);
+        console.log('[auth-callback] Hash:', window.location.hash);
+        console.log('[auth-callback] Search:', window.location.search);
 
-        // Supabase automatically handles the session from URL hash/query params
-        // when detectSessionInUrl is enabled, but we need to wait for it
-        // Check if we have tokens in hash or query params
+        // Extract tokens from URL hash or query params
+        // Supabase email confirmation uses hash fragments: #access_token=...&refresh_token=...
         const hash = window.location.hash.substring(1);
         const search = window.location.search.substring(1);
         const hashParams = new URLSearchParams(hash);
@@ -88,37 +87,30 @@ export default function AuthCallbackScreen() {
         const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
         const type = hashParams.get('type') || searchParams.get('type');
+        const error = hashParams.get('error') || searchParams.get('error');
+        const errorDescription = hashParams.get('error_description') || searchParams.get('error_description');
 
-        console.log('Auth callback - Tokens found:', {
+        console.log('[auth-callback] Tokens found:', {
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
           type,
+          error,
+          errorDescription,
         });
 
-        // For email confirmation, Supabase uses hash fragments (#access_token=...)
-        // We need to explicitly handle this by calling getSession which triggers URL parsing
-        // Wait a bit for Supabase to initialize
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Try to get session - this should trigger Supabase to parse the URL hash
-        let { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        // If still no session, wait a bit more and try again
-        if (!session) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const retryResult = await supabase.auth.getSession();
-          session = retryResult.data.session;
-          sessionError = retryResult.error;
+        // If there's an error in the URL, show it
+        if (error) {
+          console.error('[auth-callback] Error in URL:', error, errorDescription);
+          isHandled = true;
+          setError(errorDescription || error || 'Er ging iets mis bij de verificatie.');
+          setStatus('error');
+          setTimeout(() => router.replace('/welcome'), 3000);
+          return;
         }
 
-        console.log('Auth callback - Session check:', {
-          hasSession: !!session,
-          sessionError: sessionError?.message,
-        });
-
-        // If no session but we have tokens, try to set session manually
-        if (!session && accessToken && refreshToken) {
-          console.log('Auth callback - Setting session manually with tokens');
+        // If we have tokens, try to set session immediately
+        if (accessToken && refreshToken) {
+          console.log('[auth-callback] Found tokens, setting session...');
           try {
             const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
               access_token: accessToken,
@@ -126,32 +118,66 @@ export default function AuthCallbackScreen() {
             });
 
             if (setSessionError) {
-              console.error('Auth callback - Error setting session:', setSessionError);
-              // Don't throw, continue to wait for auth state change
+              console.error('[auth-callback] Error setting session:', setSessionError);
+              // Continue to try getSession as fallback
             } else if (sessionData?.session) {
-              session = sessionData.session;
-              console.log('Auth callback - Session set manually successfully');
+              console.log('[auth-callback] Session set successfully via setSession');
+              // Session is set, the auth state change listener will handle the redirect
+              // But we can also handle it here
+              if (!isHandled) {
+                isHandled = true;
+                if (timeoutId) clearTimeout(timeoutId);
+                
+                await refreshProfile();
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                const { data: profile } = await supabase
+                  .from('profiles')
+                  .select('onboarding_completed')
+                  .eq('id', sessionData.session.user.id)
+                  .single();
+
+                if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
+                  router.replace('/onboarding');
+                } else {
+                  router.replace('/');
+                }
+                return;
+              }
             }
-          } catch (setSessionErr) {
-            console.error('Auth callback - Exception setting session:', setSessionErr);
-            // Continue to wait for auth state change
+          } catch (setSessionErr: any) {
+            console.error('[auth-callback] Exception setting session:', setSessionErr);
+            // Continue to try getSession as fallback
           }
         }
 
-        // If we still don't have a session, wait for auth state change
-        // This handles cases where Supabase processes the URL hash asynchronously
+        // Also try getSession - Supabase might have already processed the URL
+        // Wait a bit for Supabase to initialize and process the URL
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        // If still no session, wait a bit more and try again (Supabase might need more time)
         if (!session) {
-          console.log('Auth callback - No session yet, waiting for auth state change or timeout...');
-          // The auth state change listener will handle this
-          // We set a timeout above to show error if nothing happens
+          console.log('[auth-callback] No session yet, waiting and retrying...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const retryResult = await supabase.auth.getSession();
+          session = retryResult.data.session;
+          sessionError = retryResult.error;
         }
 
+        console.log('[auth-callback] Session check:', {
+          hasSession: !!session,
+          sessionError: sessionError?.message,
+        });
+
+        // If we have a session, handle it
         if (session) {
           if (isHandled) return;
           isHandled = true;
           if (timeoutId) clearTimeout(timeoutId);
           
-          console.log('Auth callback - Session found, user:', session.user?.email);
+          console.log('[auth-callback] Session found, user:', session.user?.email);
           // Session is set, refresh profile
           await refreshProfile();
 
@@ -166,39 +192,54 @@ export default function AuthCallbackScreen() {
             .single();
 
           if (profileError && profileError.code !== 'PGRST116') {
-            console.error('Error fetching profile:', profileError);
+            console.error('[auth-callback] Error fetching profile:', profileError);
           }
 
           if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
             // Redirect to onboarding
+            console.log('[auth-callback] Redirecting to onboarding');
             router.replace('/onboarding');
           } else {
             // Redirect to home
+            console.log('[auth-callback] Redirecting to home');
             router.replace('/');
           }
         } else {
-          // No session and no tokens - wait a bit more for auth state change
-          console.log('Auth callback - No session yet, waiting for auth state change...');
+          // No session yet - check if we have tokens
+          if (!accessToken || !refreshToken) {
+            // No tokens in URL - this is an error
+            console.error('[auth-callback] No tokens found in URL');
+            isHandled = true;
+            setError('Geen authenticatie tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
+            setStatus('error');
+            setTimeout(() => {
+              router.replace('/welcome');
+            }, 3000);
+            return;
+          }
+          
+          // We have tokens but no session - wait for auth state change
+          // The auth state change listener should fire when Supabase processes the tokens
+          console.log('[auth-callback] Have tokens but no session yet, waiting for auth state change...');
           
           // Set a timeout to show error if nothing happens
           timeoutId = setTimeout(() => {
             if (isHandled) return;
             isHandled = true;
             
-            console.error('Auth callback - Timeout waiting for session');
-            console.error('Auth callback - URL details:', {
-              hash,
-              search,
+            console.error('[auth-callback] Timeout waiting for session after 8 seconds');
+            console.error('[auth-callback] URL details:', {
+              hash: hash.substring(0, 100) + '...',
               hasAccessToken: !!accessToken,
               hasRefreshToken: !!refreshToken,
             });
             
-            setError('Geen authenticatie tokens gevonden. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
+            setError('Het inloggen duurt te lang. De tokens zijn gevonden maar de sessie kon niet worden geactiveerd. Probeer de link opnieuw te openen of neem contact op met support.');
             setStatus('error');
             setTimeout(() => {
               router.replace('/welcome');
-            }, 3000);
-          }, 5000); // Wait 5 seconds before showing error
+            }, 5000);
+          }, 8000); // Wait 8 seconds before showing error
         }
       } catch (err: any) {
         if (isHandled) return;
