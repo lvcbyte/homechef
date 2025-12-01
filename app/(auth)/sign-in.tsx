@@ -90,7 +90,8 @@ export default function SignInScreen() {
               timeoutId = setTimeout(() => {
                 setErrorMessage('Het duurt langer dan verwacht. Controleer je internetverbinding en probeer het opnieuw.');
                 setSubmitting(false);
-              }, 20000); // 20 second backup timeout (auth call has 15s timeout)
+                setWaitingForAuth(false);
+              }, 30000); // 30 second backup timeout
               
               try {
                 const result = await signIn(email, password);

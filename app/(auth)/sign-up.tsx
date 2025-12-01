@@ -100,7 +100,7 @@ export default function SignUpScreen() {
               timeoutId = setTimeout(() => {
                 setErrorMessage('Het duurt langer dan verwacht. Controleer je internetverbinding en probeer het opnieuw.');
                 setSubmitting(false);
-              }, 20000); // 20 second backup timeout (auth call has 15s timeout)
+              }, 30000); // 30 second backup timeout
               
               try {
                 const result = await signUp(email, password, name);

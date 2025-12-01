@@ -280,7 +280,25 @@ export const supabase = new Proxy({} as SupabaseClient<Database>, {
         return undefined;
       }
       
+      // Verify credentials are available before trying to get client
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        console.error('[supabase] Missing credentials when accessing:', prop);
+        if (typeof prop === 'string' && prop.includes('auth')) {
+          return {
+            signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase credentials niet gevonden. Ververs de pagina.' } }),
+            signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase credentials niet gevonden. Ververs de pagina.' } }),
+            getSession: () => Promise.resolve({ data: { session: null }, error: { message: 'Supabase credentials niet gevonden' } }),
+            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+          };
+        }
+        return undefined;
+      }
+      
       const client = getSupabaseClient();
+      if (!client) {
+        throw new Error('Failed to initialize Supabase client');
+      }
+      
       const value = client[prop as keyof SupabaseClient<Database>];
       if (typeof value === 'function') {
         return value.bind(client);
@@ -289,11 +307,17 @@ export const supabase = new Proxy({} as SupabaseClient<Database>, {
     } catch (error: any) {
       console.error('[supabase] Error accessing Supabase client:', error);
       console.error('[supabase] Property:', prop);
+      console.error('[supabase] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        SUPABASE_URL: SUPABASE_URL ? '✅' : '❌',
+        SUPABASE_ANON_KEY: SUPABASE_ANON_KEY ? '✅' : '❌',
+      });
       // Return a mock that throws helpful errors
       if (typeof prop === 'string' && prop.includes('auth')) {
         return {
-          signInWithPassword: () => Promise.resolve({ data: null, error: { message: error.message || 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
-          signUp: () => Promise.resolve({ data: null, error: { message: error.message || 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
+          signInWithPassword: () => Promise.resolve({ data: null, error: { message: error.message || 'Supabase client niet geïnitialiseerd. Ververs de pagina en probeer opnieuw.' } }),
+          signUp: () => Promise.resolve({ data: null, error: { message: error.message || 'Supabase client niet geïnitialiseerd. Ververs de pagina en probeer opnieuw.' } }),
           getSession: () => Promise.resolve({ data: { session: null }, error: { message: error.message || 'Supabase client niet geïnitialiseerd' } }),
           onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
         };

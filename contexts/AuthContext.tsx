@@ -229,33 +229,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('[auth] Starting sign in for:', email);
       
-      // Clear any invalid tokens first
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const keys = Object.keys(localStorage);
-        keys.forEach(key => {
-          if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
-            localStorage.removeItem(key);
-          }
-        });
+      // Verify Supabase client is initialized
+      try {
+        const testSession = await supabase.auth.getSession();
+        console.log('[auth] Supabase client is accessible');
+      } catch (testErr: any) {
+        console.error('[auth] Supabase client test failed:', testErr);
+        return { error: 'Authenticatieservice niet beschikbaar. Ververs de pagina en probeer opnieuw.' };
       }
       
-      // Add timeout to prevent hanging
-      const signInPromise = supabase.auth.signInWithPassword({ email, password });
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Sign in timeout - het duurt te lang. Controleer je internetverbinding.')), 15000)
-      );
+      // Clear any invalid tokens first
+      if (typeof window !== 'undefined') {
+        const clearStorage = (storage: Storage) => {
+          try {
+            const keys = Object.keys(storage);
+            keys.forEach(key => {
+              if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+                storage.removeItem(key);
+              }
+            });
+          } catch (e) {
+            // Ignore storage errors
+          }
+        };
+        clearStorage(window.localStorage);
+        clearStorage(window.sessionStorage);
+      }
       
-      const { data, error } = await Promise.race([signInPromise, timeoutPromise]) as any;
+      // Call signInWithPassword directly without Promise.race
+      // The Supabase client has its own timeout handling
+      console.log('[auth] Calling signInWithPassword...');
+      const startTime = Date.now();
+      
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      
+      const duration = Date.now() - startTime;
+      console.log('[auth] Sign in completed in', duration, 'ms');
       
       if (error) {
         console.error('[auth] Sign in error:', error);
         return { error: error.message || 'Inloggen mislukt. Controleer je e-mail en wachtwoord.' };
       }
       
+      if (!data || !data.user) {
+        console.error('[auth] Sign in returned no user data');
+        return { error: 'Inloggen mislukt. Geen gebruikersdata ontvangen.' };
+      }
+      
       console.log('[auth] Sign in successful:', data.user?.email);
       return {};
     } catch (err: any) {
       console.error('[auth] Sign in exception:', err);
+      // Check if it's a network error
+      if (err.message?.includes('fetch') || err.message?.includes('network') || err.message?.includes('Failed to fetch')) {
+        return { error: 'Netwerkfout. Controleer je internetverbinding en probeer opnieuw.' };
+      }
       if (err.message && err.message.includes('timeout')) {
         return { error: err.message };
       }
@@ -267,6 +295,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('[auth] Starting sign up for:', email);
       
+      // Verify Supabase client is initialized
+      try {
+        const testSession = await supabase.auth.getSession();
+        console.log('[auth] Supabase client is accessible');
+      } catch (testErr: any) {
+        console.error('[auth] Supabase client test failed:', testErr);
+        return { error: 'Authenticatieservice niet beschikbaar. Ververs de pagina en probeer opnieuw.' };
+      }
+      
       // Get the current origin for redirect URL
       const redirectTo = typeof window !== 'undefined' 
         ? `${window.location.origin}/auth-callback`
@@ -274,8 +311,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       console.log('[auth] Redirect URL:', redirectTo);
       
-      // Add timeout to prevent hanging
-      const signUpPromise = supabase.auth.signUp({
+      // Call signUp directly without Promise.race
+      // The Supabase client has its own timeout handling
+      console.log('[auth] Calling signUp...');
+      const startTime = Date.now();
+      
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -286,87 +327,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
       
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Sign up timeout - het duurt te lang. Controleer je internetverbinding.')), 15000)
-      );
-      
-      const { data, error } = await Promise.race([signUpPromise, timeoutPromise]) as any;
+      const duration = Date.now() - startTime;
+      console.log('[auth] Sign up completed in', duration, 'ms');
       
       if (error) {
         console.error('[auth] Sign up error:', error);
         return { error: error.message || 'Account aanmaken mislukt. Probeer het opnieuw.' };
       }
       
-      if (data.user) {
-        console.log('[auth] User created:', data.user.id);
-        
-        // Profile should be created automatically by the database trigger
-        // But we'll try to create it manually as a backup
-        // Don't fail signup if profile creation fails - trigger should handle it
-        try {
-          // Wait a moment for the trigger to potentially create the profile
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Check if profile already exists (created by trigger)
-          const { data: existingProfile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', data.user.id)
-            .single();
-          
-          if (existingProfile) {
-            console.log('[auth] Profile already exists (created by trigger)');
-          } else {
-            // Profile doesn't exist, try to create it manually
-            console.log('[auth] Profile not found, creating manually...');
-            const profilePromise = supabase.from('profiles').insert({
-              id: data.user.id,
-              email: data.user.email || '',
-              full_name: name || null,
-              archetype: 'Minimalist',
-              dietary_restrictions: [],
-              cooking_skill: 'Intermediate',
-              onboarding_completed: false,
-            });
-            
-            const profileTimeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Profile creation timeout')), 5000)
-            );
-            
-            const { error: profileError } = await Promise.race([profilePromise, profileTimeoutPromise]) as any;
-            
-            if (profileError) {
-              console.error('[auth] Profile creation error:', profileError);
-              console.error('[auth] Error details:', {
-                code: profileError.code,
-                message: profileError.message,
-                details: profileError.details,
-                hint: profileError.hint,
-              });
-              
-              // If it's a permission/RLS error, the trigger should still create it
-              // Don't fail signup - user can still verify email and profile will be created
-              if (profileError.code === '42501' || profileError.message?.includes('permission') || profileError.message?.includes('policy')) {
-                console.warn('[auth] Profile creation blocked by RLS - trigger should handle it');
-              } else {
-                // Other errors - log but don't fail
-                console.warn('[auth] Profile creation failed but signup continues');
-              }
-            } else {
-              console.log('[auth] Profile created successfully');
-            }
-          }
-        } catch (profileErr: any) {
-          console.error('[auth] Profile creation exception:', profileErr);
-          // Don't fail signup - profile can be created by trigger or later
-          // The database trigger should handle profile creation automatically
-        }
+      if (!data || !data.user) {
+        console.error('[auth] Sign up returned no user data');
+        return { error: 'Account aanmaken mislukt. Geen gebruikersdata ontvangen.' };
       }
       
-      console.log('[auth] Sign up successful');
+      console.log('[auth] User created:', data.user.id);
+      
+      // Profile should be created automatically by the database trigger
+      // Don't wait for it or try to create it manually - just return success
+      // The trigger will handle profile creation, and if it fails, onboarding will handle it
+      console.log('[auth] Sign up successful - profile will be created by trigger');
       return {};
     } catch (err: any) {
       console.error('[auth] Sign up exception:', err);
+      // Check if it's a network error
+      if (err.message?.includes('fetch') || err.message?.includes('network') || err.message?.includes('Failed to fetch')) {
+        return { error: 'Netwerkfout. Controleer je internetverbinding en probeer opnieuw.' };
+      }
       if (err.message && err.message.includes('timeout')) {
         return { error: err.message };
       }
