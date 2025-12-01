@@ -1,38 +1,10 @@
-import { Stack, useRouter, usePathname } from 'expo-router';
+import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { AuthProvider } from '../contexts/AuthContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-
-// Inner component that can use auth context
-function RootLayoutInner() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const { user, loading: authLoading } = useAuth();
-
-  useEffect(() => {
-    // On web, immediately redirect root to welcome if no user
-    // This prevents session creation on the home page
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && pathname === '/' && !user && !authLoading) {
-      console.log('[root-layout] No user on root, redirecting to welcome');
-      window.location.replace('/welcome');
-    }
-  }, [pathname, user, authLoading]);
-
-  return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: 'fade',
-        contentStyle: {
-          backgroundColor: '#ffffff',
-        },
-      }}
-    />
-  );
-}
 
 export default function RootLayout() {
   useEffect(() => {

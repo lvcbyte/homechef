@@ -65,13 +65,6 @@ export default function Home() {
   const pathname = usePathname();
   const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   
-  // IMMEDIATE redirect on web if no user - prevent session creation
-  // This runs before any rendering to avoid creating a session
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && pathname === '/' && !user && !authLoading) {
-    // Use window.location.replace for hard redirect (no session preservation)
-    window.location.replace('/welcome');
-    return null;
-  }
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
   const [loadingDailyAI, setLoadingDailyAI] = useState(false);
