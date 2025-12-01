@@ -431,10 +431,26 @@ export default function OnboardingScreen() {
 
       router.replace('/?onboarding_completed=true');
     } catch (error: any) {
-      console.error('Error completing onboarding:', error);
-      alert(error.message || 'Er ging iets mis. Probeer het opnieuw.');
+      console.error('[onboarding] Error completing onboarding:', error);
+      
+      // Even on error, try to redirect
+      console.log('[onboarding] Error occurred, but redirecting anyway...');
+      
+      if (typeof window !== 'undefined') {
+        window.location.href = '/?onboarding_completed=true';
+      } else {
+        router.replace('/?onboarding_completed=true');
+      }
+      
+      // Show error but don't block
+      setTimeout(() => {
+        alert(error.message || 'Er ging iets mis, maar je wordt doorgestuurd naar de app.');
+      }, 100);
     } finally {
-      setSaving(false);
+      // Set saving to false after a short delay to allow redirect
+      setTimeout(() => {
+        setSaving(false);
+      }, 1000);
     }
   };
 
