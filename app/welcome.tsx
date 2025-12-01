@@ -26,6 +26,12 @@ export default function WelcomeScreen() {
     const timer = setTimeout(() => {
       setIsMounted(true);
     }, 100);
+    
+    // Reset redirect flag when we're on welcome page
+    if (typeof window !== 'undefined') {
+      (window as any).__redirectingToWelcome = false;
+    }
+    
     return () => clearTimeout(timer);
   }, []);
 
