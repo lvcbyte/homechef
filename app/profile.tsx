@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { GlassDock } from '../components/navigation/GlassDock';
 import { NotificationCenter } from '../components/notifications/NotificationCenter';
 import { BadgesAndChallenges } from '../components/gamification/BadgesAndChallenges';
@@ -173,7 +176,7 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView 
+      <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -423,7 +426,7 @@ export default function ProfileScreen() {
             </View>
           )}
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
       <GlassDock />
     </View>
   );

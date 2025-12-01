@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
@@ -946,7 +949,7 @@ export default function SavedScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <SafeAreaView 
+        <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -954,7 +957,7 @@ export default function SavedScreen() {
         })}
       >
           <StockpitLoader variant="saved" />
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -968,7 +971,7 @@ export default function SavedScreen() {
       >
         <View style={styles.overlay} />
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <SafeAreaView 
+        <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -1245,7 +1248,7 @@ export default function SavedScreen() {
             </View>
           )}
         </ScrollView>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
         <GlassDock />
       </ImageBackground>
 

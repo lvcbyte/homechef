@@ -23,6 +23,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { GlassDock } from '../components/navigation/GlassDock';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { useAuth } from '../contexts/AuthContext';
@@ -896,7 +899,7 @@ export default function ScanScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView 
+      <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -1253,7 +1256,7 @@ export default function ScanScreen() {
         }}
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={styles.productDetailBackdrop}>
+        <SafeAreaViewComponent style={styles.productDetailBackdrop}>
           <Pressable 
             style={styles.productDetailBackdropPressable}
             onPress={() => {
@@ -1335,7 +1338,7 @@ export default function ScanScreen() {
             )}
             </View>
           </Pressable>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </Modal>
 
       <Modal visible={manualModalVisible} transparent animationType="fade">
@@ -1911,7 +1914,7 @@ export default function ScanScreen() {
           setArMode(false);
         }}
       >
-        <SafeAreaView style={styles.productDetailBackdrop}>
+        <SafeAreaViewComponent style={styles.productDetailBackdrop}>
           <Pressable
             style={styles.productDetailBackdropPressable}
             onPress={() => {
@@ -2028,7 +2031,7 @@ export default function ScanScreen() {
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </Modal>
     </View>
   );

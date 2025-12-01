@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
@@ -761,9 +764,9 @@ export default function InventoryScreen() {
   if (initialLoading) {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <StockpitLoader variant="inventory" />
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -771,7 +774,7 @@ export default function InventoryScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView 
+      <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -1165,7 +1168,7 @@ export default function InventoryScreen() {
           )}
 
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
       <GlassDock />
 
       {/* Shelf Photo Detail Modal */}

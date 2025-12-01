@@ -5,6 +5,9 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { chatWithAdminAI, type AdminAIResponse } from '../services/ai';
@@ -814,12 +817,12 @@ export default function AdminPage() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#047857" />
             <Text style={styles.loadingText}>STOCKPIT Admin</Text>
           </View>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -827,7 +830,7 @@ export default function AdminPage() {
   if (!isAuthenticated) {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <Modal
             visible={loginModalVisible}
             animationType="slide"
@@ -887,7 +890,7 @@ export default function AdminPage() {
               </View>
             </View>
           </Modal>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -895,7 +898,7 @@ export default function AdminPage() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#065f46" />
-      <SafeAreaView 
+      <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -2154,7 +2157,7 @@ export default function AdminPage() {
         </Modal>
 
         {/* Bottom Navigation */}
-        <SafeAreaView edges={['bottom']} style={styles.bottomNavSafeArea}>
+        <SafeAreaViewComponent edges={['bottom']} style={styles.bottomNavSafeArea}>
           <View style={styles.bottomNav}>
             <Pressable
               style={styles.bottomNavTab}
@@ -2222,8 +2225,8 @@ export default function AdminPage() {
               </Text>
             </Pressable>
           </View>
-        </SafeAreaView>
-      </SafeAreaView>
+        </SafeAreaViewComponent>
+      </SafeAreaViewComponent>
     </View>
   );
 }

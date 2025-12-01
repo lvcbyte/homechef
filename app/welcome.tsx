@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { useAuth } from '../contexts/AuthContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -76,7 +79,7 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaViewComponent style={styles.safeArea}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
@@ -131,7 +134,7 @@ export default function WelcomeScreen() {
             </View>
           </Animated.View>
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
     </View>
   );
 }

@@ -15,8 +15,12 @@ import {
   View,
 } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(SCREEN_WIDTH - 48, 400);
@@ -441,7 +445,7 @@ export default function OnboardingScreen() {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <ScrollView 
             contentContainerStyle={styles.welcomeScrollContent}
             showsVerticalScrollIndicator={false}
@@ -466,7 +470,7 @@ export default function OnboardingScreen() {
               </Pressable>
             </View>
           </ScrollView>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -475,7 +479,7 @@ export default function OnboardingScreen() {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <ScrollView 
             contentContainerStyle={styles.completeScrollContent}
             showsVerticalScrollIndicator={false}
@@ -526,7 +530,7 @@ export default function OnboardingScreen() {
               </Pressable>
             </View>
           </ScrollView>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -636,7 +640,7 @@ export default function OnboardingScreen() {
             </View>
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
     </View>
   );
 }

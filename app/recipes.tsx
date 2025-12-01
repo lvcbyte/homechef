@@ -5,6 +5,9 @@ import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Platform,
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// Fallback SafeAreaView for web
+const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
+
 import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
@@ -989,9 +992,9 @@ export default function RecipesScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <StockpitLoader variant="recipes" progress={loadingProgress} />
-        </SafeAreaView>
+        </SafeAreaViewComponent>
       </View>
     );
   }
@@ -1000,7 +1003,7 @@ export default function RecipesScreen() {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewComponent style={styles.safeArea}>
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
@@ -1024,7 +1027,7 @@ export default function RecipesScreen() {
               <Text style={styles.authButtonText}>Inloggen</Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </SafeAreaViewComponent>
         <GlassDock />
       </View>
     );
@@ -1033,7 +1036,7 @@ export default function RecipesScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView 
+      <SafeAreaViewComponent 
         style={styles.safeArea}
         // @ts-ignore - web-specific prop
         {...(Platform.OS === 'web' && {
@@ -1476,7 +1479,7 @@ export default function RecipesScreen() {
             );
           })}
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
       <GlassDock />
       <AIChatbot />
 
