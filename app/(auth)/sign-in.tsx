@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -17,6 +17,19 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [waitingForAuth, setWaitingForAuth] = useState(false);
+
+  // Handle redirect after successful sign-in
+  useEffect(() => {
+    // Only redirect if we're waiting for auth and user/profile are loaded
+    if (waitingForAuth && user && !authLoading) {
+      // Profile might be null (not created yet) or loaded
+      // Either way, we can redirect - index.tsx will handle onboarding check
+      setWaitingForAuth(false);
+      setSubmitting(false);
+      router.replace('/');
+    }
+  }, [waitingForAuth, user, profile, authLoading, router]);
 
   return (
     <View style={styles.container}>
@@ -87,54 +100,26 @@ export default function SignInScreen() {
                   setSubmitting(false);
                   setErrorMessage(result.error);
                 } else {
-                  // Wait for auth state to update and profile to load
-                  // Poll for user and profile to be available (max 5 seconds)
-                  let attempts = 0;
-                  const maxAttempts = 50; // 50 attempts * 100ms = 5 seconds max
+                  // Sign-in successful, wait for auth state to update
+                  // The useEffect will handle the redirect once user is loaded
+                  setWaitingForAuth(true);
                   
-                  const checkAuthAndRedirect = async () => {
-                    attempts++;
-                    
-                    // Check if we have a user and profile loaded
-                    // The onAuthStateChange listener should have updated these
-                    if (user && profile !== null) {
-                      // Profile is loaded (even if null, we know it's been checked)
+                  // Fallback: if after 3 seconds we still don't have a user, redirect anyway
+                  setTimeout(() => {
+                    if (waitingForAuth && !user) {
+                      console.warn('Auth state update taking too long, redirecting anyway');
+                      setWaitingForAuth(false);
                       setSubmitting(false);
                       router.replace('/');
-                      return;
                     }
-                    
-                    // If we have a user but profile is still null, try to refresh
-                    if (user && profile === null && attempts < 10) {
-                      try {
-                        await refreshProfile();
-                        // Give it a moment to update
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                      } catch (profileErr) {
-                        console.error('Error refreshing profile:', profileErr);
-                      }
-                    }
-                    
-                    // If we've tried too many times, redirect anyway
-                    if (attempts >= maxAttempts) {
-                      console.warn('Auth state check timed out, redirecting anyway');
-                      setSubmitting(false);
-                      router.replace('/');
-                      return;
-                    }
-                    
-                    // Check again in 100ms
-                    setTimeout(checkAuthAndRedirect, 100);
-                  };
-                  
-                  // Start checking after a short delay to let onAuthStateChange fire
-                  setTimeout(checkAuthAndRedirect, 200);
+                  }, 3000);
                 }
               } catch (err: any) {
                 if (timeoutId) clearTimeout(timeoutId);
                 console.error('Sign in error:', err);
                 setErrorMessage(err.message || 'Er is een onverwachte fout opgetreden. Probeer het opnieuw.');
                 setSubmitting(false);
+                setWaitingForAuth(false);
               }
             }}
           >
