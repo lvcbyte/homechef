@@ -296,12 +296,21 @@ export default function ProfileScreen() {
                     try {
                       await signOut();
                       // Small delay to ensure state is cleared
-                      await new Promise(resolve => setTimeout(resolve, 100));
-                      router.replace('/welcome');
+                      await new Promise(resolve => setTimeout(resolve, 200));
+                      // Use window.location.replace for hard redirect (clears history)
+                      if (typeof window !== 'undefined') {
+                        window.location.replace('/welcome');
+                      } else {
+                        router.replace('/welcome');
+                      }
                     } catch (error) {
                       console.error('Error during sign out:', error);
                       // Still redirect even if there's an error
-                      router.replace('/welcome');
+                      if (typeof window !== 'undefined') {
+                        window.location.replace('/welcome');
+                      } else {
+                        router.replace('/welcome');
+                      }
                     }
                   }}
                 >
