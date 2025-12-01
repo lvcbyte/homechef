@@ -64,6 +64,14 @@ export default function Home() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, profile, loading: authLoading, refreshProfile } = useAuth();
+  
+  // IMMEDIATE redirect on web if no user - prevent session creation
+  // This runs before any rendering to avoid creating a session
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && pathname === '/' && !user && !authLoading) {
+    // Use window.location.replace for hard redirect (no session preservation)
+    window.location.replace('/welcome');
+    return null;
+  }
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
   const [loadingDailyAI, setLoadingDailyAI] = useState(false);
@@ -77,15 +85,21 @@ export default function Home() {
   const [inventory, setInventory] = useState<any[]>([]);
 
   useEffect(() => {
-    // Only redirect if we're on the home page (index) and user is not authenticated
-    // Don't redirect if user is on other pages
-    // Wait a bit to ensure router is mounted
+    // IMMEDIATE redirect if we're on the home page (index) and user is not authenticated
+    // Use window.location.replace on web for a hard redirect that doesn't preserve session
     if (pathname === '/' && !user && !authLoading) {
-      // User is not authenticated and auth is done loading - redirect to welcome
-      // Use a longer delay to ensure router is ready
+      // User is not authenticated and auth is done loading - redirect to welcome immediately
+      console.log('[index] No user, redirecting to welcome immediately');
+      
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        // Use hard redirect on web to prevent session preservation
+        window.location.replace('/welcome');
+        return;
+      }
+      
+      // For native, use router
       const timer = setTimeout(() => {
         try {
-          console.log('[index] No user, redirecting to welcome');
           router.replace('/welcome');
         } catch (error) {
           // Router might not be ready, try again
@@ -98,7 +112,7 @@ export default function Home() {
             }
           }, 500);
         }
-      }, 500); // Longer delay to ensure router is mounted
+      }, 100); // Shorter delay for native
       return () => clearTimeout(timer);
     }
     
@@ -671,11 +685,16 @@ export default function Home() {
     }
   };
 
-  // Only redirect if we're on the home page and not authenticated
-  // Show loading while redirecting
+  // IMMEDIATE redirect if we're on the home page and not authenticated
+  // Don't render anything - redirect immediately to prevent session creation
   if (pathname === '/' && !user && !authLoading) {
-    // Auth is done loading and no user - redirect to welcome
-    // Show loading while redirect happens
+    // On web, use window.location.replace for hard redirect (no session preservation)
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.replace('/welcome');
+      // Return null while redirecting
+      return null;
+    }
+    // For native, show loading while redirect happens
     return (
       <View style={styles.container}>
         <SafeAreaViewComponent style={styles.safeArea}>
