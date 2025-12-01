@@ -63,7 +63,7 @@ const categoryColors: Record<string, string> = {
 export default function Home() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
   const [loadingDailyAI, setLoadingDailyAI] = useState(false);
@@ -79,14 +79,26 @@ export default function Home() {
   useEffect(() => {
     // Only redirect if we're on the home page (index) and user is not authenticated
     // Don't redirect if user is on other pages
-    if (pathname === '/' && !user) {
+    // Wait a bit to ensure router is mounted
+    if (pathname === '/' && !user && !authLoading) {
+      // User is not authenticated and auth is done loading - redirect to welcome
+      // Use a longer delay to ensure router is ready
       const timer = setTimeout(() => {
         try {
+          console.log('[index] No user, redirecting to welcome');
           router.replace('/welcome');
         } catch (error) {
-          // Router might not be ready, ignore
+          // Router might not be ready, try again
+          console.warn('[index] Router not ready, retrying redirect...');
+          setTimeout(() => {
+            try {
+              router.replace('/welcome');
+            } catch (retryError) {
+              console.error('[index] Redirect failed:', retryError);
+            }
+          }, 500);
         }
-      }, 300);
+      }, 500); // Longer delay to ensure router is mounted
       return () => clearTimeout(timer);
     }
     
@@ -113,41 +125,61 @@ export default function Home() {
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const onboardingJustCompleted = searchParams?.get('onboarding_completed') === 'true';
     
+    // If onboarding was just completed, refresh profile and clean up URL
+    if (onboardingJustCompleted && typeof window !== 'undefined') {
+      // Clean up the query parameter immediately
+      const url = new URL(window.location.href);
+      url.searchParams.delete('onboarding_completed');
+      window.history.replaceState({}, '', url.toString());
+      
+      // Refresh profile to get latest onboarding status
+      if (refreshProfile) {
+        refreshProfile().catch((err: any) => {
+          console.warn('[index] Profile refresh failed after onboarding:', err);
+        });
+      }
+      
+      // Don't redirect to onboarding if we just completed it
+      return;
+    }
+    
+    // Only redirect to onboarding if user hasn't completed it and we're not coming from onboarding
     if (user && profile && pathname === '/' && !onboardingJustCompleted && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
       const timer = setTimeout(() => {
         try {
           router.replace('/onboarding');
         } catch (error) {
-          // Router might not be ready, ignore
+          // Router might not be ready, retry
+          console.warn('[index] Router not ready, retrying redirect to onboarding...');
+          setTimeout(() => {
+            try {
+              router.replace('/onboarding');
+            } catch (retryError) {
+              console.error('[index] Redirect to onboarding failed:', retryError);
+            }
+          }, 500);
         }
-      }, 300);
+      }, 500); // Longer delay to ensure router is mounted
       return () => clearTimeout(timer);
-    }
-    
-    // Clean up the query parameter after checking
-    if (onboardingJustCompleted && typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('onboarding_completed');
-      window.history.replaceState({}, '', url.toString());
     }
     
     // Only fetch data if user is authenticated, onboarding is completed, and we're on the home page
     // Also handle case where profile might be null but user is authenticated (profile loading failed)
     // In that case, we'll show the page but some features might not work
-    if (user && pathname === '/') {
+    if (user && pathname === '/' && !authLoading) {
       if (profile && profile.onboarding_completed === true) {
         // Normal case: profile loaded and onboarding completed
         fetchData();
         fetchInventory();
-      } else if (profile === null) {
-        // Profile is null - might be loading or failed
+      } else if (profile === null && !authLoading) {
+        // Profile is null and auth is done loading - might be a problem
         // Don't fetch data yet, but also don't block the page
         // The AuthContext will try to load the profile
         console.log('[index] Profile is null, waiting for profile to load...');
       }
       // If profile exists but onboarding not completed, redirect will happen above
     }
-  }, [user, profile, pathname]);
+  }, [user, profile, pathname, authLoading]);
 
 
   // Remove auto-rotation for quick recipes - make it infinite scroll instead
@@ -640,9 +672,28 @@ export default function Home() {
   };
 
   // Only redirect if we're on the home page and not authenticated
-  // Don't render anything if redirecting
-  if (pathname === '/' && !user) {
-    return null;
+  // Show loading while redirecting
+  if (pathname === '/' && !user && !authLoading) {
+    // Auth is done loading and no user - redirect to welcome
+    // Show loading while redirect happens
+    return (
+      <View style={styles.container}>
+        <SafeAreaViewComponent style={styles.safeArea}>
+          <StockpitLoader variant="home" />
+        </SafeAreaViewComponent>
+      </View>
+    );
+  }
+
+  // If auth is still loading, show loading screen
+  if (authLoading && !user) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaViewComponent style={styles.safeArea}>
+          <StockpitLoader variant="home" />
+        </SafeAreaViewComponent>
+      </View>
+    );
   }
 
   // Don't render if user needs to complete onboarding (will redirect)

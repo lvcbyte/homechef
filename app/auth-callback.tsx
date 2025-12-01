@@ -45,10 +45,21 @@ export default function AuthCallbackScreen() {
         // Don't wait for profile - just redirect immediately
         if (event === 'SIGNED_IN') {
           console.log('[auth-callback] Email verification detected - redirecting to onboarding');
-          // Small delay to ensure state is set
+          // Delay to ensure router is mounted
           setTimeout(() => {
-            router.replace('/onboarding');
-          }, 300);
+            try {
+              router.replace('/onboarding');
+            } catch (error) {
+              console.warn('[auth-callback] Router not ready, retrying...');
+              setTimeout(() => {
+                try {
+                  router.replace('/onboarding');
+                } catch (retryError) {
+                  console.error('[auth-callback] Redirect failed:', retryError);
+                }
+              }, 500);
+            }
+          }, 500);
           return;
         }
         
@@ -81,17 +92,38 @@ export default function AuthCallbackScreen() {
           // Redirect based on profile status
           if (profile && profile.onboarding_completed === true) {
             console.log('[auth-callback] Onboarding completed - redirecting to home');
-            router.replace('/');
+            setTimeout(() => {
+              try {
+                router.replace('/');
+              } catch (error) {
+                console.warn('[auth-callback] Router not ready, retrying...');
+                setTimeout(() => router.replace('/'), 500);
+              }
+            }, 500);
           } else {
             // Profile doesn't exist or onboarding not completed - go to onboarding
             console.log('[auth-callback] Redirecting to onboarding');
-            router.replace('/onboarding');
+            setTimeout(() => {
+              try {
+                router.replace('/onboarding');
+              } catch (error) {
+                console.warn('[auth-callback] Router not ready, retrying...');
+                setTimeout(() => router.replace('/onboarding'), 500);
+              }
+            }, 500);
           }
         } catch (err) {
           console.error('[auth-callback] Error in auth state change handler:', err);
           // On error, redirect to onboarding anyway
           console.log('[auth-callback] Error occurred - redirecting to onboarding');
-          router.replace('/onboarding');
+          setTimeout(() => {
+            try {
+              router.replace('/onboarding');
+            } catch (error) {
+              console.warn('[auth-callback] Router not ready, retrying...');
+              setTimeout(() => router.replace('/onboarding'), 500);
+            }
+          }, 500);
         }
       }
     });
@@ -142,11 +174,11 @@ export default function AuthCallbackScreen() {
           console.log('[auth-callback] Found tokens, setting session...');
           try {
             const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
 
-            if (setSessionError) {
+          if (setSessionError) {
               console.error('[auth-callback] Error setting session:', setSessionError);
               // Continue to try getSession as fallback
             } else if (sessionData?.session) {
@@ -207,8 +239,19 @@ export default function AuthCallbackScreen() {
           // Don't wait for profile checks - just redirect immediately
           console.log('[auth-callback] Email verification detected - redirecting to onboarding immediately');
           setTimeout(() => {
-            router.replace('/onboarding');
-          }, 300);
+            try {
+              router.replace('/onboarding');
+            } catch (error) {
+              console.warn('[auth-callback] Router not ready, retrying...');
+              setTimeout(() => {
+                try {
+                  router.replace('/onboarding');
+                } catch (retryError) {
+                  console.error('[auth-callback] Redirect failed:', retryError);
+                }
+              }, 500);
+            }
+          }, 500);
         } else {
           // No session yet - check if we have tokens
           if (!accessToken || !refreshToken) {
@@ -216,9 +259,9 @@ export default function AuthCallbackScreen() {
             console.error('[auth-callback] No tokens found in URL');
             isHandled = true;
             setError('Geen authenticatie tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
-            setStatus('error');
-            setTimeout(() => {
-              router.replace('/welcome');
+          setStatus('error');
+          setTimeout(() => {
+            router.replace('/welcome');
             }, 3000);
             return;
           }
@@ -241,7 +284,14 @@ export default function AuthCallbackScreen() {
             
             // Redirect to onboarding - user can sign in manually if needed
             console.log('[auth-callback] Timeout - redirecting to onboarding');
-            router.replace('/onboarding');
+            setTimeout(() => {
+              try {
+                router.replace('/onboarding');
+              } catch (error) {
+                console.warn('[auth-callback] Router not ready, retrying...');
+                setTimeout(() => router.replace('/onboarding'), 500);
+              }
+            }, 500);
           }, 3000); // Wait 3 seconds before redirecting anyway
         }
       } catch (err: any) {

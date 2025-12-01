@@ -151,7 +151,7 @@ function createStorageAdapter() {
             return Promise.resolve();
           }
         },
-      };
+    };
     }
   }
   
@@ -224,12 +224,12 @@ function initSupabase() {
   }
   
   try {
-    supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        storage: createStorageAdapter(),
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true, // Enable to detect auth tokens in URL
+  supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      storage: createStorageAdapter(),
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true, // Enable to detect auth tokens in URL
         flowType: 'pkce', // Use PKCE flow for better security and Safari compatibility
         // Safari-specific settings
         ...(isSafari && {
@@ -241,11 +241,11 @@ function initSupabase() {
         headers: {
           'x-client-info': isSafari ? 'stockpit-web-safari' : 'stockpit-web',
         },
-      },
-    });
-    
+    },
+  });
+  
     console.log('[supabase] Client created successfully');
-    return supabaseInstance;
+  return supabaseInstance;
   } catch (error) {
     console.error('[supabase] Error creating client:', error);
     throw error;
@@ -299,7 +299,7 @@ export const supabase = new Proxy({} as SupabaseClient<Database>, {
         throw new Error('Failed to initialize Supabase client');
       }
       
-      const value = client[prop as keyof SupabaseClient<Database>];
+    const value = client[prop as keyof SupabaseClient<Database>];
       if (typeof value === 'function') {
         return value.bind(client);
       }

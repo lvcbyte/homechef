@@ -109,8 +109,8 @@ export default function SignUpScreen() {
                 console.log('Sign up result:', result);
                 if (result.error) {
                   setErrorMessage(result.error);
-                  setSubmitting(false);
-                } else {
+              setSubmitting(false);
+              } else {
                   // Success - show modal
                   console.log('Sign up successful, showing modal');
                   setSubmitting(false);

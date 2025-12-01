@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       setTimeout(() => {
         supabase.auth.getSession().then(({ data, error }) => {
-          if (!mounted) return;
+        if (!mounted) return;
           
           // If there's an error (like invalid refresh token), clear the session
           if (error) {
@@ -67,11 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
           
-          setSession(data.session);
-          setLoading(false);
-        }).catch((error) => {
+        setSession(data.session);
+        setLoading(false);
+      }).catch((error) => {
           console.error('[auth] Error getting session:', error);
-          if (!mounted) return;
+        if (!mounted) return;
           // Clear invalid tokens on error
           if (typeof window !== 'undefined') {
             const clearStorage = (storage: Storage) => {
@@ -90,8 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             clearStorage(window.sessionStorage);
           }
           setSession(null);
-          setLoading(false);
-        });
+        setLoading(false);
+      });
       }, initDelay);
 
       const {
@@ -204,11 +204,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Profile might load later via refreshProfile
             setLoading(false);
           }
-        } else if (data) {
-          setProfile(data as Profile);
-          setLoading(false);
-        } else {
-          setLoading(false);
+          } else if (data) {
+            setProfile(data as Profile);
+            setLoading(false);
+          } else {
+            setLoading(false);
         }
       })
       .catch((error) => {
@@ -216,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearTimeout(loadingTimeout);
         console.error('[auth] Exception fetching profile:', error);
         // Don't block the app - set loading to false
-        setLoading(false);
+          setLoading(false);
       });
 
     return () => {
@@ -266,10 +266,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const duration = Date.now() - startTime;
       console.log('[auth] Sign in completed in', duration, 'ms');
       
-      if (error) {
+    if (error) {
         console.error('[auth] Sign in error:', error);
         return { error: error.message || 'Inloggen mislukt. Controleer je e-mail en wachtwoord.' };
-      }
+    }
       
       if (!data || !data.user) {
         console.error('[auth] Sign in returned no user data');
@@ -304,11 +304,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: 'Authenticatieservice niet beschikbaar. Ververs de pagina en probeer opnieuw.' };
       }
       
-      // Get the current origin for redirect URL
-      const redirectTo = typeof window !== 'undefined' 
-        ? `${window.location.origin}/auth-callback`
-        : '/auth-callback';
-      
+    // Get the current origin for redirect URL
+    const redirectTo = typeof window !== 'undefined' 
+      ? `${window.location.origin}/auth-callback`
+      : '/auth-callback';
+    
       console.log('[auth] Redirect URL:', redirectTo);
       
       // Call signUp directly without Promise.race
@@ -316,24 +316,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('[auth] Calling signUp...');
       const startTime = Date.now();
       
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: name,
-          },
-          emailRedirectTo: redirectTo,
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name,
         },
-      });
+        emailRedirectTo: redirectTo,
+      },
+    });
       
       const duration = Date.now() - startTime;
       console.log('[auth] Sign up completed in', duration, 'ms');
       
-      if (error) {
+    if (error) {
         console.error('[auth] Sign up error:', error);
         return { error: error.message || 'Account aanmaken mislukt. Probeer het opnieuw.' };
-      }
+    }
       
       if (!data || !data.user) {
         console.error('[auth] Sign up returned no user data');
@@ -355,7 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (err.message && err.message.includes('timeout')) {
         return { error: err.message };
-      }
+    }
       return { error: err.message || 'Er ging iets mis bij het aanmaken van je account. Probeer het opnieuw.' };
     }
   };
@@ -402,8 +402,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     try {
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
+      .from('profiles')
+      .select('*')
         .eq('id', currentSession.user.id)
         .single();
       
@@ -419,13 +419,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             onboarding_completed: false,
           })
           .select()
-          .single();
-        
+      .single();
+    
         if (newProfile) {
           setProfile(newProfile as Profile);
         }
       } else if (data) {
-        setProfile(data as Profile);
+      setProfile(data as Profile);
       }
     } catch (error) {
       console.error('Error refreshing profile:', error);

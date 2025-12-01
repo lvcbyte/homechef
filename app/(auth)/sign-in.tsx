@@ -100,7 +100,7 @@ export default function SignInScreen() {
                 if (result.error) {
                   setSubmitting(false);
                   setErrorMessage(result.error);
-                } else {
+              } else {
                   // Sign-in successful, wait for auth state to update
                   // The useEffect will handle the redirect once user is loaded
                   setWaitingForAuth(true);
@@ -110,8 +110,8 @@ export default function SignInScreen() {
                     if (waitingForAuth && !user) {
                       console.warn('Auth state update taking too long, redirecting anyway');
                       setWaitingForAuth(false);
-                      setSubmitting(false);
-                      router.replace('/');
+                    setSubmitting(false);
+                    router.replace('/');
                     }
                   }, 3000);
                 }

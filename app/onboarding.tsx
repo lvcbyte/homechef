@@ -248,7 +248,7 @@ function SwipeableCard({ item, onSwipeLeft, onSwipeRight, position, opacity, sca
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, loading: authLoading } = useAuth();
   const [step, setStep] = useState<OnboardingStep>('welcome');
   const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null);
   const [selectedCookingLevel, setSelectedCookingLevel] = useState<string | null>(null);
@@ -257,14 +257,44 @@ export default function OnboardingScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!user) {
-      router.replace('/welcome');
+    if (!user && !authLoading) {
+      // Wait a bit to ensure router is mounted
+      const timer = setTimeout(() => {
+        try {
+          router.replace('/welcome');
+        } catch (error) {
+          console.warn('[onboarding] Router not ready, retrying...');
+          setTimeout(() => {
+            try {
+              router.replace('/welcome');
+            } catch (retryError) {
+              console.error('[onboarding] Redirect failed:', retryError);
+            }
+          }, 500);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, [user, router]);
+  }, [user, router, authLoading]);
 
   useEffect(() => {
     if (user && profile && profile.onboarding_completed === true) {
-      router.replace('/');
+      // Wait a bit to ensure router is mounted
+      const timer = setTimeout(() => {
+        try {
+          router.replace('/');
+        } catch (error) {
+          console.warn('[onboarding] Router not ready, retrying...');
+          setTimeout(() => {
+            try {
+              router.replace('/');
+            } catch (retryError) {
+              console.error('[onboarding] Redirect failed:', retryError);
+            }
+          }, 500);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [user, profile, router]);
 
@@ -373,18 +403,22 @@ export default function OnboardingScreen() {
     if (!user) return;
 
     setSaving(true);
+    
     try {
-      console.log('Starting onboarding completion...');
+      console.log('[onboarding] Starting completion...');
       
+      // Step 1: Call start_onboarding (non-critical)
       try {
         await supabase.rpc('start_onboarding');
+        console.log('[onboarding] start_onboarding called');
       } catch (startError) {
-        console.warn('Error starting onboarding (non-critical):', startError);
+        console.warn('[onboarding] start_onboarding error (non-critical):', startError);
       }
 
+      // Step 2: Complete onboarding with user preferences
       const dietaryRestrictionsJsonb = selectedDietary.length > 0 ? selectedDietary : [];
       
-      console.log('Completing onboarding with:', {
+      console.log('[onboarding] Completing with preferences:', {
         archetype: selectedArchetype || 'Minimalist',
         cooking_skill: selectedCookingLevel || 'Intermediate',
         dietary_restrictions: dietaryRestrictionsJsonb,
@@ -397,77 +431,79 @@ export default function OnboardingScreen() {
       });
 
       if (error) {
-        console.error('[onboarding] Error completing onboarding:', error);
-        // Don't throw - try to continue anyway
-        console.warn('[onboarding] Continuing despite error...');
+        console.error('[onboarding] complete_onboarding error:', error);
+        // Try direct update as fallback
+        console.log('[onboarding] Trying direct profile update as fallback...');
+        try {
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              archetype: selectedArchetype || 'Minimalist',
+              cooking_skill: selectedCookingLevel || 'Intermediate',
+              dietary_restrictions: dietaryRestrictionsJsonb,
+              onboarding_completed: true,
+            })
+            .eq('id', user.id);
+          
+          if (updateError) {
+            console.error('[onboarding] Direct update also failed:', updateError);
+          } else {
+            console.log('[onboarding] Direct update succeeded');
+          }
+        } catch (updateErr) {
+          console.error('[onboarding] Direct update exception:', updateErr);
+        }
       } else {
-        console.log('[onboarding] Onboarding RPC completed successfully:', data);
+        console.log('[onboarding] complete_onboarding succeeded:', data);
       }
 
-      // Try to refresh profile, but don't wait too long
-      try {
-        await Promise.race([
-          refreshProfile(),
-          new Promise((resolve) => setTimeout(resolve, 2000)) // Max 2 seconds
-        ]);
-      } catch (refreshError) {
-        console.warn('[onboarding] Profile refresh failed, continuing:', refreshError);
-      }
+      // Step 3: Refresh profile in context (non-blocking)
+      refreshProfile().catch(err => {
+        console.warn('[onboarding] Profile refresh failed (non-critical):', err);
+      });
 
-      // Wait a moment for profile to update
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      const { data: updatedProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('onboarding_completed')
-        .eq('id', user.id)
-        .single();
-
-      if (profileError) {
-        console.warn('[onboarding] Error verifying profile update:', profileError);
-        // Continue anyway - the RPC should have updated it
-      } else if (updatedProfile) {
-        console.log('[onboarding] Profile verification:', {
-          onboarding_completed: updatedProfile.onboarding_completed,
-        });
-      }
-
-      console.log('Profile verified, refreshing profile state...');
-
-      await refreshProfile();
-      await new Promise(resolve => setTimeout(resolve, 500));
-
+      // Step 4: Redirect immediately - don't wait for verification
       console.log('[onboarding] Redirecting to home...');
       
-      // Always redirect, even if verification failed
-      // Use window.location for more reliable redirect on web
-      if (typeof window !== 'undefined') {
-        window.location.href = '/?onboarding_completed=true';
-      } else {
-        router.replace('/?onboarding_completed=true');
-      }
+      // Use a more reliable redirect method with delay to ensure router is ready
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          // Force a full page reload to ensure state is reset
+          window.location.replace('/?onboarding_completed=true');
+        } else {
+          try {
+            router.replace('/?onboarding_completed=true');
+          } catch (error) {
+            console.warn('[onboarding] Router not ready, using window.location...');
+            if (typeof window !== 'undefined') {
+              window.location.replace('/?onboarding_completed=true');
+            }
+          }
+        }
+      }, 300);
+      
     } catch (error: any) {
-      console.error('[onboarding] Error completing onboarding:', error);
+      console.error('[onboarding] Exception during completion:', error);
       
-      // Even on error, try to redirect
-      console.log('[onboarding] Error occurred, but redirecting anyway...');
+      // On any error, still redirect - the profile might be updated anyway
+      console.log('[onboarding] Error occurred, redirecting anyway...');
       
-      if (typeof window !== 'undefined') {
-        window.location.href = '/?onboarding_completed=true';
-      } else {
-        router.replace('/?onboarding_completed=true');
-      }
-      
-      // Show error but don't block
       setTimeout(() => {
-        alert(error.message || 'Er ging iets mis, maar je wordt doorgestuurd naar de app.');
-      }, 100);
-    } finally {
-      // Set saving to false after a short delay to allow redirect
-      setTimeout(() => {
-        setSaving(false);
-      }, 1000);
+        if (typeof window !== 'undefined') {
+          window.location.replace('/?onboarding_completed=true');
+        } else {
+          try {
+            router.replace('/?onboarding_completed=true');
+          } catch (error) {
+            console.warn('[onboarding] Router not ready, using window.location...');
+            if (typeof window !== 'undefined') {
+              window.location.replace('/?onboarding_completed=true');
+            }
+          }
+        }
+      }, 300);
     }
+    // Note: Don't set saving to false - we're redirecting anyway
   };
 
   const items = getCurrentItems();
@@ -482,25 +518,25 @@ export default function OnboardingScreen() {
             contentContainerStyle={styles.welcomeScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.welcomeContainer}>
+          <View style={styles.welcomeContainer}>
               <View style={styles.logoContainer}>
-                <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+            <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
               </View>
-              <Text style={styles.welcomeTitle}>Welkom bij STOCKPIT!</Text>
-              <Text style={styles.welcomeSubtitle}>
-                Laten we je profiel personaliseren zodat we de perfecte recepten voor jou kunnen vinden.
-              </Text>
+            <Text style={styles.welcomeTitle}>Welkom bij STOCKPIT!</Text>
+            <Text style={styles.welcomeSubtitle}>
+              Laten we je profiel personaliseren zodat we de perfecte recepten voor jou kunnen vinden.
+            </Text>
               <View style={styles.welcomeInfoBox}>
                 <Ionicons name="information-circle" size={20} color="#047857" />
                 <Text style={styles.welcomeInfoText}>
                   Swipe naar rechts voor opties die je leuk lijken, en naar links om door te gaan.
-                </Text>
+            </Text>
               </View>
-              <Pressable style={styles.primaryButton} onPress={handleStepComplete}>
-                <Text style={styles.primaryButtonText}>Laten we beginnen</Text>
+            <Pressable style={styles.primaryButton} onPress={handleStepComplete}>
+              <Text style={styles.primaryButtonText}>Laten we beginnen</Text>
                 <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
-              </Pressable>
-            </View>
+            </Pressable>
+          </View>
           </ScrollView>
         </SafeAreaViewComponent>
       </View>
@@ -516,16 +552,16 @@ export default function OnboardingScreen() {
             contentContainerStyle={styles.completeScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.completeContainer}>
-              <View style={styles.completeIconContainer}>
+          <View style={styles.completeContainer}>
+            <View style={styles.completeIconContainer}>
                 <View style={styles.completeIconCircle}>
                   <Ionicons name="checkmark" size={48} color="#fff" />
                 </View>
-              </View>
-              <Text style={styles.completeTitle}>Klaar!</Text>
-              <Text style={styles.completeSubtitle}>
-                Je voorkeuren zijn opgeslagen. We gaan nu de beste recepten voor jou vinden.
-              </Text>
+            </View>
+            <Text style={styles.completeTitle}>Klaar!</Text>
+            <Text style={styles.completeSubtitle}>
+              Je voorkeuren zijn opgeslagen. We gaan nu de beste recepten voor jou vinden.
+            </Text>
               <View style={styles.completeSummary}>
                 {selectedArchetype && (
                   <View style={styles.summaryItem}>
@@ -546,11 +582,11 @@ export default function OnboardingScreen() {
                   </View>
                 )}
               </View>
-              <Pressable
-                style={[styles.primaryButton, saving && styles.primaryButtonDisabled]}
-                onPress={handleComplete}
-                disabled={saving}
-              >
+            <Pressable
+              style={[styles.primaryButton, saving && styles.primaryButtonDisabled]}
+              onPress={handleComplete}
+              disabled={saving}
+            >
                 {saving ? (
                   <Text style={styles.primaryButtonText}>Opslaan...</Text>
                 ) : (
@@ -559,8 +595,8 @@ export default function OnboardingScreen() {
                     <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
                   </>
                 )}
-              </Pressable>
-            </View>
+            </Pressable>
+          </View>
           </ScrollView>
         </SafeAreaViewComponent>
       </View>
@@ -589,21 +625,21 @@ export default function OnboardingScreen() {
       <SafeAreaViewComponent style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.progressBarContainer}>
-            <View style={styles.progressBar}>
+          <View style={styles.progressBar}>
               <Animated.View
-                style={[
-                  styles.progressFill,
-                  {
+              style={[
+                styles.progressFill,
+                {
                     width: `${progressPercentage}%`,
-                  },
-                ]}
-              />
-            </View>
+                },
+              ]}
+            />
+          </View>
           </View>
           <View style={styles.stepIndicatorContainer}>
-            <Text style={styles.stepIndicator}>
-              Stap {step === 'archetype' ? 1 : step === 'cooking' ? 2 : 3} van 3
-            </Text>
+          <Text style={styles.stepIndicator}>
+            Stap {step === 'archetype' ? 1 : step === 'cooking' ? 2 : 3} van 3
+          </Text>
           </View>
         </View>
 
@@ -612,26 +648,26 @@ export default function OnboardingScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.content}>
-            <Text style={styles.stepTitle}>{stepTitle}</Text>
-            <Text style={styles.stepSubtitle}>{stepSubtitle}</Text>
+        <View style={styles.content}>
+          <Text style={styles.stepTitle}>{stepTitle}</Text>
+          <Text style={styles.stepSubtitle}>{stepSubtitle}</Text>
 
-            <View style={styles.cardContainer}>
-              {currentItem && (
-                <SwipeableCard
-                  item={currentItem}
-                  index={currentCardIndex}
-                  onSwipeLeft={handleSwipeLeft}
-                  onSwipeRight={handleSwipeRight}
-                  position={position}
-                  opacity={opacity}
-                  scale={scale}
-                  rotate={rotate}
-                />
-              )}
-            </View>
+          <View style={styles.cardContainer}>
+            {currentItem && (
+              <SwipeableCard
+                item={currentItem}
+                index={currentCardIndex}
+                onSwipeLeft={handleSwipeLeft}
+                onSwipeRight={handleSwipeRight}
+                position={position}
+                opacity={opacity}
+                scale={scale}
+                rotate={rotate}
+              />
+            )}
+          </View>
 
-            <View style={styles.actions}>
+          <View style={styles.actions}>
               <Pressable 
                 style={styles.swipeButton} 
                 onPress={handleSwipeLeft}
@@ -641,7 +677,7 @@ export default function OnboardingScreen() {
                   <Ionicons name="close" size={28} color="#ef4444" />
                 </View>
                 <Text style={styles.swipeButtonText}>Overslaan</Text>
-              </Pressable>
+            </Pressable>
               <Pressable 
                 style={styles.swipeButton} 
                 onPress={handleSwipeRight}
@@ -651,8 +687,8 @@ export default function OnboardingScreen() {
                   <Ionicons name="heart" size={28} color="#fff" />
                 </View>
                 <Text style={[styles.swipeButtonText, styles.swipeButtonTextActive]}>Kies</Text>
-              </Pressable>
-            </View>
+            </Pressable>
+          </View>
 
             <View style={styles.cardCounter}>
               <View style={styles.cardCounterDots}>
@@ -668,8 +704,8 @@ export default function OnboardingScreen() {
               </View>
               <Text style={styles.cardCounterText}>
                 {currentCardIndex + 1} van {items.length}
-              </Text>
-            </View>
+          </Text>
+        </View>
           </View>
         </ScrollView>
       </SafeAreaViewComponent>
