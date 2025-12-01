@@ -554,7 +554,7 @@ export default function OnboardingScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaViewComponent style={styles.safeArea}>
         <View style={styles.header}>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBar}>
