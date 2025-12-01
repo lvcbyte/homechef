@@ -185,19 +185,83 @@ export default function AuthCallbackScreen() {
           await new Promise(resolve => setTimeout(resolve, 500));
 
           // Check onboarding status
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('onboarding_completed')
-            .eq('id', session.user.id)
-            .single();
-
-          if (profileError && profileError.code !== 'PGRST116') {
-            console.error('[auth-callback] Error fetching profile:', profileError);
+          // First ensure profile exists
+          let profile = null;
+          let profileError = null;
+          
+          try {
+            const profileResult = await supabase
+              .from('profiles')
+              .select('onboarding_completed')
+              .eq('id', session.user.id)
+              .single();
+            
+            profile = profileResult.data;
+            profileError = profileResult.error;
+            
+            // If profile doesn't exist, try to create it
+            if (profileError && profileError.code === 'PGRST116') {
+              console.log('[auth-callback] Profile not found, creating...');
+              try {
+                // Try to create profile using the helper function
+                const { error: createError } = await supabase.rpc('create_user_profile', {
+                  p_user_id: session.user.id,
+                  p_email: session.user.email || null,
+                  p_full_name: session.user.user_metadata?.full_name || null,
+                });
+                
+                if (createError) {
+                  console.error('[auth-callback] Error creating profile via RPC:', createError);
+                  // Try direct insert as fallback
+                  const { error: insertError } = await supabase.from('profiles').insert({
+                    id: session.user.id,
+                    email: session.user.email || '',
+                    full_name: session.user.user_metadata?.full_name || null,
+                    archetype: 'Minimalist',
+                    dietary_restrictions: [],
+                    cooking_skill: 'Intermediate',
+                    onboarding_completed: false,
+                  });
+                  
+                  if (insertError) {
+                    console.error('[auth-callback] Error creating profile via insert:', insertError);
+                  } else {
+                    // Profile created, fetch it again
+                    const retryResult = await supabase
+                      .from('profiles')
+                      .select('onboarding_completed')
+                      .eq('id', session.user.id)
+                      .single();
+                    profile = retryResult.data;
+                  }
+                } else {
+                  // Profile created via RPC, fetch it
+                  const retryResult = await supabase
+                    .from('profiles')
+                    .select('onboarding_completed')
+                    .eq('id', session.user.id)
+                    .single();
+                  profile = retryResult.data;
+                }
+              } catch (createErr: any) {
+                console.error('[auth-callback] Exception creating profile:', createErr);
+              }
+            } else if (profileError) {
+              console.error('[auth-callback] Error fetching profile:', profileError);
+            }
+          } catch (err: any) {
+            console.error('[auth-callback] Exception checking profile:', err);
           }
 
+          // Redirect based on profile status, or to onboarding if profile is null
           if (profile && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
             // Redirect to onboarding
             console.log('[auth-callback] Redirecting to onboarding');
+            router.replace('/onboarding');
+          } else if (!profile) {
+            // Profile doesn't exist or couldn't be created - redirect to onboarding anyway
+            // Onboarding will handle profile creation
+            console.log('[auth-callback] Profile not found, redirecting to onboarding');
             router.replace('/onboarding');
           } else {
             // Redirect to home
@@ -227,19 +291,18 @@ export default function AuthCallbackScreen() {
             if (isHandled) return;
             isHandled = true;
             
-            console.error('[auth-callback] Timeout waiting for session after 8 seconds');
+            console.error('[auth-callback] Timeout waiting for session after 5 seconds');
             console.error('[auth-callback] URL details:', {
               hash: hash.substring(0, 100) + '...',
               hasAccessToken: !!accessToken,
               hasRefreshToken: !!refreshToken,
             });
             
-            setError('Het inloggen duurt te lang. De tokens zijn gevonden maar de sessie kon niet worden geactiveerd. Probeer de link opnieuw te openen of neem contact op met support.');
-            setStatus('error');
-            setTimeout(() => {
-              router.replace('/welcome');
-            }, 5000);
-          }, 8000); // Wait 8 seconds before showing error
+            // Even if we timeout, try to redirect to onboarding
+            // The user can sign in manually if needed
+            console.log('[auth-callback] Timeout - redirecting to onboarding anyway');
+            router.replace('/onboarding');
+          }, 5000); // Wait 5 seconds before redirecting anyway
         }
       } catch (err: any) {
         if (isHandled) return;
