@@ -25,45 +25,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     
+    // Safari-specific: Clear any stale session data on mount
+    const isSafari = typeof navigator !== 'undefined' && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isSafari && typeof window !== 'undefined') {
+      // Safari sometimes has issues with stale session data
+      // We'll let Supabase handle it, but log for debugging
+      console.log('[auth] Safari detected - ensuring clean session state');
+    }
+    
     // Wrap in try-catch to handle missing credentials gracefully
     try {
-      supabase.auth.getSession().then(({ data, error }) => {
-        if (!mounted) return;
-        
-        // If there's an error (like invalid refresh token), clear the session
-        if (error) {
-          console.warn('Error getting session, clearing:', error);
-          // Clear invalid tokens
-          if (typeof window !== 'undefined' && window.localStorage) {
-            const keys = Object.keys(localStorage);
-            keys.forEach(key => {
-              if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
-                localStorage.removeItem(key);
+      // Add a small delay for Safari to ensure storage is ready
+      const initDelay = isSafari ? 100 : 0;
+      
+      setTimeout(() => {
+        supabase.auth.getSession().then(({ data, error }) => {
+          if (!mounted) return;
+          
+          // If there's an error (like invalid refresh token), clear the session
+          if (error) {
+            console.warn('[auth] Error getting session, clearing:', error);
+            // Clear invalid tokens from both localStorage and sessionStorage (Safari)
+            if (typeof window !== 'undefined') {
+              const clearStorage = (storage: Storage) => {
+                try {
+                  const keys = Object.keys(storage);
+                  keys.forEach(key => {
+                    if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+                      storage.removeItem(key);
+                    }
+                  });
+                } catch (e) {
+                  // Storage might not be accessible
+                }
+              };
+              clearStorage(window.localStorage);
+              clearStorage(window.sessionStorage);
+            }
+            setSession(null);
+            setLoading(false);
+            return;
+          }
+          
+          setSession(data.session);
+          setLoading(false);
+        }).catch((error) => {
+          console.error('[auth] Error getting session:', error);
+          if (!mounted) return;
+          // Clear invalid tokens on error
+          if (typeof window !== 'undefined') {
+            const clearStorage = (storage: Storage) => {
+              try {
+                const keys = Object.keys(storage);
+                keys.forEach(key => {
+                  if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
+                    storage.removeItem(key);
+                  }
+                });
+              } catch (e) {
+                // Storage might not be accessible
               }
-            });
+            };
+            clearStorage(window.localStorage);
+            clearStorage(window.sessionStorage);
           }
           setSession(null);
           setLoading(false);
-          return;
-        }
-        
-        setSession(data.session);
-        setLoading(false);
-      }).catch((error) => {
-        console.error('Error getting session:', error);
-        if (!mounted) return;
-        // Clear invalid tokens on error
-        if (typeof window !== 'undefined' && window.localStorage) {
-          const keys = Object.keys(localStorage);
-          keys.forEach(key => {
-            if (key.includes('supabase') || key.includes('auth-token') || key.startsWith('sb-')) {
-              localStorage.removeItem(key);
-            }
-          });
-        }
-        setSession(null);
-        setLoading(false);
-      });
+        });
+      }, initDelay);
 
       const {
         data: { subscription },

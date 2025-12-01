@@ -39,15 +39,120 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 // Create storage adapter that works for both web and native
-// This function is only called when creating the client, not at module load time
+// Safari-compatible with fallbacks for localStorage restrictions
 function createStorageAdapter() {
   // Web environment - check for window and localStorage
-  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-    return {
-      getItem: (key: string) => Promise.resolve(window.localStorage.getItem(key)),
-      setItem: (key: string, value: string) => Promise.resolve(window.localStorage.setItem(key, value)),
-      removeItem: (key: string) => Promise.resolve(window.localStorage.removeItem(key)),
+  if (typeof window !== 'undefined') {
+    // Detect Safari
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    
+    // Try localStorage first, with Safari-specific error handling
+    const tryLocalStorage = () => {
+      try {
+        // Test if localStorage is available and writable
+        const testKey = '__supabase_storage_test__';
+        window.localStorage.setItem(testKey, 'test');
+        window.localStorage.removeItem(testKey);
+        return true;
+      } catch (e) {
+        // localStorage might be disabled (private browsing, ITP, etc.)
+        console.warn('[supabase] localStorage not available:', e);
+        return false;
+      }
     };
+    
+    if (tryLocalStorage()) {
+      // localStorage is available - use it with error handling
+      return {
+        getItem: (key: string) => {
+          try {
+            return Promise.resolve(window.localStorage.getItem(key));
+          } catch (e) {
+            console.error('[supabase] Error reading from localStorage:', e);
+            // Fallback to sessionStorage for Safari
+            try {
+              return Promise.resolve(window.sessionStorage.getItem(key));
+            } catch (e2) {
+              return Promise.resolve(null);
+            }
+          }
+        },
+        setItem: (key: string, value: string) => {
+          try {
+            window.localStorage.setItem(key, value);
+            // Also store in sessionStorage as backup for Safari
+            if (isSafari) {
+              try {
+                window.sessionStorage.setItem(key, value);
+              } catch (e) {
+                // Ignore sessionStorage errors
+              }
+            }
+            return Promise.resolve();
+          } catch (e) {
+            console.error('[supabase] Error writing to localStorage:', e);
+            // Fallback to sessionStorage for Safari
+            try {
+              window.sessionStorage.setItem(key, value);
+              return Promise.resolve();
+            } catch (e2) {
+              console.error('[supabase] Error writing to sessionStorage:', e2);
+              return Promise.resolve(); // Don't throw, just log
+            }
+          }
+        },
+        removeItem: (key: string) => {
+          try {
+            window.localStorage.removeItem(key);
+            // Also remove from sessionStorage if it exists
+            try {
+              window.sessionStorage.removeItem(key);
+            } catch (e) {
+              // Ignore
+            }
+            return Promise.resolve();
+          } catch (e) {
+            console.error('[supabase] Error removing from localStorage:', e);
+            // Try sessionStorage
+            try {
+              window.sessionStorage.removeItem(key);
+            } catch (e2) {
+              // Ignore
+            }
+            return Promise.resolve();
+          }
+        },
+      };
+    } else {
+      // localStorage not available - use sessionStorage as fallback
+      console.warn('[supabase] Using sessionStorage as fallback (localStorage unavailable)');
+      return {
+        getItem: (key: string) => {
+          try {
+            return Promise.resolve(window.sessionStorage.getItem(key));
+          } catch (e) {
+            return Promise.resolve(null);
+          }
+        },
+        setItem: (key: string, value: string) => {
+          try {
+            window.sessionStorage.setItem(key, value);
+            return Promise.resolve();
+          } catch (e) {
+            console.error('[supabase] Error writing to sessionStorage:', e);
+            return Promise.resolve();
+          }
+        },
+        removeItem: (key: string) => {
+          try {
+            window.sessionStorage.removeItem(key);
+            return Promise.resolve();
+          } catch (e) {
+            return Promise.resolve();
+          }
+        },
+      };
+    }
   }
   
   // Native environment - only try to require if we're not in a Node.js/SSR context
@@ -112,6 +217,12 @@ function initSupabase() {
   
   console.log('[supabase] Creating full client with auth');
   
+  // Detect Safari for special handling
+  const isSafari = typeof navigator !== 'undefined' && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  if (isSafari) {
+    console.log('[supabase] Safari detected - using Safari-compatible settings');
+  }
+  
   try {
     supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
@@ -119,11 +230,16 @@ function initSupabase() {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true, // Enable to detect auth tokens in URL
-        flowType: 'pkce', // Use PKCE flow for better security
+        flowType: 'pkce', // Use PKCE flow for better security and Safari compatibility
+        // Safari-specific settings
+        ...(isSafari && {
+          // In Safari, we might need to be more aggressive about session detection
+          storageKey: 'sb-auth-token', // Use a simpler key name
+        }),
       },
       global: {
         headers: {
-          'x-client-info': 'stockpit-web',
+          'x-client-info': isSafari ? 'stockpit-web-safari' : 'stockpit-web',
         },
       },
     });
