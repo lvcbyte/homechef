@@ -61,12 +61,14 @@ export default function AuthCallbackScreen() {
 
         const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+        const code = searchParams.get('code'); // PKCE code
         const type = hashParams.get('type') || searchParams.get('type');
-        const error = hashParams.get('error') || searchParams.get('error_description');
+        const error = hashParams.get('error') || searchParams.get('error_description') || searchParams.get('error');
 
-        console.log('[auth-callback] Tokens found:', {
+        console.log('[auth-callback] URL params found:', {
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
+          hasCode: !!code,
           type,
           error,
         });
@@ -78,6 +80,31 @@ export default function AuthCallbackScreen() {
           setError(error || 'Er ging iets mis bij de verificatie.');
           setStatus('error');
           return;
+        }
+
+        // If we have a PKCE code, exchange it for a session
+        if (code) {
+          console.log('[auth-callback] Found PKCE code, exchanging for session...');
+          try {
+            const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+            if (exchangeError) {
+              console.error('[auth-callback] Error exchanging code for session:', exchangeError);
+              // Continue to try getSession as fallback
+            } else if (sessionData?.session) {
+              console.log('[auth-callback] Session obtained via code exchange');
+              if (!isHandled) {
+                isHandled = true;
+                if (timeoutId) clearTimeout(timeoutId);
+                setUserEmail(sessionData.session.user?.email || null);
+                setStatus('success');
+                return;
+              }
+            }
+          } catch (exchangeErr: any) {
+            console.error('[auth-callback] Exception exchanging code:', exchangeErr);
+            // Continue to try getSession as fallback
+          }
         }
 
         // If we have tokens, try to set session immediately
@@ -139,18 +166,18 @@ export default function AuthCallbackScreen() {
           setUserEmail(session.user?.email || null);
           setStatus('success');
         } else {
-          // No session yet - check if we have tokens
-          if (!accessToken || !refreshToken) {
-            // No tokens in URL - this is an error
-            console.error('[auth-callback] No tokens found in URL');
+          // No session yet - check if we have code or tokens
+          if (!code && !accessToken && !refreshToken) {
+            // No code or tokens in URL - this is an error
+            console.error('[auth-callback] No code or tokens found in URL');
             isHandled = true;
-            setError('Geen authenticatie tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
+            setError('Geen authenticatie code of tokens gevonden in de URL. Controleer of je op de juiste link hebt geklikt uit de e-mail.');
             setStatus('error');
             return;
           }
           
-          // We have tokens but no session - wait for auth state change
-          console.log('[auth-callback] Have tokens but no session yet, waiting for auth state change...');
+          // We have code or tokens but no session - wait for auth state change
+          console.log('[auth-callback] Have code/tokens but no session yet, waiting for auth state change...');
           
           // Set a timeout - if nothing happens in 5 seconds, show error
           timeoutId = setTimeout(() => {
