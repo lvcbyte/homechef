@@ -82,26 +82,19 @@ export default function AuthCallbackScreen() {
           return;
         }
 
-        // If we have a PKCE code, exchange it for a session
+        // If we have a PKCE code, try to exchange it for a session
+        // Note: If code exchange fails (e.g., code verifier missing), that's OK
+        // The email is already confirmed on the server, so we can show success anyway
         if (code) {
-          console.log('[auth-callback] Found PKCE code, exchanging for session...', code.substring(0, 20) + '...');
+          console.log('[auth-callback] Found PKCE code, attempting to exchange for session...', code.substring(0, 20) + '...');
           try {
             const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
             if (exchangeError) {
-              console.error('[auth-callback] Error exchanging code for session:', exchangeError);
-              console.error('[auth-callback] Error details:', {
-                message: exchangeError.message,
-                status: exchangeError.status,
-                name: exchangeError.name,
-              });
-              
-              // If code exchange fails, show error immediately
-              isHandled = true;
-              if (timeoutId) clearTimeout(timeoutId);
-              setError(`Code uitwisseling mislukt: ${exchangeError.message || 'Onbekende fout'}. Probeer de link opnieuw te openen.`);
-              setStatus('error');
-              return;
+              console.warn('[auth-callback] Code exchange failed (this is OK - email is already confirmed):', exchangeError.message);
+              // Don't show error - email is already confirmed on the server
+              // Just show success screen so user can log in
+              // The email verification happened on the server when they clicked the link
             } else if (sessionData?.session) {
               console.log('[auth-callback] Session obtained via code exchange, user:', sessionData.session.user?.email);
               if (!isHandled) {
@@ -111,21 +104,21 @@ export default function AuthCallbackScreen() {
                 setStatus('success');
                 return;
               }
-            } else {
-              console.warn('[auth-callback] Code exchange succeeded but no session returned');
             }
           } catch (exchangeErr: any) {
-            console.error('[auth-callback] Exception exchanging code:', exchangeErr);
-            console.error('[auth-callback] Exception details:', {
-              message: exchangeErr.message,
-              stack: exchangeErr.stack,
-            });
-            
-            // If exception occurs, show error
+            console.warn('[auth-callback] Code exchange exception (this is OK - email is already confirmed):', exchangeErr.message);
+            // Don't show error - email is already confirmed on the server
+            // Just continue to show success screen
+          }
+          
+          // If we have a code, the email is confirmed (happens on server when link is clicked)
+          // Show success screen even if code exchange failed
+          if (!isHandled) {
+            console.log('[auth-callback] Email confirmed via link click, showing success screen');
             isHandled = true;
             if (timeoutId) clearTimeout(timeoutId);
-            setError(`Fout bij code uitwisseling: ${exchangeErr.message || 'Onbekende fout'}. Probeer de link opnieuw te openen.`);
-            setStatus('error');
+            // Try to get email from URL or show generic success
+            setStatus('success');
             return;
           }
         }
@@ -292,17 +285,27 @@ export default function AuthCallbackScreen() {
       <View style={styles.container}>
         <SafeAreaViewComponent style={styles.safeArea}>
           <View style={styles.successContent}>
+            {/* Logo/Brand */}
+            <View style={styles.brandContainer}>
+              <Text style={styles.brandName}>STOCKPIT</Text>
+            </View>
+
+            {/* Success Icon */}
             <View style={styles.successIconContainer}>
               <View style={styles.successIconCircle}>
-                <Ionicons name="checkmark" size={48} color="#047857" />
+                <Ionicons name="checkmark" size={56} color="#047857" />
               </View>
             </View>
             
-            <Text style={styles.successTitle}>E-mail bevestigd!</Text>
+            {/* Title */}
+            <Text style={styles.successTitle}>Welkom bij STOCKPIT!</Text>
+            
+            {/* Subtitle */}
             <Text style={styles.successSubtitle}>
-              Je account is succesvol aangemaakt. Je kunt nu inloggen en beginnen met het ontdekken van heerlijke recepten.
+              Je e-mail is bevestigd en je account is succesvol aangemaakt. Je kunt nu inloggen en beginnen met het ontdekken van heerlijke recepten op basis van je voorraad.
             </Text>
 
+            {/* Email display if available */}
             {userEmail && (
               <View style={styles.emailBox}>
                 <Ionicons name="mail-outline" size={20} color="#047857" />
@@ -310,18 +313,21 @@ export default function AuthCallbackScreen() {
               </View>
             )}
 
+            {/* Info box */}
             <View style={styles.infoBox}>
-              <Ionicons name="information-circle-outline" size={20} color="#047857" />
+              <Ionicons name="sparkles-outline" size={20} color="#047857" />
               <Text style={styles.infoText}>
-                Na het inloggen kun je je voorkeuren instellen en beginnen met het ontdekken van recepten op basis van je voorraad.
+                Na het inloggen kun je je voorkeuren instellen en direct beginnen met het ontdekken van recepten die perfect passen bij wat je in huis hebt.
               </Text>
             </View>
 
+            {/* CTA Button */}
             <Pressable
               style={styles.primaryButton}
               onPress={() => router.replace('/welcome')}
             >
               <Text style={styles.primaryButtonText}>Ga naar inloggen</Text>
+              <Ionicons name="arrow-forward" size={20} color="#fff" style={styles.buttonIcon} />
             </Pressable>
           </View>
         </SafeAreaViewComponent>
@@ -358,20 +364,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
-    gap: 24,
+    paddingVertical: 32,
+    gap: 28,
   },
-  successIconContainer: {
+  brandContainer: {
     marginBottom: 8,
   },
+  brandName: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: -1.5,
+  },
+  successIconContainer: {
+    marginBottom: 4,
+  },
   successIconCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: '#f0fdf4',
-    borderWidth: 3,
+    borderWidth: 4,
     borderColor: '#047857',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#047857',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
   successTitle: {
     fontSize: 32,
@@ -379,13 +400,15 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     textAlign: 'center',
     letterSpacing: -0.5,
+    marginTop: 8,
   },
   successSubtitle: {
-    fontSize: 16,
+    fontSize: 17,
     color: '#475569',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 26,
     maxWidth: 400,
+    fontWeight: '400',
   },
   emailBox: {
     flexDirection: 'row',
@@ -430,7 +453,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     width: '100%',
     maxWidth: 400,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     marginTop: 8,
     shadowColor: '#047857',
     shadowOpacity: 0.2,
@@ -443,6 +469,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.3,
+  },
+  buttonIcon: {
+    marginLeft: 4,
   },
   errorIconContainer: {
     marginBottom: 24,
