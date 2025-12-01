@@ -63,7 +63,7 @@ const categoryColors: Record<string, string> = {
 export default function Home() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
   const [loadingDailyAI, setLoadingDailyAI] = useState(false);
@@ -87,6 +87,22 @@ export default function Home() {
           // Router might not be ready, ignore
         }
       }, 300);
+      return () => clearTimeout(timer);
+    }
+    
+    // If we have a user but profile is still loading, wait a bit
+    // But don't wait forever - if profile is null after loading, try to continue anyway
+    if (user && profile === null && pathname === '/') {
+      // Profile might be loading or might have failed to load
+      // Give it a moment, but don't block forever
+      const timer = setTimeout(() => {
+        // If profile is still null after 2 seconds, try to refresh it
+        // This handles cases where profile loading failed silently
+        if (profile === null) {
+          console.log('[index] Profile still null, attempting to refresh...');
+          // The profile will be loaded by AuthContext, just wait
+        }
+      }, 2000);
       return () => clearTimeout(timer);
     }
     
@@ -116,9 +132,20 @@ export default function Home() {
     }
     
     // Only fetch data if user is authenticated, onboarding is completed, and we're on the home page
-    if (user && profile && profile.onboarding_completed === true && pathname === '/') {
-      fetchData();
-      fetchInventory();
+    // Also handle case where profile might be null but user is authenticated (profile loading failed)
+    // In that case, we'll show the page but some features might not work
+    if (user && pathname === '/') {
+      if (profile && profile.onboarding_completed === true) {
+        // Normal case: profile loaded and onboarding completed
+        fetchData();
+        fetchInventory();
+      } else if (profile === null) {
+        // Profile is null - might be loading or failed
+        // Don't fetch data yet, but also don't block the page
+        // The AuthContext will try to load the profile
+        console.log('[index] Profile is null, waiting for profile to load...');
+      }
+      // If profile exists but onboarding not completed, redirect will happen above
     }
   }, [user, profile, pathname]);
 

@@ -107,25 +107,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session?.user) {
       setProfile(null);
+      setLoading(false); // Make sure loading is false when no session
       return;
     }
 
     let mounted = true;
     setLoading(true);
+    
+    // Add timeout to prevent infinite loading
+    const loadingTimeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('[auth] Profile loading timeout, setting loading to false');
+        setLoading(false);
+      }
+    }, 5000); // 5 second timeout
+    
     supabase
       .from('profiles')
       .select('*')
       .eq('id', session.user.id)
       .single()
       .then(({ data, error }) => {
-        if (mounted) {
-          if (error && error.code === 'PGRST116') {
-            // Profile doesn't exist, create it with onboarding not completed
-            // This will be set up during onboarding
+        if (!mounted) return;
+        clearTimeout(loadingTimeout);
+        
+        if (error) {
+          console.error('[auth] Error fetching profile:', error);
+          
+          // If it's a "not found" error, try to create the profile
+          if (error.code === 'PGRST116') {
+            console.log('[auth] Profile not found, creating new profile...');
             supabase
               .from('profiles')
               .insert({
                 id: session.user.id,
+                email: session.user.email || '',
                 archetype: 'Minimalist',
                 dietary_restrictions: [],
                 cooking_skill: 'Intermediate',
@@ -133,35 +149,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               })
               .select()
               .single()
-              .then(({ data: newProfile }) => {
-                if (mounted && newProfile) {
+              .then(({ data: newProfile, error: createError }) => {
+                if (!mounted) return;
+                if (createError) {
+                  console.error('[auth] Error creating profile:', createError);
+                  // Even if creation fails, set loading to false so app can continue
+                  setLoading(false);
+                } else if (newProfile) {
                   setProfile(newProfile as Profile);
+                  setLoading(false);
+                } else {
                   setLoading(false);
                 }
               })
               .catch((createError) => {
-                console.error('Error creating profile:', createError);
+                console.error('[auth] Exception creating profile:', createError);
                 if (mounted) {
                   setLoading(false);
                 }
               });
-          } else if (data) {
-            setProfile(data as Profile);
-            setLoading(false);
           } else {
+            // Other errors (like RLS/permission errors) - log but don't block
+            console.error('[auth] Profile fetch error (non-critical):', error.message, error.code);
+            // Set loading to false so app can continue
+            // Profile might load later via refreshProfile
             setLoading(false);
           }
+        } else if (data) {
+          setProfile(data as Profile);
+          setLoading(false);
+        } else {
+          setLoading(false);
         }
       })
       .catch((error) => {
-        console.error('Error fetching profile:', error);
-        if (mounted) {
-          setLoading(false);
-        }
+        if (!mounted) return;
+        clearTimeout(loadingTimeout);
+        console.error('[auth] Exception fetching profile:', error);
+        // Don't block the app - set loading to false
+        setLoading(false);
       });
 
     return () => {
       mounted = false;
+      clearTimeout(loadingTimeout);
     };
   }, [session?.user]);
 
