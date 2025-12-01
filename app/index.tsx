@@ -685,25 +685,37 @@ export default function Home() {
 
   // IMMEDIATE redirect if we're on the home page and not authenticated
   // Don't render anything - redirect immediately to prevent session creation
-  if (pathname === '/' && !user && !authLoading) {
+  if (pathname === '/' && !user) {
+    // If auth is still loading, show loading screen and wait
+    if (authLoading) {
+      return (
+        <View style={styles.container}>
+          <SafeAreaViewComponent style={styles.safeArea}>
+            <StockpitLoader variant="home" />
+          </SafeAreaViewComponent>
+        </View>
+      );
+    }
+    
+    // Auth is done loading and no user - redirect immediately
     // On web, use window.location.replace for hard redirect (no session preservation)
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.location.replace('/welcome');
+      // Prevent multiple redirects
+      if (!(window as any).__redirectingToWelcome) {
+        (window as any).__redirectingToWelcome = true;
+        console.log('[index] No user after auth load, redirecting to /welcome');
+        try {
+          window.location.replace('/welcome');
+        } catch (e) {
+          console.warn('[index] window.location.replace failed, using href');
+          window.location.href = '/welcome';
+        }
+      }
       // Return null while redirecting
       return null;
     }
+    
     // For native, show loading while redirect happens
-    return (
-      <View style={styles.container}>
-        <SafeAreaViewComponent style={styles.safeArea}>
-          <StockpitLoader variant="home" />
-        </SafeAreaViewComponent>
-      </View>
-    );
-  }
-
-  // If auth is still loading, show loading screen
-  if (authLoading && !user) {
     return (
       <View style={styles.container}>
         <SafeAreaViewComponent style={styles.safeArea}>
