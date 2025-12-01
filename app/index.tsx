@@ -749,13 +749,18 @@ export default function Home() {
     );
   }
 
-  // If we have a user but profile is null and we're not loading, 
-  // still show the page (profile might load later or might have failed)
-  // This prevents the page from being stuck in loading state
+  // If we have a user but profile is null and we're not loading,
+  // redirect to welcome - this should have been caught above, but as a fallback
   if (user && profile === null && !authLoading) {
-    // Profile is null but not loading - might be a permission issue
-    // Show the page anyway, but log a warning
-    console.warn('[index] User authenticated but profile is null - showing page anyway');
+    // Profile is null but not loading - redirect to welcome
+    console.warn('[index] User authenticated but profile is null - redirecting to /welcome');
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (!(window as any).__redirectingToWelcome) {
+        (window as any).__redirectingToWelcome = true;
+        window.location.replace('/welcome');
+      }
+      return null;
+    }
   }
 
   // Don't render if not authenticated (will redirect)
