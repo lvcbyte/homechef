@@ -84,15 +84,26 @@ export default function AuthCallbackScreen() {
 
         // If we have a PKCE code, exchange it for a session
         if (code) {
-          console.log('[auth-callback] Found PKCE code, exchanging for session...');
+          console.log('[auth-callback] Found PKCE code, exchanging for session...', code.substring(0, 20) + '...');
           try {
             const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
             if (exchangeError) {
               console.error('[auth-callback] Error exchanging code for session:', exchangeError);
-              // Continue to try getSession as fallback
+              console.error('[auth-callback] Error details:', {
+                message: exchangeError.message,
+                status: exchangeError.status,
+                name: exchangeError.name,
+              });
+              
+              // If code exchange fails, show error immediately
+              isHandled = true;
+              if (timeoutId) clearTimeout(timeoutId);
+              setError(`Code uitwisseling mislukt: ${exchangeError.message || 'Onbekende fout'}. Probeer de link opnieuw te openen.`);
+              setStatus('error');
+              return;
             } else if (sessionData?.session) {
-              console.log('[auth-callback] Session obtained via code exchange');
+              console.log('[auth-callback] Session obtained via code exchange, user:', sessionData.session.user?.email);
               if (!isHandled) {
                 isHandled = true;
                 if (timeoutId) clearTimeout(timeoutId);
@@ -100,10 +111,22 @@ export default function AuthCallbackScreen() {
                 setStatus('success');
                 return;
               }
+            } else {
+              console.warn('[auth-callback] Code exchange succeeded but no session returned');
             }
           } catch (exchangeErr: any) {
             console.error('[auth-callback] Exception exchanging code:', exchangeErr);
-            // Continue to try getSession as fallback
+            console.error('[auth-callback] Exception details:', {
+              message: exchangeErr.message,
+              stack: exchangeErr.stack,
+            });
+            
+            // If exception occurs, show error
+            isHandled = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            setError(`Fout bij code uitwisseling: ${exchangeErr.message || 'Onbekende fout'}. Probeer de link opnieuw te openen.`);
+            setStatus('error');
+            return;
           }
         }
 
@@ -133,24 +156,32 @@ export default function AuthCallbackScreen() {
           }
         }
 
-        // Also try getSession - Supabase might have already processed the URL
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        let { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        // If still no session, wait a bit more and try again
-        if (!session) {
-          console.log('[auth-callback] No session yet, waiting and retrying...');
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const retryResult = await supabase.auth.getSession();
-          session = retryResult.data.session;
-          sessionError = retryResult.error;
+        // If we already handled via code exchange, don't continue
+        if (isHandled) {
+          return;
         }
 
-        console.log('[auth-callback] Session check:', {
-          hasSession: !!session,
-          sessionError: sessionError?.message,
-        });
+        // Also try getSession - Supabase might have already processed the URL
+        // But only if we didn't have a code (code exchange should have handled it)
+        if (!code) {
+          console.log('[auth-callback] No code found, trying getSession...');
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          // If still no session, wait a bit more and try again
+          if (!session) {
+            console.log('[auth-callback] No session yet, waiting and retrying...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const retryResult = await supabase.auth.getSession();
+            session = retryResult.data.session;
+            sessionError = retryResult.error;
+          }
+
+          console.log('[auth-callback] Session check:', {
+            hasSession: !!session,
+            sessionError: sessionError?.message,
+          });
 
         // If we have a session, show success
         if (session) {
