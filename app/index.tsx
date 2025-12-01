@@ -65,17 +65,8 @@ export default function Home() {
   const pathname = usePathname();
   const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   
-  // CRITICAL: Check for redirect BEFORE any state or rendering
-  // This must be at the top level, not in useEffect, to ensure it runs immediately
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && pathname === '/' && !user && !authLoading) {
-    // Immediate redirect on web - don't wait for React to render
-    try {
-      window.location.replace('/welcome');
-    } catch (e) {
-      window.location.href = '/welcome';
-    }
-    return null;
-  }
+  // CRITICAL: Early redirect check - but we need auth state first
+  // This will be handled in the render logic below after hooks are called
   
   const [recipeOfTheDay, setRecipeOfTheDay] = useState<RecipeDetail | null>(null);
   const [dailyAIRecipe, setDailyAIRecipe] = useState<RecipeDetail | null>(null);
