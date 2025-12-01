@@ -90,7 +90,11 @@ export default function Home() {
     // Check if user needs to complete onboarding
     // Only show onboarding on first login after email confirmation
     // Check for both false and null (null means not set yet)
-    if (user && profile && pathname === '/' && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
+    // But don't redirect if onboarding was just completed (indicated by query param)
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const onboardingJustCompleted = searchParams?.get('onboarding_completed') === 'true';
+    
+    if (user && profile && pathname === '/' && !onboardingJustCompleted && (profile.onboarding_completed === false || profile.onboarding_completed === null)) {
       const timer = setTimeout(() => {
         try {
           router.replace('/onboarding');
@@ -99,6 +103,13 @@ export default function Home() {
         }
       }, 300);
       return () => clearTimeout(timer);
+    }
+    
+    // Clean up the query parameter after checking
+    if (onboardingJustCompleted && typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('onboarding_completed');
+      window.history.replaceState({}, '', url.toString());
     }
     
     // Only fetch data if user is authenticated, onboarding is completed, and we're on the home page

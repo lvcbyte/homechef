@@ -374,27 +374,80 @@ export default function OnboardingScreen() {
 
     setSaving(true);
     try {
-      // Mark onboarding as started
-      await supabase.rpc('start_onboarding');
+      console.log('Starting onboarding completion...');
+      
+      // Mark onboarding as started (optional, don't fail if it errors)
+      try {
+        await supabase.rpc('start_onboarding');
+      } catch (startError) {
+        console.warn('Error starting onboarding (non-critical):', startError);
+      }
 
       // Complete onboarding with selected preferences
-      const { error } = await supabase.rpc('complete_onboarding', {
-        p_archetype: selectedArchetype || 'Minimalist',
-        p_cooking_skill: selectedCookingLevel || 'Intermediate',
-        p_dietary_restrictions: selectedDietary.length > 0 ? selectedDietary : [],
+      // Convert dietary_restrictions array to JSONB format
+      const dietaryRestrictionsJsonb = selectedDietary.length > 0 ? selectedDietary : [];
+      
+      console.log('Completing onboarding with:', {
+        archetype: selectedArchetype || 'Minimalist',
+        cooking_skill: selectedCookingLevel || 'Intermediate',
+        dietary_restrictions: dietaryRestrictionsJsonb,
       });
 
-      if (error) throw error;
+      const { data, error } = await supabase.rpc('complete_onboarding', {
+        p_archetype: selectedArchetype || 'Minimalist',
+        p_cooking_skill: selectedCookingLevel || 'Intermediate',
+        p_dietary_restrictions: dietaryRestrictionsJsonb as any,
+      });
 
-      // Refresh profile
+      if (error) {
+        console.error('Error completing onboarding:', error);
+        throw error;
+      }
+
+      console.log('Onboarding completed successfully:', data);
+
+      // Refresh profile and wait for it to update
       await refreshProfile();
+      
+      // Wait a bit for the profile to be fully updated in the database
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Navigate to home
-      router.replace('/');
+      // Verify that the profile was actually updated
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('onboarding_completed')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error verifying profile update:', profileError);
+        throw new Error('Kon profiel niet verifiëren. Probeer het opnieuw.');
+      }
+
+      if (!updatedProfile || updatedProfile.onboarding_completed !== true) {
+        console.error('Profile not updated correctly:', updatedProfile);
+        throw new Error('Profiel is niet correct bijgewerkt. Probeer het opnieuw.');
+      }
+
+      console.log('Profile verified, refreshing profile state...');
+
+      // Refresh profile again to ensure state is updated
+      await refreshProfile();
+      
+      // Wait a bit more to ensure state is synced in AuthContext
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log('Redirecting to home...');
+
+      // Navigate to home with a query parameter to indicate onboarding was just completed
+      // This prevents index.tsx from redirecting back to onboarding
+      router.replace('/?onboarding_completed=true');
     } catch (error: any) {
       console.error('Error completing onboarding:', error);
-      alert('Er ging iets mis. Probeer het opnieuw.');
+      alert(error.message || 'Er ging iets mis. Probeer het opnieuw.');
     } finally {
+      // Only set saving to false if there was an error (success case navigates away)
+      // But we still need it in case of error
       setSaving(false);
     }
   };
