@@ -1031,7 +1031,7 @@ export default function ScanScreen() {
             </>
           )}
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewComponent>
       <GlassDock />
 
       <Modal 
