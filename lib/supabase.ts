@@ -137,22 +137,49 @@ function initSupabase() {
 }
 
 // Export getter that initializes on first access
+// Use a more robust approach for web
+let clientInstance: SupabaseClient<Database> | null = null;
+
+function getSupabaseClient(): SupabaseClient<Database> {
+  if (!clientInstance) {
+    clientInstance = initSupabase();
+  }
+  return clientInstance;
+}
+
 export const supabase = new Proxy({} as SupabaseClient<Database>, {
   get(_target, prop) {
     try {
-      const client = initSupabase();
+      // Only initialize on web if window is available
+      if (typeof window === 'undefined') {
+        // SSR - return a minimal mock
+        if (prop === 'auth') {
+          return {
+            signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Server-side rendering - auth not available' } }),
+            signUp: () => Promise.resolve({ data: null, error: { message: 'Server-side rendering - auth not available' } }),
+            getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+          };
+        }
+        return undefined;
+      }
+      
+      const client = getSupabaseClient();
       const value = client[prop as keyof SupabaseClient<Database>];
       if (typeof value === 'function') {
         return value.bind(client);
       }
       return value;
-    } catch (error) {
+    } catch (error: any) {
       console.error('[supabase] Error accessing Supabase client:', error);
+      console.error('[supabase] Property:', prop);
       // Return a mock that throws helpful errors
       if (typeof prop === 'string' && prop.includes('auth')) {
         return {
-          signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
-          signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
+          signInWithPassword: () => Promise.resolve({ data: null, error: { message: error.message || 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
+          signUp: () => Promise.resolve({ data: null, error: { message: error.message || 'Supabase client niet geïnitialiseerd. Controleer je configuratie.' } }),
+          getSession: () => Promise.resolve({ data: { session: null }, error: { message: error.message || 'Supabase client niet geïnitialiseerd' } }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
         };
       }
       throw error;
