@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -33,19 +34,15 @@ export default function WelcomeScreen() {
     // 1. Component is mounted
     // 2. User is authenticated
     // 3. We're actually on the welcome page (pathname check)
+    // 4. Profile exists (if profile is null, don't redirect - user should sign in again)
     // This prevents redirects when user is on other pages
-    if (isMounted && user && pathname === '/welcome') {
+    if (isMounted && user && profile && pathname === '/welcome') {
       const timer = setTimeout(async () => {
         try {
           // Check onboarding status before redirecting
-          if (profile) {
-            if (profile.onboarding_completed === false || profile.onboarding_completed === null) {
-              router.replace('/onboarding');
-            } else {
-              router.replace('/');
-            }
+          if (profile.onboarding_completed === false || profile.onboarding_completed === null) {
+            router.replace('/onboarding');
           } else {
-            // Profile not loaded yet, go to home and let it handle the redirect
             router.replace('/');
           }
         } catch (error) {
@@ -54,6 +51,39 @@ export default function WelcomeScreen() {
         }
       }, 300);
       return () => clearTimeout(timer);
+    }
+    
+    // If user exists but profile is null, clear the session
+    // This prevents redirect loops and ensures user needs to sign in again
+    if (isMounted && user && !profile && pathname === '/welcome') {
+      console.log('[welcome] User exists but profile is null, clearing session');
+      // Clear auth state - user needs to sign in again
+      const clearStorage = (storage: Storage) => {
+        try {
+          const keys = Object.keys(storage);
+          keys.forEach(key => {
+            if (
+              key.includes('supabase') || 
+              key.includes('auth-token') || 
+              key.includes('auth-token-code-verifier') ||
+              key.startsWith('sb-') ||
+              key.includes('supabase.auth')
+            ) {
+              storage.removeItem(key);
+            }
+          });
+        } catch (e) {
+          // Storage might not be accessible
+        }
+      };
+      if (typeof window !== 'undefined') {
+        clearStorage(window.localStorage);
+        clearStorage(window.sessionStorage);
+        // Sign out from Supabase
+        supabase.auth.signOut().catch((err) => {
+          console.warn('[welcome] Error signing out:', err);
+        });
+      }
     }
   }, [user, profile, isMounted, pathname]);
 

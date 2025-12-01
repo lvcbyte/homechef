@@ -705,11 +705,41 @@ export default function Home() {
       // Prevent multiple redirects
       if (!(window as any).__redirectingToWelcome) {
         (window as any).__redirectingToWelcome = true;
-        if (!user) {
+        
+        // If user exists but profile is null, clear the session first
+        // This prevents a redirect loop where welcome redirects back to home
+        if (user && !profile) {
+          console.log('[index] User exists but profile is null, clearing session and redirecting to /welcome');
+          // Clear all auth tokens to prevent auto-login
+          const clearStorage = (storage: Storage) => {
+            try {
+              const keys = Object.keys(storage);
+              keys.forEach(key => {
+                if (
+                  key.includes('supabase') || 
+                  key.includes('auth-token') || 
+                  key.includes('auth-token-code-verifier') ||
+                  key.startsWith('sb-') ||
+                  key.includes('supabase.auth')
+                ) {
+                  storage.removeItem(key);
+                }
+              });
+            } catch (e) {
+              // Storage might not be accessible
+            }
+          };
+          clearStorage(window.localStorage);
+          clearStorage(window.sessionStorage);
+          
+          // Sign out from Supabase to clear the session
+          supabase.auth.signOut().catch((err) => {
+            console.warn('[index] Error signing out:', err);
+          });
+        } else if (!user) {
           console.log('[index] No user after auth load, redirecting to /welcome');
-        } else {
-          console.log('[index] User exists but profile is null, redirecting to /welcome');
         }
+        
         try {
           window.location.replace('/welcome');
         } catch (e) {
