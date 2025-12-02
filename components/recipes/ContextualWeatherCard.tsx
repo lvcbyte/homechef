@@ -76,8 +76,13 @@ export function ContextualWeatherCard({ onContextChange }: ContextualWeatherCard
         const weatherData = await fetchWeatherData(userLocation);
         if (weatherData) {
           console.log('[ContextualWeatherCard] ✅ Weather data loaded:', weatherData);
-          // Use city name from weather API or fallback
-          setLocation(weatherData.cityName || userLocation.city || 'Jouw locatie');
+          // Use city name from weather API first, then location service city
+          const cityName = weatherData.cityName || userLocation.city;
+          if (cityName) {
+            setLocation(cityName);
+          } else {
+            setLocation('Locatie ophalen...');
+          }
           setWeather(weatherData);
           if (onContextChange) {
             // Use recipeCondition for better recipe matching
