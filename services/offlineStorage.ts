@@ -119,19 +119,37 @@ class OfflineStorageService {
 
     if (Platform.OS === 'web' && this.db) {
       return new Promise((resolve, reject) => {
-        const transaction = this.db!.transaction([this.storeName], 'readonly');
-        const store = transaction.objectStore(this.storeName);
-        const index = store.index('synced');
-        const request = index.getAll(false); // Get all unsynced items
+        try {
+          const transaction = this.db!.transaction([this.storeName], 'readonly');
+          const store = transaction.objectStore(this.storeName);
+          const index = store.index('synced');
+          
+          // Use openCursor with IDBKeyRange.only(false) instead of getAll(false)
+          // getAll() doesn't work with boolean values on indexes
+          const keyRange = IDBKeyRange.only(false);
+          const request = index.openCursor(keyRange);
+          const items: OfflineItem[] = [];
 
-        request.onsuccess = () => {
-          resolve(request.result || []);
-        };
+          request.onsuccess = (event) => {
+            const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+            if (cursor) {
+              items.push(cursor.value);
+              cursor.continue();
+            } else {
+              resolve(items);
+            }
+          };
 
-        request.onerror = () => {
-          console.error('[offline] Failed to get pending items:', request.error);
-          reject(request.error);
-        };
+          request.onerror = () => {
+            console.error('[offline] Failed to get pending items:', request.error);
+            // Fallback: return empty array instead of rejecting
+            resolve([]);
+          };
+        } catch (error) {
+          console.error('[offline] Error in getPendingSyncItems:', error);
+          // Fallback: return empty array instead of rejecting
+          resolve([]);
+        }
       });
     } else {
       // Native: Use AsyncStorage
@@ -217,23 +235,33 @@ class OfflineStorageService {
 
     if (Platform.OS === 'web' && this.db) {
       return new Promise((resolve, reject) => {
-        const transaction = this.db!.transaction([this.storeName], 'readwrite');
-        const store = transaction.objectStore(this.storeName);
-        const index = store.index('synced');
-        const request = index.openCursor(true); // Get all synced items
+        try {
+          const transaction = this.db!.transaction([this.storeName], 'readwrite');
+          const store = transaction.objectStore(this.storeName);
+          const index = store.index('synced');
+          // Use IDBKeyRange.only(true) for synced items
+          const keyRange = IDBKeyRange.only(true);
+          const request = index.openCursor(keyRange);
 
-        request.onsuccess = (event) => {
-          const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            cursor.delete();
-            cursor.continue();
-          } else {
-            console.log('[offline] Cleaned up synced items');
-            resolve();
-          }
-        };
+          request.onsuccess = (event) => {
+            const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+            if (cursor) {
+              cursor.delete();
+              cursor.continue();
+            } else {
+              console.log('[offline] Cleaned up synced items');
+              resolve();
+            }
+          };
 
-        request.onerror = () => reject(request.error);
+          request.onerror = () => {
+            console.error('[offline] Error cleaning up synced items:', request.error);
+            resolve(); // Don't reject, just log error
+          };
+        } catch (error) {
+          console.error('[offline] Error in removeSyncedItems:', error);
+          resolve(); // Don't reject, just log error
+        }
       });
     } else {
       // Native: Use AsyncStorage

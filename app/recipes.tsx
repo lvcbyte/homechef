@@ -11,12 +11,16 @@ const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 import { AIChatbot } from '../components/chat/AIChatbot';
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
+import { ContextualWeatherHeader } from '../components/recipes/ContextualWeatherHeader';
 import { LeftoversGenerator } from '../components/recipes/LeftoversGenerator';
 import { RecipeScaling } from '../components/recipes/RecipeScaling';
 import { CookingMode } from '../components/recipes/CookingMode';
 import { RecipeVariations } from '../components/recipes/RecipeVariations';
 import { MenuMaker } from '../components/recipes/MenuMaker';
 import { ExperimentalKitchen } from '../components/recipes/ExperimentalKitchen';
+import { AdaptiveRecipeView } from '../components/recipes/AdaptiveRecipeView';
+import { RecipeHealthImpact } from '../components/recipes/RecipeHealthImpact';
+import { SyncedCookingTimer } from '../components/recipes/SyncedCookingTimer';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
@@ -123,6 +127,8 @@ export default function RecipesScreen() {
   const [cookingModeVisible, setCookingModeVisible] = useState(false);
   const [scaledIngredients, setScaledIngredients] = useState<any[]>([]);
   const [scaledServings, setScaledServings] = useState<number>(4);
+  const [showHealthImpact, setShowHealthImpact] = useState(false);
+  const [showTimer, setShowTimer] = useState(false);
 
   // Load Chef Radar recipes from session storage on mount
   useEffect(() => {
@@ -1048,21 +1054,27 @@ export default function RecipesScreen() {
             <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
-          <View style={styles.headerIcons}>
-            {profile?.is_admin && (
-              <Pressable 
-                onPress={() => navigateToRoute(router, '/admin')}
-                style={styles.adminButton}
-              >
-                <Ionicons name="shield" size={20} color="#047857" />
-              </Pressable>
+          <View style={styles.headerRight}>
+            {/* Dynamic Island-style Weather Header */}
+            {user && (
+              <ContextualWeatherHeader />
             )}
-            <HeaderAvatar
-              userId={user.id}
-              userEmail={user.email}
-              avatarUrl={profile?.avatar_url}
-              showNotificationBadge={true}
-            />
+            <View style={styles.headerIcons}>
+              {profile?.is_admin && (
+                <Pressable 
+                  onPress={() => navigateToRoute(router, '/admin')}
+                  style={styles.adminButton}
+                >
+                  <Ionicons name="shield" size={20} color="#047857" />
+                </Pressable>
+              )}
+              <HeaderAvatar
+                userId={user.id}
+                userEmail={user.email}
+                avatarUrl={profile?.avatar_url}
+                showNotificationBadge={true}
+              />
+            </View>
           </View>
         </View>
 
@@ -1548,19 +1560,56 @@ export default function RecipesScreen() {
                         </Text>
                       </TouchableOpacity>
                       {user && (
-                        <TouchableOpacity
-                          style={styles.cookButton}
-                          onPress={() => {
-                            setScaledServings(selectedRecipe.servings || 4);
-                            setCookingModeVisible(true);
-                          }}
-                        >
-                          <Ionicons name="restaurant" size={20} color="#fff" />
-                          <Text style={styles.cookButtonText}>Start Koken</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                          <TouchableOpacity
+                            style={[styles.cookButton, { flex: 1 }]}
+                            onPress={() => {
+                              setScaledServings(selectedRecipe.servings || 4);
+                              setCookingModeVisible(true);
+                            }}
+                          >
+                            <Ionicons name="restaurant" size={20} color="#fff" />
+                            <Text style={styles.cookButtonText}>Start Koken</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.healthButton}
+                            onPress={() => setShowHealthImpact(true)}
+                          >
+                            <Ionicons name="fitness" size={20} color="#047857" />
+                          </TouchableOpacity>
+                          {selectedRecipe.cook_time_minutes && (
+                            <TouchableOpacity
+                              style={styles.timerButton}
+                              onPress={() => setShowTimer(true)}
+                            >
+                              <Ionicons name="timer" size={20} color="#047857" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       )}
                     </View>
                   </View>
+
+                  {/* Adaptive Recipe View - Ingredient Swapping */}
+                  {user && selectedRecipe && inventory.length > 0 && (
+                    <View style={styles.modalSection}>
+                      <AdaptiveRecipeView
+                        recipe={{
+                          id: selectedRecipe.recipe_id,
+                          title: selectedRecipe.title,
+                          ingredients: selectedRecipe.ingredients || [],
+                          instructions: selectedRecipe.instructions || [],
+                        }}
+                        userInventory={inventory.map((item) => ({
+                          name: item.name,
+                          category: item.category,
+                        }))}
+                        onIngredientSwapped={(swaps) => {
+                          console.log('Ingredient swaps:', swaps);
+                        }}
+                      />
+                    </View>
+                  )}
 
                   {/* Recipe Scaling */}
                   {user && selectedRecipe && (
@@ -1742,6 +1791,44 @@ export default function RecipesScreen() {
           />
         </Modal>
       )}
+
+      {/* Health Impact Modal */}
+      {showHealthImpact && selectedRecipe && (
+        <Modal
+          visible={showHealthImpact}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowHealthImpact(false)}
+        >
+          <SafeAreaViewComponent style={{ flex: 1, backgroundColor: '#fff' }}>
+            <RecipeHealthImpact
+              recipeId={selectedRecipe.recipe_id}
+              servings={selectedRecipe.servings || 1}
+              onClose={() => setShowHealthImpact(false)}
+            />
+          </SafeAreaViewComponent>
+        </Modal>
+      )}
+
+      {/* Synced Cooking Timer Modal */}
+      {showTimer && selectedRecipe && (
+        <Modal
+          visible={showTimer}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowTimer(false)}
+        >
+          <SafeAreaViewComponent style={{ flex: 1, backgroundColor: '#fff' }}>
+            <SyncedCookingTimer
+              timerName={`${selectedRecipe.title} - Oven`}
+              durationSeconds={(selectedRecipe.cook_time_minutes || 30) * 60}
+              recipeId={selectedRecipe.recipe_id}
+              onComplete={() => setShowTimer(false)}
+              onDismiss={() => setShowTimer(false)}
+            />
+          </SafeAreaViewComponent>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -1778,18 +1865,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logo: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
   },
   brandLabel: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexShrink: 0,
   },
   adminButton: {
     width: 32,
@@ -2564,6 +2660,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  healthButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 2,
+    borderColor: '#047857',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 2,
+    borderColor: '#047857',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   ingredientTextScaled: {
     color: '#047857',

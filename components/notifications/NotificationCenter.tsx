@@ -162,10 +162,17 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
     }
 
     // Handle different notification types
-    if (notification.type === 'expiry_warning' || notification.type === 'expiry_recipe_suggestion') {
+    if (notification.type === 'expiry_warning' || 
+        notification.type === 'expiry_recipe_suggestion' ||
+        notification.type === 'expired_item_alert' ||
+        notification.type === 'low_stock_warning' ||
+        notification.type === 'recipe_match_opportunity' ||
+        notification.type === 'eat_me_first_reminder' ||
+        notification.type === 'daily_summary') {
       // Navigate to recipes with suggested recipe
-      if (notification.data?.suggested_recipes?.[0]?.id) {
-        navigateToRoute(router, `/recipes?recipe=${notification.data.suggested_recipes[0].id}`);
+      if (notification.data?.suggested_recipes?.[0]?.id || notification.data?.suggested_recipe?.id) {
+        const recipeId = notification.data?.suggested_recipes?.[0]?.id || notification.data?.suggested_recipe?.id;
+        navigateToRoute(router, `/recipes?recipe=${recipeId}`);
       } else if (notification.data?.item_id) {
         navigateToRoute(router, '/inventory');
       } else {
@@ -189,6 +196,16 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
         return 'warning';
       case 'expiry_recipe_suggestion':
         return 'restaurant';
+      case 'expired_item_alert':
+        return 'close-circle';
+      case 'low_stock_warning':
+        return 'cube';
+      case 'recipe_match_opportunity':
+        return 'star';
+      case 'eat_me_first_reminder':
+        return 'flag';
+      case 'daily_summary':
+        return 'stats-chart';
       case 'badge_earned':
         return 'trophy';
       case 'challenge_completed':
@@ -210,6 +227,16 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
         return '#f97316';
       case 'expiry_recipe_suggestion':
         return '#047857';
+      case 'expired_item_alert':
+        return '#ef4444';
+      case 'low_stock_warning':
+        return '#3b82f6';
+      case 'recipe_match_opportunity':
+        return '#fbbf24';
+      case 'eat_me_first_reminder':
+        return '#ec4899';
+      case 'daily_summary':
+        return '#6366f1';
       case 'badge_earned':
         return '#fbbf24';
       case 'challenge_completed':

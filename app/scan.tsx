@@ -29,6 +29,8 @@ const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 import { GlassDock } from '../components/navigation/GlassDock';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { ReceiptOCR } from '../components/inventory/ReceiptOCR';
+import { SmartPurchaseAdvisor } from '../components/shopping/SmartPurchaseAdvisor';
+import { SmartPurchaseAdvisorButton } from '../components/shopping/SmartPurchaseAdvisorButton';
 import { useAuth } from '../contexts/AuthContext';
 
 // QuaggaScanner will be loaded dynamically only on web
@@ -219,6 +221,7 @@ export default function ScanScreen() {
   const [arDetectedItems, setArDetectedItems] = useState<ShelfPhotoAnalysisResult[]>([]);
   const [arProcessing, setArProcessing] = useState(false);
   const [arReviewModalVisible, setArReviewModalVisible] = useState(false);
+  const [showPurchaseAdvisor, setShowPurchaseAdvisor] = useState(false);
   const [arSelectedItems, setArSelectedItems] = useState<Set<number>>(new Set());
   const [arPhotoUri, setArPhotoUri] = useState<string | null>(null);
   const visibleMonthCalendar = useMemo(
@@ -581,15 +584,41 @@ export default function ScanScreen() {
       let expires: string | null = null;
       
       if (isOnline) {
-        // Get expiry date from FAVV/HACCP estimation (only if online)
-        const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
+        // Verbeterde expiry schatting met product naam
+        const { data: expiryData, error: expiryError } = await supabase.rpc('estimate_expiry_date', {
           category_slug: scannedProduct.category || 'pantry',
+          product_name: scannedProduct.product_name || null,
+          purchase_date: new Date().toISOString(),
         });
-        expires = expiryData ? expiryData : null;
+        
+        if (expiryError) {
+          console.error('Error estimating expiry:', expiryError);
+          // Fallback naar basis schatting
+          const { data: fallbackData } = await supabase.rpc('estimate_expiry_date', {
+            category_slug: scannedProduct.category || 'pantry',
+          });
+          expires = fallbackData || null;
+        } else {
+          expires = expiryData || null;
+        }
       } else {
-        // Offline: estimate 7 days
+        // Offline: gebruik categorie-gebaseerde schatting
+        const categoryDays: Record<string, number> = {
+          'proteins': 2,
+          'seafood': 1,
+          'dairy_eggs': 5,
+          'fresh_produce': 5,
+          'ready_meals': 2,
+          'bakery': 3,
+          'pantry': 90,
+          'spices_condiments': 180,
+          'snacks': 60,
+          'beverages': 180,
+          'frozen': 180,
+        };
+        const days = categoryDays[scannedProduct.category || 'pantry'] || 7;
         const fallbackDate = new Date();
-        fallbackDate.setDate(fallbackDate.getDate() + 7);
+        fallbackDate.setDate(fallbackDate.getDate() + days);
         expires = fallbackDate.toISOString();
       }
       
@@ -1211,6 +1240,10 @@ export default function ScanScreen() {
               </View>
 
               <View style={styles.section}>
+                <SmartPurchaseAdvisorButton userId={user.id} />
+              </View>
+
+              <View style={styles.section}>
                 <TouchableOpacity 
                   style={styles.actionCard} 
                   onPress={startManualWizard}
@@ -1553,6 +1586,19 @@ export default function ScanScreen() {
                       </View>
                     )}
                     
+                    {/* Smart Purchase Advisor Button */}
+                    {scannedProduct.id && scannedProduct.price && (
+                      <TouchableOpacity
+                        style={styles.productDetailSmartButton}
+                        onPress={() => setShowPurchaseAdvisor(true)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="trending-up" size={20} color="#047857" />
+                        <Text style={styles.productDetailSmartButtonText}>Slimme Aankoop Adviseur</Text>
+                        <Ionicons name="chevron-forward" size={20} color="#047857" />
+                      </TouchableOpacity>
+                    )}
+                    
                     <TouchableOpacity
                       style={styles.productDetailAddButton}
                       onPress={handleAddProductToInventory}
@@ -1567,6 +1613,20 @@ export default function ScanScreen() {
             )}
             </View>
           </Pressable>
+        </SafeAreaViewComponent>
+      </Modal>
+
+      {/* Smart Purchase Advisor Modal */}
+      <Modal visible={showPurchaseAdvisor} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaViewComponent style={{ flex: 1, backgroundColor: '#fff' }}>
+          {scannedProduct && (
+            <SmartPurchaseAdvisor
+              productId={scannedProduct.id}
+              productName={scannedProduct.product_name}
+              currentPrice={scannedProduct.price || undefined}
+              onDismiss={() => setShowPurchaseAdvisor(false)}
+            />
+          )}
         </SafeAreaViewComponent>
       </Modal>
 
@@ -3113,6 +3173,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
     fontFamily: 'monospace',
+  },
+  productDetailSmartButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 2,
+    borderColor: '#047857',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  productDetailSmartButtonText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#047857',
   },
   productDetailAddButton: {
     flexDirection: 'row',

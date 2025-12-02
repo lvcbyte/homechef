@@ -9,9 +9,12 @@ const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
+import { ContextualWeatherHeader } from '../components/recipes/ContextualWeatherHeader';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { VoiceInput } from '../components/inventory/VoiceInput';
 import { OfflineSyncIndicator } from '../components/inventory/OfflineSyncIndicator';
+import { SmartPurchaseAdvisor } from '../components/shopping/SmartPurchaseAdvisor';
+import { VisionStockVerification } from '../components/inventory/VisionStockVerification';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { InventoryRecord, InventoryItem } from '../types/app';
@@ -27,6 +30,7 @@ const viewModeOptions = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categorieën' },
   { id: 'expiry', label: 'Vervaldatum' },
+  { id: 'eat_me_first', label: 'Eet-Mij-Eerst' },
 ];
 
 const MONTH_LABELS = [
@@ -198,12 +202,15 @@ export default function InventoryScreen() {
   const { user, profile } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'items' | 'categories' | 'expiry'>('items');
+  const [viewMode, setViewMode] = useState<'items' | 'categories' | 'expiry' | 'eat_me_first'>('items');
   const [inventory, setInventory] = useState<InventoryRecord[]>([]);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [selectedNutritionItem, setSelectedNutritionItem] = useState<InventoryRecord | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryRecord | null>(null);
+  const [showPurchaseAdvisor, setShowPurchaseAdvisor] = useState(false);
+  const [selectedProductForAdvisor, setSelectedProductForAdvisor] = useState<{ id: string; name: string; price?: number } | null>(null);
+  const [showVisionCheck, setShowVisionCheck] = useState(false);
   const [editQuantity, setEditQuantity] = useState('');
   const [editExpiry, setEditExpiry] = useState<Date | null>(null);
   const [editExpiryMonthOffset, setEditExpiryMonthOffset] = useState(0);
@@ -274,6 +281,8 @@ export default function InventoryScreen() {
   const fetchInventory = async () => {
     if (!user) return;
     setLoadingInventory(true);
+    
+    // Fetch inventory
     const { data } = await supabase
       .from('inventory')
       .select(`
@@ -286,14 +295,50 @@ export default function InventoryScreen() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     
-    // Flatten the catalog data into inventory items
-    const flattened = (data ?? []).map((item: any) => ({
-      ...item,
-      catalog_nutrition: item.catalog?.nutrition,
-      catalog_metadata: item.catalog?.metadata,
-    }));
+    if (!data) {
+      setInventory([]);
+      setLoadingInventory(false);
+      return;
+    }
     
-    setInventory(flattened as InventoryRecord[]);
+    // Fetch recipe matches voor alle items (parallel voor performance)
+    const itemsWithMatches = await Promise.all(
+      data.map(async (item: any) => {
+        try {
+          const { data: matchCount, error } = await supabase.rpc('get_inventory_recipe_match_count', {
+            p_inventory_item_id: item.id,
+            p_user_id: user.id,
+          });
+          
+          if (error) {
+            console.error('Error fetching recipe matches:', error);
+            return {
+              ...item,
+              catalog_nutrition: item.catalog?.nutrition,
+              catalog_metadata: item.catalog?.metadata,
+              recipe_match_count: 0,
+            };
+          }
+          
+          return {
+            ...item,
+            catalog_nutrition: item.catalog?.nutrition,
+            catalog_metadata: item.catalog?.metadata,
+            recipe_match_count: matchCount || 0,
+          };
+        } catch (error) {
+          console.error('Error in recipe match fetch:', error);
+          return {
+            ...item,
+            catalog_nutrition: item.catalog?.nutrition,
+            catalog_metadata: item.catalog?.metadata,
+            recipe_match_count: 0,
+          };
+        }
+      })
+    );
+    
+    setInventory(itemsWithMatches as InventoryRecord[]);
     setLoadingInventory(false);
   };
 
@@ -385,14 +430,29 @@ export default function InventoryScreen() {
   const insertDetectedShelfItems = async (items: InventoryItem[], contextLabel: string) => {
     if (!user || !items.length) return 0;
     let successCount = 0;
+    const isOnline = syncManager.getStatus().isOnline;
 
     for (const item of items) {
       try {
         const { data: detection } = await supabase.rpc('detect_category', { item_name: item.name });
         const suggestion = detection?.[0];
-        const expiresAt = item.daysUntilExpiry
+        let expiresAt = item.daysUntilExpiry
           ? new Date(Date.now() + item.daysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
           : null;
+
+        // Als we online zijn en geen expiry hebben, gebruik verbeterde schatting
+        if (!expiresAt && isOnline) {
+          try {
+            const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
+              category_slug: suggestion?.category ?? 'pantry',
+              product_name: item.name || null,
+            });
+            expiresAt = expiryData || null;
+          } catch (error) {
+            console.error('Error estimating expiry:', error);
+          }
+        }
+
         const { error } = await supabase.from('inventory').insert({
           user_id: user.id,
           name: item.name,
@@ -733,6 +793,50 @@ export default function InventoryScreen() {
     return diff;
   };
 
+  // Normaliseer dagen tot vervaldatum naar 0-100 schaal (inverse: lager = hogere prioriteit)
+  const normalizeExpiryDays = (days: number): number => {
+    if (days <= 0) return 0; // Vandaag of vervallen = hoogste prioriteit
+    if (days <= 3) return 10; // Binnen 3 dagen = zeer urgent
+    if (days <= 7) return 30; // Binnen week = urgent
+    if (days <= 14) return 50; // Binnen 2 weken = aandacht
+    if (days <= 30) return 70; // Binnen maand = normaal
+    return 100; // >30 dagen = lage prioriteit
+  };
+
+  // Normaliseer recept matches naar 0-100 schaal (inverse)
+  const normalizeRecipeMatches = (matches: number): number => {
+    if (matches === 0) return 100; // Geen matches = lage prioriteit
+    if (matches >= 5) return 0; // 5+ matches = hoogste prioriteit
+    return 100 - (matches * 20); // Lineair tussen 0-4 matches
+  };
+
+  // Normaliseer voorraad niveau naar 0-100 schaal (inverse)
+  const normalizeStockLevel = (quantity: string | null): number => {
+    if (!quantity) return 50; // Onbekend = gemiddeld
+    const qty = quantity.toLowerCase();
+    const numMatch = qty.match(/(\d+)/);
+    if (!numMatch) return 50;
+    const num = parseInt(numMatch[1], 10);
+    if (num <= 1) return 0; // Zeer laag = hoge prioriteit
+    if (num <= 2) return 20; // Laag
+    if (num <= 5) return 50; // Gemiddeld
+    return 100; // Hoog = lage prioriteit
+  };
+
+  // Bereken Eet-Mij-Eerst-Index
+  // Lagere index = hogere prioriteit (moet eerst gebruikt worden)
+  const calculateEatMeFirstIndex = (
+    daysUntilExpiry: number,
+    recipeMatches: number,
+    quantity: string | null
+  ): number => {
+    const expiryScore = normalizeExpiryDays(daysUntilExpiry);
+    const recipeScore = normalizeRecipeMatches(recipeMatches);
+    const stockScore = normalizeStockLevel(quantity);
+    
+    return (0.5 * expiryScore) + (0.3 * recipeScore) + (0.2 * stockScore);
+  };
+
   const filteredInventory = useMemo(() => {
     if (selectedCategory === 'all') return inventory;
     return inventory.filter((item) => item.category === selectedCategory);
@@ -764,6 +868,24 @@ export default function InventoryScreen() {
     ? Math.round((usableItems / inventory.length) * 100)
     : 0;
 
+  // Smart sorted inventory op basis van Eet-Mij-Eerst-Index
+  const smartSortedInventory = useMemo(() => {
+    return [...inventory].map(item => {
+      const days = daysUntil(item.expires_at);
+      const matches = item.recipe_match_count || 0;
+      const index = calculateEatMeFirstIndex(days, matches, item.quantity_approx);
+      
+      return {
+        ...item,
+        eat_me_first_index: index,
+      };
+    }).sort((a, b) => {
+      const indexA = a.eat_me_first_index || 999;
+      const indexB = b.eat_me_first_index || 999;
+      return indexA - indexB; // Sorteer op laagste index eerst (hoogste prioriteit)
+    });
+  }, [inventory]);
+
   if (initialLoading) {
     return (
       <View style={styles.container}>
@@ -789,27 +911,33 @@ export default function InventoryScreen() {
             <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
-          <View style={styles.headerIcons}>
-            {profile?.is_admin && (
-              <Pressable 
-                onPress={() => navigateToRoute(router, '/admin')}
-                style={styles.adminButton}
-              >
-                <Ionicons name="shield" size={20} color="#047857" />
-              </Pressable>
+          <View style={styles.headerRight}>
+            {/* Dynamic Island-style Weather Header */}
+            {user && (
+              <ContextualWeatherHeader />
             )}
-            {user ? (
-              <HeaderAvatar
-                userId={user.id}
-                userEmail={user.email}
-                avatarUrl={profile?.avatar_url}
-                showNotificationBadge={true}
-              />
-            ) : (
-              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-                <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              </Pressable>
-            )}
+            <View style={styles.headerIcons}>
+              {profile?.is_admin && (
+                <Pressable 
+                  onPress={() => navigateToRoute(router, '/admin')}
+                  style={styles.adminButton}
+                >
+                  <Ionicons name="shield" size={20} color="#047857" />
+                </Pressable>
+              )}
+              {user ? (
+                <HeaderAvatar
+                  userId={user.id}
+                  userEmail={user.email}
+                  avatarUrl={profile?.avatar_url}
+                  showNotificationBadge={true}
+                />
+              ) : (
+                <Pressable onPress={() => navigateToRoute(router, '/profile')}>
+                  <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
+                </Pressable>
+              )}
+            </View>
           </View>
         </View>
 
@@ -865,16 +993,28 @@ export default function InventoryScreen() {
             })}
           </ScrollView>
 
-          <TouchableOpacity
-            style={styles.stockpitButton}
-            onPress={async () => {
-              if (!user) return router.push('/sign-in');
-              await supabase.from('scan_sessions').insert({ user_id: user.id, processed_status: 'pending' });
-              router.push('/scan');
-            }}
-          >
-            <Text style={styles.stockpitTitle}>STOCKPIT MODE</Text>
-          </TouchableOpacity>
+          <View style={styles.actionButtonsRow}>
+            <TouchableOpacity
+              style={[styles.stockpitButton, { flex: 1 }]}
+              onPress={async () => {
+                if (!user) return router.push('/sign-in');
+                await supabase.from('scan_sessions').insert({ user_id: user.id, processed_status: 'pending' });
+                router.push('/scan');
+              }}
+            >
+              <Text style={styles.stockpitTitle}>STOCKPIT MODE</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.visionButton}
+              onPress={() => {
+                if (!user) return router.push('/sign-in');
+                setShowVisionCheck(true);
+              }}
+            >
+              <Ionicons name="camera" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
 
           {/* Voice Input */}
           {user && (
@@ -990,14 +1130,18 @@ export default function InventoryScreen() {
                     ? 'Voorraad per item'
                     : viewMode === 'categories'
                     ? 'Voorraad per categorie'
-                    : 'Binnenkort vervallen'}
+                    : viewMode === 'expiry'
+                    ? 'Binnenkort vervallen'
+                    : 'Eet-Mij-Eerst Prioriteit'}
                 </Text>
                 <Text style={styles.sectionSub}>
                   {viewMode === 'items'
                     ? 'Live score en houdbaarheid'
                     : viewMode === 'categories'
                     ? 'Geclusterd per STOCKPIT lane'
-                    : 'Sortering op dichtstbijzijnde houdbaarheid'}
+                    : viewMode === 'expiry'
+                    ? 'Sortering op dichtstbijzijnde houdbaarheid'
+                    : 'Intelligente sortering op basis van vervaldatum, recept matches en voorraad'}
                 </Text>
               </View>
               <View style={styles.viewToggle}>
@@ -1070,10 +1214,25 @@ export default function InventoryScreen() {
 
                               {/* Price */}
                               {item.catalog_price && (
-                                <View style={styles.priceRow}>
+                                <TouchableOpacity
+                                  style={styles.priceRow}
+                                  onPress={() => {
+                                    if ((item as any).catalog_product_id) {
+                                      setSelectedProductForAdvisor({
+                                        id: (item as any).catalog_product_id,
+                                        name: item.name,
+                                        price: item.catalog_price || undefined,
+                                      });
+                                      setShowPurchaseAdvisor(true);
+                                    }
+                                  }}
+                                >
                                   <Ionicons name="pricetag" size={14} color="#047857" />
                                   <Text style={styles.priceText}>€{item.catalog_price.toFixed(2)}</Text>
-                                </View>
+                                  {(item as any).catalog_product_id && (
+                                    <Ionicons name="trending-up" size={14} color="#047857" style={{ marginLeft: 4 }} />
+                                  )}
+                                </TouchableOpacity>
                               )}
 
                               <View style={styles.itemStatsRow}>
@@ -1178,6 +1337,167 @@ export default function InventoryScreen() {
                   })}
                 </View>
               )}
+
+              {viewMode === 'eat_me_first' && (
+                <View style={styles.inventoryList}>
+                  {smartSortedInventory.map((item) => {
+                    const expiresIn = daysUntil(item.expires_at);
+                    const matches = item.recipe_match_count || 0;
+                    const index = item.eat_me_first_index || 999;
+                    
+                    // Bepaal prioriteit kleur
+                    const getPriorityColor = (idx: number) => {
+                      if (idx <= 20) return '#ef4444'; // Rood: zeer urgent
+                      if (idx <= 40) return '#f97316'; // Oranje: urgent
+                      if (idx <= 60) return '#fbbf24'; // Geel: aandacht
+                      return '#4ade80'; // Groen: normaal
+                    };
+                    
+                    return (
+                      <View key={`${item.id}-eat-me-first`} style={styles.inventoryCard}>
+                        <View style={styles.inventoryCardContent}>
+                          {/* Product Image */}
+                          <View style={styles.imageContainer}>
+                            {item.catalog_image_url ? (
+                              <Image
+                                source={{ uri: item.catalog_image_url }}
+                                style={styles.itemImage}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <View style={styles.itemImagePlaceholder}>
+                                <Ionicons name="cube-outline" size={24} color="#94a3b8" />
+                              </View>
+                            )}
+                            {/* Nutrition button */}
+                            {(item as any).catalog_nutrition && (
+                              <TouchableOpacity
+                                style={styles.nutritionButton}
+                                onPress={() => setSelectedNutritionItem(item)}
+                              >
+                                <Ionicons name="nutrition-outline" size={16} color="#047857" />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+
+                          {/* Product Info */}
+                          <View style={styles.itemInfo}>
+                            <View style={styles.inventoryTopRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.itemName}>{item.name}</Text>
+                                <Text style={styles.itemCategory}>{getCategoryLabel(item.category)}</Text>
+                              </View>
+                              {/* Priority Badge */}
+                              {index <= 30 && (
+                                <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(index) }]}>
+                                  <Ionicons name="alert-circle" size={14} color="#fff" />
+                                  <Text style={styles.priorityBadgeText}>Eet eerst</Text>
+                                </View>
+                              )}
+                              <TouchableOpacity
+                                style={styles.editButton}
+                                onPress={() => {
+                                  setEditingItem(item);
+                                  setEditQuantity(item.quantity_approx || '');
+                                  setEditExpiry(item.expires_at ? new Date(item.expires_at) : null);
+                                }}
+                              >
+                                <Ionicons name="create-outline" size={16} color="#047857" />
+                              </TouchableOpacity>
+                            </View>
+
+                            {/* Price */}
+                            {item.catalog_price && (
+                              <TouchableOpacity
+                                style={styles.priceRow}
+                                onPress={() => {
+                                  if ((item as any).catalog_product_id) {
+                                    setSelectedProductForAdvisor({
+                                      id: (item as any).catalog_product_id,
+                                      name: item.name,
+                                      price: item.catalog_price || undefined,
+                                    });
+                                    setShowPurchaseAdvisor(true);
+                                  }
+                                }}
+                              >
+                                <Ionicons name="pricetag" size={14} color="#047857" />
+                                <Text style={styles.priceText}>€{item.catalog_price.toFixed(2)}</Text>
+                                {(item as any).catalog_product_id && (
+                                  <Ionicons name="trending-up" size={14} color="#047857" style={{ marginLeft: 4 }} />
+                                )}
+                              </TouchableOpacity>
+                            )}
+
+                            {/* Priority Score */}
+                            <View style={styles.priorityScoreRow}>
+                              <View style={styles.priorityScoreItem}>
+                                <Text style={styles.priorityScoreLabel}>Prioriteit</Text>
+                                <Text style={[styles.priorityScoreValue, { color: getPriorityColor(index) }]}>
+                                  {Math.round(index)}/100
+                                </Text>
+                              </View>
+                              {matches > 0 && (
+                                <View style={styles.priorityScoreItem}>
+                                  <Ionicons name="restaurant" size={14} color="#047857" />
+                                  <Text style={styles.priorityScoreText}>{matches} recept{matches !== 1 ? 'en' : ''}</Text>
+                                </View>
+                              )}
+                            </View>
+
+                            <View style={styles.itemStatsRow}>
+                              <View style={styles.itemStat}>
+                                <Text style={styles.itemStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>HOEVEELHEID</Text>
+                                <Text style={styles.itemStatValue}>{item.quantity_approx ?? '-'}</Text>
+                              </View>
+                              <View style={styles.itemStat}>
+                                <Text style={styles.itemStatLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>HOUDBAAR</Text>
+                                <Text style={[styles.itemStatValue, { color: getExpiryColor(expiresIn) }]}>
+                                  {isFinite(expiresIn) ? `${expiresIn} dagen` : 'Onbekend'}
+                                </Text>
+                                <Text style={styles.itemStatHelper}>{getExpiryLabel(expiresIn)}</Text>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.markUsed}
+                          onPress={async () => {
+                            if (!user) return router.push('/sign-in');
+                            
+                            // Check if online
+                            const isOnline = syncManager.getStatus().isOnline;
+                            
+                            if (isOnline) {
+                              // Online: delete directly
+                              const { error } = await supabase.from('inventory').delete().eq('id', item.id);
+                              if (error) {
+                                Alert.alert('Fout', `Kon item niet verwijderen: ${error.message}`);
+                                return;
+                              }
+                              fetchInventory();
+                            } else {
+                              // Offline: queue for sync
+                              await offlineStorage.addPendingSync({
+                                table: 'inventory',
+                                operation: 'delete',
+                                data: { id: item.id },
+                              });
+                              
+                              // Remove from local state immediately for better UX
+                              setInventory(prev => prev.filter(i => i.id !== item.id));
+                              Alert.alert('Offline', 'Item wordt verwijderd zodra je weer online bent.');
+                            }
+                          }}
+                        >
+                          <Ionicons name="checkmark-circle" size={20} color="#047857" />
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </>
           ) : (
             <View style={styles.authCard}>
@@ -1196,6 +1516,42 @@ export default function InventoryScreen() {
 
         </ScrollView>
       </SafeAreaViewComponent>
+
+      {/* Smart Purchase Advisor Modal */}
+      <Modal visible={showPurchaseAdvisor} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaViewComponent style={{ flex: 1, backgroundColor: '#fff' }}>
+          {selectedProductForAdvisor && (
+            <SmartPurchaseAdvisor
+              productId={selectedProductForAdvisor.id}
+              productName={selectedProductForAdvisor.name}
+              currentPrice={selectedProductForAdvisor.price}
+              onDismiss={() => {
+                setShowPurchaseAdvisor(false);
+                setSelectedProductForAdvisor(null);
+              }}
+            />
+          )}
+        </SafeAreaViewComponent>
+      </Modal>
+
+      {/* Vision Stock Verification Modal */}
+      <Modal visible={showVisionCheck} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaViewComponent style={{ flex: 1, backgroundColor: '#000' }}>
+          <VisionStockVerification
+            inventoryItems={inventory.map((item) => ({
+              id: item.id,
+              name: item.name,
+              category: item.category,
+            }))}
+            onItemDetected={(itemId, confidence) => {
+              console.log('Item detected:', itemId, confidence);
+              // Optionally update inventory status
+            }}
+            onClose={() => setShowVisionCheck(false)}
+          />
+        </SafeAreaViewComponent>
+      </Modal>
+
       <GlassDock />
 
       {/* Shelf Photo Detail Modal */}
@@ -1584,18 +1940,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logo: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
   },
   brandLabel: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexShrink: 0,
   },
   adminButton: {
     width: 32,
@@ -1729,6 +2094,11 @@ const styles = StyleSheet.create({
   viewChipTextActive: {
     color: '#fff',
   },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
   stockpitButton: {
     borderRadius: 24,
     borderWidth: 1,
@@ -1738,6 +2108,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  visionButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#047857',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#047857',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   stockpitTitle: {
     fontSize: 14,
@@ -2547,6 +2930,52 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  priorityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  priorityBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  priorityScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+  },
+  priorityScoreItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priorityScoreLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  priorityScoreValue: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  priorityScoreText: {
+    fontSize: 13,
+    color: '#047857',
+    fontWeight: '600',
   },
 });
 

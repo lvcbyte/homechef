@@ -293,12 +293,13 @@ export function VoiceInput({ userId, onItemsAdded }: VoiceInputProps) {
             continue;
           }
 
-          // Re-estimate expiry if category changed
+          // Re-estimate expiry if category changed (met product naam)
           let expiresAt = item.expires_at;
           if (item.category) {
             try {
               const { data: expiryData, error: expiryError } = await supabase.rpc('estimate_expiry_date', {
                 category_slug: item.category,
+                product_name: item.name || null,
               });
               if (!expiryError && expiryData) {
                 expiresAt = expiryData;

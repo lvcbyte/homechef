@@ -133,6 +133,16 @@ module.exports = {
         'theme-color': '#047857',
         'format-detection': 'telephone=no',
       },
+      shareTarget: {
+        action: '/import',
+        method: 'GET',
+        enctype: 'application/x-www-form-urlencoded',
+        params: {
+          title: 'title',
+          text: 'text',
+          url: 'url',
+        },
+      },
     },
     plugins: ['expo-router', 'expo-barcode-scanner'],
     extra: {

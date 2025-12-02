@@ -293,9 +293,14 @@ export function ReceiptOCR({ userId, onItemsAdded }: ReceiptOCRProps) {
       let successCount = 0;
       for (const item of itemsToAdd) {
         try {
-          const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
+          const { data: expiryData, error: expiryError } = await supabase.rpc('estimate_expiry_date', {
             category_slug: item.category || 'pantry',
+            product_name: item.name || null,
           });
+
+          if (expiryError) {
+            console.error('Error estimating expiry:', expiryError);
+          }
 
           const { error: insertError } = await supabase.from('inventory').insert({
             user_id: userId,

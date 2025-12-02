@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, usePathname } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,10 +14,13 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { MenuMaker } from '../components/recipes/MenuMaker';
 import { ExperimentalKitchen } from '../components/recipes/ExperimentalKitchen';
+import { ContextualWeatherCard } from '../components/recipes/ContextualWeatherCard';
+import { ContextualWeatherHeader } from '../components/recipes/ContextualWeatherHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { generateRecipesWithAI, generateRecipeImageUrl } from '../services/ai';
 import { navigateToRoute } from '../utils/navigation';
+import { getTimeOfDay } from '../services/weather';
 
 interface Recipe {
   recipe_id: string;
@@ -79,6 +82,9 @@ export default function Home() {
   const [likedRecipes, setLikedRecipes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [inventory, setInventory] = useState<any[]>([]);
+  const [contextualRecipes, setContextualRecipes] = useState<Recipe[]>([]);
+  const [timeOfDay, setTimeOfDay] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('dinner');
+  const [weatherCondition, setWeatherCondition] = useState<string>('sunny');
 
   useEffect(() => {
     // IMMEDIATE redirect if we're on the home page (index) and user is not authenticated
@@ -400,6 +406,68 @@ export default function Home() {
       console.error('Error fetching inventory:', error);
     }
   };
+
+  const loadContextualRecipes = async (time?: string, weather?: string) => {
+    if (!user) return;
+    
+    try {
+      const currentTimeOfDay = time || getTimeOfDay();
+      const currentWeather = weather || weatherCondition;
+      
+      setTimeOfDay(currentTimeOfDay as 'breakfast' | 'lunch' | 'dinner' | 'snack');
+      
+      console.log('[Home] Loading contextual recipes:', { time: currentTimeOfDay, weather: currentWeather });
+      
+      // Fetch contextual recipes based on time and weather
+      const { data, error } = await supabase.rpc('get_contextual_recipes', {
+        p_time_of_day: currentTimeOfDay,
+        p_weather_condition: currentWeather,
+        p_user_id: user.id,
+        p_limit: 20,
+      });
+
+      if (error) {
+        console.error('[Home] Error loading contextual recipes:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        console.log('[Home] ✅ Loaded', data.length, 'contextual recipes');
+        // Map to Recipe format
+        const mappedRecipes = data.map((r: any) => ({
+          ...r,
+          recipe_id: r.recipe_id,
+          image_url: r.image_url || generateRecipeImageUrl(r.title, r.recipe_id),
+        }));
+        setContextualRecipes(mappedRecipes as Recipe[]);
+      } else {
+        console.warn('[Home] No contextual recipes found for:', { time: currentTimeOfDay, weather: currentWeather });
+        setContextualRecipes([]);
+      }
+    } catch (error) {
+      console.error('Error in loadContextualRecipes:', error);
+    }
+  };
+
+  const handleContextChange = useCallback((newTimeOfDay: string, newWeatherCondition: string) => {
+    // Only update if changed to prevent unnecessary re-renders
+    setTimeOfDay(prev => {
+      if (prev !== newTimeOfDay) {
+        return newTimeOfDay as 'breakfast' | 'lunch' | 'dinner' | 'snack';
+      }
+      return prev;
+    });
+    setWeatherCondition(prev => {
+      if (prev !== newWeatherCondition) {
+        return newWeatherCondition;
+      }
+      return prev;
+    });
+    // Reload contextual recipes when context changes (debounced)
+    setTimeout(() => {
+      loadContextualRecipes(newTimeOfDay, newWeatherCondition);
+    }, 500);
+  }, []);
 
   const fetchDailyAIRecipe = async () => {
     if (!user || !profile) return;
@@ -813,27 +881,33 @@ export default function Home() {
             <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
-          <View style={styles.headerIcons}>
-            {profile?.is_admin && (
-              <Pressable 
-                onPress={() => navigateToRoute(router, '/admin')}
-                style={styles.adminButton}
-              >
-                <Ionicons name="shield" size={20} color="#047857" />
-              </Pressable>
+          <View style={styles.headerRight}>
+            {/* Dynamic Island-style Weather Header */}
+            {user && (
+              <ContextualWeatherHeader onContextChange={handleContextChange} />
             )}
-            {user ? (
-              <HeaderAvatar
-                userId={user.id}
-                userEmail={user.email}
-                avatarUrl={profile?.avatar_url}
-                showNotificationBadge={true}
-              />
-            ) : (
-              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-                <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              </Pressable>
-            )}
+            <View style={styles.headerIcons}>
+              {profile?.is_admin && (
+                <Pressable 
+                  onPress={() => navigateToRoute(router, '/admin')}
+                  style={styles.adminButton}
+                >
+                  <Ionicons name="shield" size={20} color="#047857" />
+                </Pressable>
+              )}
+              {user ? (
+                <HeaderAvatar
+                  userId={user.id}
+                  userEmail={user.email}
+                  avatarUrl={profile?.avatar_url}
+                  showNotificationBadge={true}
+                />
+              ) : (
+                <Pressable onPress={() => navigateToRoute(router, '/profile')}>
+                  <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
+                </Pressable>
+              )}
+            </View>
           </View>
         </View>
 
@@ -901,6 +975,84 @@ export default function Home() {
                 </TouchableOpacity>
               ) : null}
             </>
+          )}
+
+          {/* Contextual Recipes Section */}
+          {contextualRecipes.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.contextualHeader}>
+                <View style={styles.contextualHeaderContent}>
+                  <View style={styles.contextualBadge}>
+                    <Ionicons 
+                      name={
+                        weatherCondition === 'cold' ? 'snow' :
+                        weatherCondition === 'warm' ? 'sunny' :
+                        weatherCondition === 'rain' ? 'rainy' :
+                        'partly-sunny'
+                      } 
+                      size={20} 
+                      color="#047857" 
+                    />
+                    <Text style={styles.contextualBadgeText}>
+                      {timeOfDay === 'breakfast' ? 'Perfect voor Ontbijt' :
+                       timeOfDay === 'lunch' ? 'Perfect voor Lunch' :
+                       timeOfDay === 'dinner' ? 'Perfect voor Diner' :
+                       'Perfect Nu'}
+                    </Text>
+                  </View>
+                  <Text style={styles.contextualTitle}>
+                    {weatherCondition === 'rain' && timeOfDay === 'dinner' ? 'Comfort Food voor Regenachtige Avond' :
+                     weatherCondition === 'rain' ? 'Comfort Food voor Regenachtig Weer' :
+                     weatherCondition === 'warm' ? 'Lichte Maaltijden voor Warm Weer' :
+                     weatherCondition === 'cold' ? 'Warme Maaltijden voor Koud Weer' :
+                     'Aanbevolen Recepten'}
+                  </Text>
+                  <Text style={styles.contextualSubtitle}>
+                    {weatherCondition === 'cold' ? 'Verwarm jezelf met deze heerlijke gerechten' :
+                     weatherCondition === 'warm' ? 'Frisse en lichte maaltijden voor warm weer' :
+                     weatherCondition === 'rain' ? 'Perfect comfort food voor binnen blijven' :
+                     'Recepten die perfect passen bij dit moment'}
+                  </Text>
+                </View>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.recipeScroll}
+              >
+                {contextualRecipes.slice(0, 10).map((recipe) => (
+                  <TouchableOpacity
+                    key={recipe.recipe_id}
+                    style={styles.contextualRecipeCard}
+                    onPress={() => handleRecipePress(recipe)}
+                  >
+                    <Image
+                      source={{
+                        uri: recipe.image_url || generateRecipeImageUrl(recipe.title),
+                      }}
+                      style={styles.contextualRecipeImage}
+                    />
+                    <View style={styles.contextualRecipeContent}>
+                      <Text style={styles.contextualRecipeTitle} numberOfLines={2}>
+                        {recipe.title}
+                      </Text>
+                      <View style={styles.contextualRecipeMeta}>
+                        <View style={styles.contextualRecipeMetaItem}>
+                          <Ionicons name="time-outline" size={14} color="#64748b" />
+                          <Text style={styles.contextualRecipeMetaText}>{recipe.total_time_minutes} min</Text>
+                        </View>
+                        {recipe.likes_count > 0 && (
+                          <View style={styles.contextualRecipeMetaItem}>
+                            <Ionicons name="heart" size={14} color="#ef4444" />
+                            <Text style={styles.contextualRecipeMetaText}>{recipe.likes_count}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
           )}
 
           {/* Recipe of the Day */}
@@ -1251,32 +1403,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+    gap: 8,
+    flexWrap: 'wrap',
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   logo: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
   },
   brandLabel: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexShrink: 0,
   },
   adminButton: {
     width: 32,
@@ -1541,6 +1705,114 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 8,
+  },
+  recipeMetaText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  recipeContent: {
+    padding: 12,
+    gap: 4,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  recipeScroll: {
+    paddingRight: 20,
+  },
+  contextualHeader: {
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  contextualHeaderContent: {
+    gap: 12,
+  },
+  contextualBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
+  },
+  contextualBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#047857',
+    letterSpacing: 0.5,
+  },
+  contextualTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0f172a',
+    lineHeight: 32,
+  },
+  contextualSubtitle: {
+    fontSize: 15,
+    color: '#64748b',
+    lineHeight: 22,
+  },
+  contextualRecipeCard: {
+    width: 240,
+    marginRight: 16,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.1)',
+    overflow: 'hidden',
+    shadowColor: '#047857',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  contextualRecipeImage: {
+    width: '100%',
+    height: 160,
+    backgroundColor: '#e2e8f0',
+  },
+  contextualRecipeContent: {
+    padding: 16,
+    gap: 8,
+  },
+  contextualRecipeTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
+    lineHeight: 24,
+  },
+  contextualRecipeMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 4,
+  },
+  contextualRecipeMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contextualRecipeMetaText: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
   },
   recipeTime: {
     fontSize: 13,

@@ -1,7 +1,10 @@
 import type { Database, Json } from './database';
 
 export type Profile = Database['public']['Tables']['profiles']['Row'];
-export type InventoryRecord = Database['public']['Tables']['inventory']['Row'];
+export type InventoryRecord = Database['public']['Tables']['inventory']['Row'] & {
+  recipe_match_count?: number;
+  eat_me_first_index?: number;
+};
 export type RecipeCacheRecord = Database['public']['Tables']['recipes_cache']['Row'];
 export type ScanSessionRecord = Database['public']['Tables']['scan_sessions']['Row'];
 

@@ -156,6 +156,42 @@ export async function triggerExpiryNotificationsCheck(): Promise<boolean> {
 }
 
 /**
+ * Create all notifications for a specific user (including daily summary)
+ */
+export async function createAllNotificationsForUser(userId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc('create_all_notifications_for_user', {
+      p_user_id: userId,
+    });
+
+    if (error) throw error;
+    const count = data || 0;
+    console.log(`[notifications] Created ${count} notifications for user ${userId}`);
+    return count;
+  } catch (error: any) {
+    console.error('Error creating all notifications for user:', error);
+    return 0;
+  }
+}
+
+/**
+ * Create daily inventory summary for a user
+ */
+export async function createDailyInventorySummary(userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc('create_daily_inventory_summary', {
+      p_user_id: userId,
+    });
+
+    if (error) throw error;
+    return true;
+  } catch (error: any) {
+    console.error('Error creating daily inventory summary:', error);
+    return false;
+  }
+}
+
+/**
  * Create a custom notification
  */
 export async function createNotification(

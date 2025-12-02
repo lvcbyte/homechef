@@ -121,8 +121,17 @@ class SyncManagerService {
     try {
       this.pendingCount = await offlineStorage.getPendingCount();
       this.notifyListeners();
-    } catch (error) {
-      console.error('[sync] Failed to update pending count:', error);
+    } catch (error: any) {
+      // Silently handle errors - don't spam console if IndexedDB has issues
+      if (error?.message?.includes('IDBIndex') || error?.message?.includes('getAll')) {
+        // IndexedDB error - likely fixed now, but don't spam
+        console.warn('[sync] IndexedDB error (may be resolved):', error.message);
+      } else {
+        console.error('[sync] Failed to update pending count:', error);
+      }
+      // Set to 0 on error to prevent UI issues
+      this.pendingCount = 0;
+      this.notifyListeners();
     }
   }
 

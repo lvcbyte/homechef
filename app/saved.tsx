@@ -9,6 +9,7 @@ const SafeAreaViewComponent = Platform.OS === 'web' ? View : SafeAreaView;
 
 import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
+import { ContextualWeatherHeader } from '../components/recipes/ContextualWeatherHeader';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { PriceComparison } from '../components/shopping/PriceComparison';
 import { useAuth } from '../contexts/AuthContext';
@@ -983,27 +984,33 @@ export default function SavedScreen() {
             <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
-          <View style={styles.headerIcons}>
-            {profile?.is_admin && (
-              <Pressable 
-                onPress={() => navigateToRoute(router, '/admin')}
-                style={styles.adminButton}
-              >
-                <Ionicons name="shield" size={20} color="#047857" />
-              </Pressable>
+          <View style={styles.headerRight}>
+            {/* Dynamic Island-style Weather Header */}
+            {user && (
+              <ContextualWeatherHeader />
             )}
-            {user ? (
-              <HeaderAvatar
-                userId={user.id}
-                userEmail={user.email}
-                avatarUrl={profile?.avatar_url}
-                showNotificationBadge={true}
-              />
-            ) : (
-              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-                <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              </Pressable>
-            )}
+            <View style={styles.headerIcons}>
+              {profile?.is_admin && (
+                <Pressable 
+                  onPress={() => navigateToRoute(router, '/admin')}
+                  style={styles.adminButton}
+                >
+                  <Ionicons name="shield" size={20} color="#047857" />
+                </Pressable>
+              )}
+              {user ? (
+                <HeaderAvatar
+                  userId={user.id}
+                  userEmail={user.email}
+                  avatarUrl={profile?.avatar_url}
+                  showNotificationBadge={true}
+                />
+              ) : (
+                <Pressable onPress={() => navigateToRoute(router, '/profile')}>
+                  <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
+                </Pressable>
+              )}
+            </View>
           </View>
         </View>
 
@@ -2070,32 +2077,44 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+    gap: 8,
+    flexWrap: 'wrap',
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   logo: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
   },
   brandLabel: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexShrink: 0,
   },
   adminButton: {
     width: 32,

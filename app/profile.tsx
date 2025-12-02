@@ -13,10 +13,11 @@ import { BadgesAndChallenges } from '../components/gamification/BadgesAndChallen
 import { FamilySharing } from '../components/family/FamilySharing';
 import { AvatarUpload, uploadAvatarImage } from '../components/profile/AvatarUpload';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
+import { ContextualWeatherHeader } from '../components/recipes/ContextualWeatherHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { navigateToRoute } from '../utils/navigation';
-import { getUnreadNotificationCount, triggerExpiryNotificationsCheck } from '../services/notifications';
+import { getUnreadNotificationCount, triggerExpiryNotificationsCheck, createAllNotificationsForUser } from '../services/notifications';
 
 const archetypes = [
   {
@@ -92,8 +93,11 @@ export default function ProfileScreen() {
       
       // Refresh count when switching to notifications tab
       if (activeTab === 'notifications') {
-        // Trigger expiry notifications check when user opens notifications
-        triggerExpiryNotificationsCheck().catch(console.error);
+        // Trigger all notifications check when user opens notifications
+        // This creates expiry warnings, expired items, low stock, recipe matches, etc.
+        if (user) {
+          createAllNotificationsForUser(user.id).catch(console.error);
+        }
         loadUnreadCount();
       }
     }
@@ -188,27 +192,33 @@ export default function ProfileScreen() {
             <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandLabel}>STOCKPIT</Text>
           </View>
-          <View style={styles.headerIcons}>
-            {profile?.is_admin && (
-              <Pressable 
-                onPress={() => navigateToRoute(router, '/admin')}
-                style={styles.adminButton}
-              >
-                <Ionicons name="shield" size={20} color="#047857" />
-              </Pressable>
+          <View style={styles.headerRight}>
+            {/* Dynamic Island-style Weather Header */}
+            {user && (
+              <ContextualWeatherHeader />
             )}
-            {user ? (
-              <HeaderAvatar
-                userId={user.id}
-                userEmail={user.email}
-                avatarUrl={profile?.avatar_url}
-                showNotificationBadge={true}
-              />
-            ) : (
-              <Pressable onPress={() => navigateToRoute(router, '/profile')}>
-                <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
-              </Pressable>
-            )}
+            <View style={styles.headerIcons}>
+              {profile?.is_admin && (
+                <Pressable 
+                  onPress={() => navigateToRoute(router, '/admin')}
+                  style={styles.adminButton}
+                >
+                  <Ionicons name="shield" size={20} color="#047857" />
+                </Pressable>
+              )}
+              {user ? (
+                <HeaderAvatar
+                  userId={user.id}
+                  userEmail={user.email}
+                  avatarUrl={profile?.avatar_url}
+                  showNotificationBadge={true}
+                />
+              ) : (
+                <Pressable onPress={() => navigateToRoute(router, '/profile')}>
+                  <Ionicons name="person-circle-outline" size={32} color="#0f172a" />
+                </Pressable>
+              )}
+            </View>
           </View>
         </View>
 
@@ -476,10 +486,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
   headerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexShrink: 0,
   },
   adminButton: {
     width: 32,
