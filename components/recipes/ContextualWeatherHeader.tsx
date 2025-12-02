@@ -96,7 +96,14 @@ export function ContextualWeatherHeader({ onContextChange }: ContextualWeatherHe
         if (!weather) {
           const weatherData = await fetchWeatherData(userLocation);
           if (weatherData) {
-            setLocation(weatherData.cityName || userLocation.city || 'Jouw locatie');
+            // Use weather API city name first, then location service city, then fallback
+            const cityName = weatherData.cityName || userLocation.city;
+            if (cityName) {
+              setLocation(cityName);
+            } else {
+              // If still no city, try reverse geocoding one more time
+              setLocation('Locatie ophalen...');
+            }
             setWeather(weatherData);
             if (onContextChange) {
               const recipeCondition = weatherData.recipeCondition || 
@@ -106,8 +113,11 @@ export function ContextualWeatherHeader({ onContextChange }: ContextualWeatherHe
               onContextChange(currentTimeOfDay, recipeCondition);
             }
           } else {
-            if (!location) {
-              setLocation(userLocation.city || 'Jouw locatie');
+            // Weather API failed, use location service city
+            if (userLocation.city) {
+              setLocation(userLocation.city);
+            } else {
+              setLocation('Locatie niet beschikbaar');
             }
             if (onContextChange) {
               onContextChange(currentTimeOfDay, 'sunny');
@@ -115,8 +125,13 @@ export function ContextualWeatherHeader({ onContextChange }: ContextualWeatherHe
           }
         } else {
           // We already have weather, just update location if needed
-          if (!location) {
-            setLocation(userLocation.city || 'Jouw locatie');
+          if (!location || location === 'Jouw locatie' || location === 'Locatie ophalen...') {
+            const cityName = weather?.cityName || userLocation.city;
+            if (cityName) {
+              setLocation(cityName);
+            } else if (!location) {
+              setLocation('Locatie niet beschikbaar');
+            }
           }
         }
       } else {

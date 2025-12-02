@@ -5,6 +5,50 @@ import { Platform } from 'react-native';
 import { LocationData } from './weather';
 
 /**
+ * Reverse geocoding to get city name from coordinates
+ */
+async function reverseGeocode(latitude: number, longitude: number): Promise<{ city?: string; country?: string }> {
+  try {
+    // Use OpenStreetMap Nominatim API (free, no API key required)
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&accept-language=nl`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'StockPit/1.0', // Required by Nominatim
+      },
+    });
+    
+    if (!response.ok) {
+      console.warn('[Location] Reverse geocoding failed:', response.status);
+      return {};
+    }
+    
+    const data = await response.json();
+    const address = data.address || {};
+    
+    // Try different address fields for city name
+    const city = address.city || 
+                 address.town || 
+                 address.village || 
+                 address.municipality ||
+                 address.county ||
+                 address.state_district ||
+                 '';
+    
+    const country = address.country || '';
+    
+    if (city) {
+      console.log('[Location] Reverse geocoded city:', city);
+    }
+    
+    return { city, country };
+  } catch (error) {
+    console.warn('[Location] Reverse geocoding error:', error);
+    return {};
+  }
+}
+
+/**
  * Get location using native browser geolocation API (for web)
  */
 async function getWebLocation(): Promise<LocationData | null> {
@@ -21,13 +65,19 @@ async function getWebLocation(): Promise<LocationData | null> {
     }, 15000);
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         clearTimeout(timeout);
         const { latitude, longitude } = position.coords;
         console.log('[Location] Web position obtained:', latitude, longitude);
+        
+        // Try to get city name via reverse geocoding
+        const { city, country } = await reverseGeocode(latitude, longitude);
+        
         resolve({
           latitude,
           longitude,
+          city,
+          country,
         });
       },
       (error) => {
@@ -108,9 +158,14 @@ export async function getCurrentLocation(): Promise<LocationData | null> {
     
     console.log('[Location] Position obtained:', location.coords.latitude, location.coords.longitude);
     
+    // Try to get city name via reverse geocoding
+    const { city, country } = await reverseGeocode(location.coords.latitude, location.coords.longitude);
+    
     return {
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
+      city,
+      country,
     };
   } catch (error) {
     console.error('[Location] Error getting location:', error);

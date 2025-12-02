@@ -90,7 +90,11 @@ export function ContextualWeatherCard({ onContextChange }: ContextualWeatherCard
         } else {
           console.warn('[ContextualWeatherCard] ⚠️ No weather data available - check API key and restart app');
           // Still set location even without weather
-          setLocation(userLocation.city || 'Jouw locatie');
+          if (userLocation.city) {
+            setLocation(userLocation.city);
+          } else {
+            setLocation('Locatie niet beschikbaar');
+          }
           // Still trigger context change with default weather
           if (onContextChange) {
             onContextChange(currentTimeOfDay, 'sunny');

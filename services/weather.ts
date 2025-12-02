@@ -84,7 +84,8 @@ export async function fetchWeatherData(location: LocationData): Promise<WeatherD
     const windSpeed = data.wind?.speed || 0;
     
     // Extract city name from weather API response (more reliable than reverse geocoding)
-    const cityName = data.name || location.city;
+    // OpenWeatherMap returns city name in data.name
+    const cityName = data.name || location.city || '';
     
     return {
       temperature,
