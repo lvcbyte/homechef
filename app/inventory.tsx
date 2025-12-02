@@ -11,10 +11,13 @@ import { GlassDock } from '../components/navigation/GlassDock';
 import { HeaderAvatar } from '../components/navigation/HeaderAvatar';
 import { StockpitLoader } from '../components/glass/StockpitLoader';
 import { VoiceInput } from '../components/inventory/VoiceInput';
+import { OfflineSyncIndicator } from '../components/inventory/OfflineSyncIndicator';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { InventoryRecord, InventoryItem } from '../types/app';
 import { runInventoryScan, analyzeShelfPhoto } from '../services/ai';
+import { offlineStorage } from '../services/offlineStorage';
+import { syncManager } from '../services/syncManager';
 import * as ImagePicker from 'expo-image-picker';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
 import { navigateToRoute } from '../utils/navigation';
@@ -822,6 +825,8 @@ export default function InventoryScreen() {
             </Text>
           </View>
 
+          <OfflineSyncIndicator />
+
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Text style={styles.statValue}>{inventory.length}</Text>
@@ -1091,8 +1096,30 @@ export default function InventoryScreen() {
                             style={styles.markUsed}
                             onPress={async () => {
                               if (!user) return router.push('/sign-in');
-                              await supabase.from('inventory').delete().eq('id', item.id);
-                              fetchInventory();
+                              
+                              // Check if online
+                              const isOnline = syncManager.getStatus().isOnline;
+                              
+                              if (isOnline) {
+                                // Online: delete directly
+                                const { error } = await supabase.from('inventory').delete().eq('id', item.id);
+                                if (error) {
+                                  Alert.alert('Fout', `Kon item niet verwijderen: ${error.message}`);
+                                  return;
+                                }
+                                fetchInventory();
+                              } else {
+                                // Offline: queue for sync
+                                await offlineStorage.addPendingSync({
+                                  table: 'inventory',
+                                  operation: 'delete',
+                                  data: { id: item.id },
+                                });
+                                
+                                // Remove from local state immediately for better UX
+                                setInventory(prev => prev.filter(i => i.id !== item.id));
+                                Alert.alert('Offline', 'Item wordt verwijderd zodra je weer online bent.');
+                              }
                             }}
                           >
                             <Ionicons name="checkmark-circle" size={20} color="#047857" />
@@ -1472,16 +1499,51 @@ export default function InventoryScreen() {
                   style={styles.editSaveButton}
                   onPress={async () => {
                     if (!user || !editingItem) return;
-                    await supabase
-                      .from('inventory')
-                      .update({
-                        quantity_approx: editQuantity || null,
-                        expires_at: editExpiry ? editExpiry.toISOString() : null,
-                      })
-                      .eq('id', editingItem.id);
-                    fetchInventory();
-                    setEditingItem(null);
-                    Alert.alert('Opgeslagen', 'Item is bijgewerkt.');
+                    
+                    const updateData = {
+                      quantity_approx: editQuantity || null,
+                      expires_at: editExpiry ? editExpiry.toISOString() : null,
+                    };
+                    
+                    // Check if online
+                    const isOnline = syncManager.getStatus().isOnline;
+                    
+                    if (isOnline) {
+                      // Online: update directly
+                      const { error } = await supabase
+                        .from('inventory')
+                        .update(updateData)
+                        .eq('id', editingItem.id);
+                      
+                      if (error) {
+                        Alert.alert('Fout', `Kon item niet bijwerken: ${error.message}`);
+                        return;
+                      }
+                      
+                      fetchInventory();
+                      setEditingItem(null);
+                      Alert.alert('Opgeslagen', 'Item is bijgewerkt.');
+                    } else {
+                      // Offline: queue for sync
+                      await offlineStorage.addPendingSync({
+                        table: 'inventory',
+                        operation: 'update',
+                        data: {
+                          id: editingItem.id,
+                          ...updateData,
+                        },
+                      });
+                      
+                      // Update local state immediately
+                      setInventory(prev => prev.map(i => 
+                        i.id === editingItem.id 
+                          ? { ...i, ...updateData } 
+                          : i
+                      ));
+                      
+                      setEditingItem(null);
+                      Alert.alert('Offline opgeslagen', 'Wijziging wordt gesynchroniseerd zodra je weer online bent.');
+                    }
                   }}
                 >
                   <Text style={styles.editSaveText}>Opslaan</Text>

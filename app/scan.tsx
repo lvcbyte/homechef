@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { navigateToRoute } from '../utils/navigation';
@@ -34,6 +34,9 @@ import { useAuth } from '../contexts/AuthContext';
 // QuaggaScanner will be loaded dynamically only on web
 // This prevents native builds from trying to load web-only dependencies
 import { supabase } from '../lib/supabase';
+import { offlineStorage } from '../services/offlineStorage';
+import { syncManager } from '../services/syncManager';
+import { fetchProductFromOFF, saveOFFProductToCatalog } from '../services/openFoodFacts';
 import { CATEGORY_OPTIONS, getCategoryLabel } from '../constants/categories';
 import { generateRecipeFromDescription, runInventoryScan, analyzeShelfPhoto, type ShelfPhotoAnalysisResult } from '../services/ai';
 import type { InventoryItem } from '../types/app';
@@ -170,6 +173,7 @@ export default function ScanScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
+  const searchParams = useLocalSearchParams();
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [capturedPhotos, setCapturedPhotos] = useState<LocalPhoto[]>([]);
@@ -242,6 +246,36 @@ export default function ScanScreen() {
     }
     ImagePicker.requestCameraPermissionsAsync();
   }, [permission, requestPermission]);
+
+  // Handle shortcut actions from PWA shortcuts
+  useEffect(() => {
+    const action = searchParams.action;
+    
+    if (action === 'barcode') {
+      // Trigger barcode scanning mode
+      if (user && permission?.granted) {
+        setScannedBarcode(null);
+        setScannedProduct(null);
+        setScanningProduct(false);
+        setBarcodeMode(true);
+      } else if (user && permission && !permission.granted) {
+        // Request permission first
+        requestPermission().then((result) => {
+          if (result.granted) {
+            setScannedBarcode(null);
+            setScannedProduct(null);
+            setScanningProduct(false);
+            setBarcodeMode(true);
+          }
+        });
+      }
+    } else if (action === 'manual') {
+      // Trigger manual entry
+      if (user) {
+        startManualWizard();
+      }
+    }
+  }, [searchParams.action, user, permission, requestPermission]);
 
   // Continuous scanning line animation
   useEffect(() => {
@@ -419,16 +453,78 @@ export default function ScanScreen() {
           setProductDetailModalVisible(true);
         }
       } else {
-        // Product not found - log scan anyway
-        if (targetSession) {
-          await supabase.rpc('log_barcode_scan', {
-            p_user_id: user.id,
-            p_barcode: normalizedBarcode,
-            p_product_id: null,
-            p_product_name: null,
-            p_product_brand: null,
-            p_match_confidence: null,
-          });
+        // Product not found in database - try Open Food Facts API
+        console.log('[scan] Product not found in database, trying Open Food Facts...');
+        
+        const offProduct = await fetchProductFromOFF(normalizedBarcode);
+        
+        if (offProduct) {
+          // Product found in Open Food Facts - save to database
+          console.log('[scan] Product found in Open Food Facts:', offProduct.product_name);
+          
+          const savedProductId = await saveOFFProductToCatalog(supabase, offProduct);
+          
+          // Log the scan with product info
+          if (targetSession) {
+            await supabase.rpc('log_barcode_scan', {
+              p_user_id: user.id,
+              p_barcode: normalizedBarcode,
+              p_product_id: savedProductId,
+              p_product_name: offProduct.product_name,
+              p_product_brand: offProduct.brand,
+              p_match_confidence: 85.0, // High confidence from Open Food Facts
+            });
+          }
+          
+          // Show product detail modal
+          const product: CatalogMatch = {
+            id: savedProductId || `off-${normalizedBarcode}`,
+            product_name: offProduct.product_name,
+            brand: offProduct.brand || null,
+            category: offProduct.category,
+            barcode: offProduct.barcode,
+            price: null,
+            unit_size: offProduct.unit_size || null,
+            image_url: offProduct.image_url || null,
+            source: 'openfoodfacts',
+          };
+          
+          setScannedProduct(product);
+          setShowScanAnimation(false);
+          scanAnimation.setValue(0);
+          pulseAnimation.setValue(1);
+          setBarcodeMode(false);
+          setScanningProduct(false);
+          setProductDetailModalVisible(true);
+        } else {
+          // Product not found anywhere - log scan anyway
+          console.log('[scan] Product not found in Open Food Facts either');
+          if (targetSession) {
+            await supabase.rpc('log_barcode_scan', {
+              p_user_id: user.id,
+              p_barcode: normalizedBarcode,
+              p_product_id: null,
+              p_product_name: null,
+              p_product_brand: null,
+              p_match_confidence: null,
+            });
+          }
+          
+          // Show error message
+          setShowScanAnimation(false);
+          scanAnimation.setValue(0);
+          pulseAnimation.setValue(1);
+          setBarcodeMode(false);
+          setScanningProduct(false);
+          
+          Alert.alert(
+            'Product niet gevonden',
+            `We konden geen informatie vinden voor barcode ${normalizedBarcode}. Probeer handmatig toe te voegen.`,
+            [
+              { text: 'Handmatig toevoegen', onPress: () => startManualWizard() },
+              { text: 'OK', style: 'cancel' },
+            ]
+          );
         }
         
         // Product not found
@@ -479,14 +575,25 @@ export default function ScanScreen() {
     if (!user || !scannedProduct) return;
     
     try {
-      // Get expiry date from FAVV/HACCP estimation
-      const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
-        category_slug: scannedProduct.category || 'pantry',
-      });
+      // Check if online
+      const isOnline = syncManager.getStatus().isOnline;
       
-      const expires = expiryData ? expiryData : null;
+      let expires: string | null = null;
       
-      const { error: insertError } = await supabase.from('inventory').insert({
+      if (isOnline) {
+        // Get expiry date from FAVV/HACCP estimation (only if online)
+        const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
+          category_slug: scannedProduct.category || 'pantry',
+        });
+        expires = expiryData ? expiryData : null;
+      } else {
+        // Offline: estimate 7 days
+        const fallbackDate = new Date();
+        fallbackDate.setDate(fallbackDate.getDate() + 7);
+        expires = fallbackDate.toISOString();
+      }
+      
+      const itemData = {
         user_id: user.id,
         name: scannedProduct.product_name,
         category: scannedProduct.category || 'pantry',
@@ -496,12 +603,18 @@ export default function ScanScreen() {
         catalog_price: scannedProduct.price || null,
         catalog_image_url: scannedProduct.image_url || null,
         expires_at: expires,
-      });
+      };
       
-      if (insertError) {
-        console.error('Error adding product:', insertError);
-        Alert.alert('Fout', `Kon product niet toevoegen: ${insertError.message}`);
-      } else {
+      if (isOnline) {
+        // Online: insert directly
+        const { error: insertError } = await supabase.from('inventory').insert(itemData);
+        
+        if (insertError) {
+          console.error('Error adding product:', insertError);
+          Alert.alert('Fout', `Kon product niet toevoegen: ${insertError.message}`);
+          return;
+        }
+        
         // Close modal first
         setProductDetailModalVisible(false);
         setScannedProduct(null);
@@ -510,6 +623,29 @@ export default function ScanScreen() {
         
         // Show success message
         Alert.alert('Toegevoegd', `${scannedProduct.product_name} is toegevoegd aan je voorraad.`, [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigateToRoute(router, '/inventory');
+            },
+          },
+        ]);
+      } else {
+        // Offline: queue for sync
+        await offlineStorage.addPendingSync({
+          table: 'inventory',
+          operation: 'insert',
+          data: itemData,
+        });
+        
+        // Close modal first
+        setProductDetailModalVisible(false);
+        setScannedProduct(null);
+        setScannedBarcode(null);
+        setScanningProduct(false);
+        
+        // Show success message
+        Alert.alert('Offline opgeslagen', `${scannedProduct.product_name} wordt toegevoegd zodra je weer online bent.`, [
           {
             text: 'OK',
             onPress: () => {
@@ -629,12 +765,25 @@ export default function ScanScreen() {
         });
         const categorySuggestion = categoryData?.[0];
         
-        // Estimate expiry
-        const { data: expiryData } = await supabase.rpc('estimate_expiry_date', {
-          category_slug: item.category || categorySuggestion?.category || 'pantry',
-        });
+        // Check if online
+        const isOnline = syncManager.getStatus().isOnline;
         
-        const { error: insertError } = await supabase.from('inventory').insert({
+        let expiryData: string | null = null;
+        
+        if (isOnline) {
+          // Estimate expiry (only if online)
+          const { data } = await supabase.rpc('estimate_expiry_date', {
+            category_slug: item.category || categorySuggestion?.category || 'pantry',
+          });
+          expiryData = data || null;
+        } else {
+          // Offline: estimate 7 days
+          const fallbackDate = new Date();
+          fallbackDate.setDate(fallbackDate.getDate() + 7);
+          expiryData = fallbackDate.toISOString();
+        }
+        
+        const itemData = {
           user_id: user.id,
           name: item.item_name,
           category: item.category || categorySuggestion?.category || 'pantry',
@@ -643,10 +792,21 @@ export default function ScanScreen() {
           catalog_product_id: bestMatch?.id || null,
           catalog_price: bestMatch?.price || null,
           catalog_image_url: bestMatch?.image_url || null,
-          expires_at: expiryData || null,
-        });
+          expires_at: expiryData,
+        };
         
-        if (!insertError) {
+        if (isOnline) {
+          const { error: insertError } = await supabase.from('inventory').insert(itemData);
+          if (!insertError) {
+            successCount++;
+          }
+        } else {
+          // Offline: queue for sync
+          await offlineStorage.addPendingSync({
+            table: 'inventory',
+            operation: 'insert',
+            data: itemData,
+          });
           successCount++;
         }
       } catch (error) {
@@ -689,23 +849,49 @@ export default function ScanScreen() {
   const insertDetectedInventoryItems = async (items: InventoryItem[], contextLabel: string) => {
     if (!user || !items.length) return 0;
 
+    const isOnline = syncManager.getStatus().isOnline;
     let successCount = 0;
+    
     for (const item of items) {
       try {
-        const { data: detection } = await supabase.rpc('detect_category', { item_name: item.name });
-        const suggestion = detection?.[0];
-        const expiresAt = item.daysUntilExpiry
-          ? new Date(Date.now() + item.daysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
-          : null;
-        const { error } = await supabase.from('inventory').insert({
+        let suggestion: any = null;
+        let expiresAt: string | null = null;
+        
+        if (isOnline) {
+          // Detect category (only if online)
+          const { data: detection } = await supabase.rpc('detect_category', { item_name: item.name });
+          suggestion = detection?.[0];
+          expiresAt = item.daysUntilExpiry
+            ? new Date(Date.now() + item.daysUntilExpiry * 24 * 60 * 60 * 1000).toISOString()
+            : null;
+        } else {
+          // Offline: estimate 7 days
+          const fallbackDate = new Date();
+          fallbackDate.setDate(fallbackDate.getDate() + 7);
+          expiresAt = fallbackDate.toISOString();
+        }
+        
+        const itemData = {
           user_id: user.id,
           name: item.name,
           category: suggestion?.category ?? 'pantry',
           quantity_approx: item.quantityEstimate || null,
           confidence_score: 0.8,
           expires_at: expiresAt,
-        });
-        if (!error) {
+        };
+        
+        if (isOnline) {
+          const { error } = await supabase.from('inventory').insert(itemData);
+          if (!error) {
+            successCount += 1;
+          }
+        } else {
+          // Offline: queue for sync
+          await offlineStorage.addPendingSync({
+            table: 'inventory',
+            operation: 'insert',
+            data: itemData,
+          });
           successCount += 1;
         }
       } catch (error) {
@@ -714,7 +900,10 @@ export default function ScanScreen() {
     }
 
     if (successCount > 0) {
-      Alert.alert('Shelf scan', `${successCount} items toegevoegd aan je voorraad.`);
+      const message = isOnline 
+        ? `${successCount} items toegevoegd aan je voorraad.`
+        : `${successCount} items offline opgeslagen. Ze worden gesynchroniseerd zodra je weer online bent.`;
+      Alert.alert('Shelf scan', message);
     } else {
       Alert.alert('Shelf scan', 'Geen nieuwe items gedetecteerd. Probeer een duidelijke foto.');
     }
@@ -786,7 +975,7 @@ export default function ScanScreen() {
       quantityLabel = manualQuantityValue ? `${manualQuantityValue} ${manualUnit}` : manualUnit;
     }
 
-    const { error: insertError } = await supabase.from('inventory').insert({
+    const itemData = {
       user_id: user.id,
       name: selectedMatch?.product_name || manualName,
       category: selectedMatch?.category || manualCategory || 'pantry',
@@ -796,12 +985,27 @@ export default function ScanScreen() {
       catalog_product_id: selectedMatch?.id ?? null,
       catalog_price: catalogPrice,
       catalog_image_url: catalogImageUrl,
-    });
+    };
 
-    if (insertError) {
-      console.error('Error adding item:', insertError);
-      Alert.alert('Fout', `Kon item niet toevoegen: ${insertError.message}`);
-      return;
+    // Check if online
+    const isOnline = syncManager.getStatus().isOnline;
+
+    if (isOnline) {
+      // Online: insert directly
+      const { error: insertError } = await supabase.from('inventory').insert(itemData);
+
+      if (insertError) {
+        console.error('Error adding item:', insertError);
+        Alert.alert('Fout', `Kon item niet toevoegen: ${insertError.message}`);
+        return;
+      }
+    } else {
+      // Offline: queue for sync
+      await offlineStorage.addPendingSync({
+        table: 'inventory',
+        operation: 'insert',
+        data: itemData,
+      });
     }
 
     setManualName('');
@@ -815,7 +1019,12 @@ export default function ScanScreen() {
     setProductMatches([]);
     setSelectedMatch(null);
     setCategoryLocked(false);
-    Alert.alert('Toegevoegd', 'Het item is aan je voorraad toegevoegd.');
+    
+    if (isOnline) {
+      Alert.alert('Toegevoegd', 'Het item is aan je voorraad toegevoegd.');
+    } else {
+      Alert.alert('Offline opgeslagen', 'Het item wordt gesynchroniseerd zodra je weer online bent.');
+    }
   };
 
   useEffect(() => {
@@ -1179,7 +1388,9 @@ export default function ScanScreen() {
                 <View style={[styles.scanningStatus, { pointerEvents: 'none' }]}>
                   <ActivityIndicator size="large" color="#047857" />
                   <Text style={styles.scanningText}>Barcode gedetecteerd...</Text>
-                  <Text style={styles.scanningSubtext}>Product wordt opgezocht</Text>
+                  <Text style={styles.scanningSubtext}>
+                    {scanningProduct ? 'Zoeken in database en Open Food Facts...' : 'Product wordt opgezocht'}
+                  </Text>
                 </View>
               ) : (
                 <Text style={[styles.barcodeHint, { pointerEvents: 'none' }]}>Richt de camera op de barcode</Text>
@@ -1305,6 +1516,14 @@ export default function ScanScreen() {
                   )}
                   
                   <View style={styles.productDetailContent}>
+                    {/* Open Food Facts badge */}
+                    {scannedProduct.source === 'openfoodfacts' && (
+                      <View style={styles.offBadge}>
+                        <Ionicons name="globe-outline" size={16} color="#047857" />
+                        <Text style={styles.offBadgeText}>Open Food Facts</Text>
+                      </View>
+                    )}
+                    
                     <Text style={styles.productDetailBrand}>{scannedProduct.brand || 'Onbekend merk'}</Text>
                     <Text style={styles.productDetailName}>{scannedProduct.product_name}</Text>
                     
@@ -2822,6 +3041,25 @@ const styles = StyleSheet.create({
   productDetailContent: {
     padding: 24,
     gap: 16,
+  },
+  offBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#047857',
+  },
+  offBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#047857',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   productDetailBrand: {
     fontSize: 14,

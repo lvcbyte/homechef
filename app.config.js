@@ -69,6 +69,60 @@ module.exports = {
         appleMobileWebAppStatusBarStyle: 'black-translucent',
         appleTouchIcon: './assets/apple-touch-icon.png',
       },
+      shortcuts: [
+        {
+          name: 'Scan Barcode',
+          shortName: 'Scan',
+          description: 'Scan een barcode om product toe te voegen',
+          url: '/scan?action=barcode',
+          icons: [
+            {
+              src: './assets/icon.png',
+              sizes: '96x96',
+              type: 'image/png',
+            },
+          ],
+        },
+        {
+          name: 'Voeg Item Toe',
+          shortName: 'Toevoegen',
+          description: 'Voeg handmatig een item toe aan je voorraad',
+          url: '/scan?action=manual',
+          icons: [
+            {
+              src: './assets/icon.png',
+              sizes: '96x96',
+              type: 'image/png',
+            },
+          ],
+        },
+        {
+          name: 'Boodschappenlijst',
+          shortName: 'Boodschappen',
+          description: 'Bekijk je boodschappenlijst',
+          url: '/shopping',
+          icons: [
+            {
+              src: './assets/icon.png',
+              sizes: '96x96',
+              type: 'image/png',
+            },
+          ],
+        },
+        {
+          name: 'Voorraad',
+          shortName: 'Voorraad',
+          description: 'Bekijk je voorraad',
+          url: '/inventory',
+          icons: [
+            {
+              src: './assets/icon.png',
+              sizes: '96x96',
+              type: 'image/png',
+            },
+          ],
+        },
+      ],
       meta: {
         viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover',
         'mobile-web-app-capable': 'yes',

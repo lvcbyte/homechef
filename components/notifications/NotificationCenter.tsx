@@ -294,9 +294,9 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
       <View style={styles.container}>
         <View style={styles.emptyState}>
           <View style={styles.emptyIconContainer}>
-            <Ionicons name="notifications-off-outline" size={64} color="#cbd5e1" />
+            <Ionicons name="notifications-off-outline" size={48} color="#cbd5e1" />
           </View>
-          <Text style={styles.emptyTitle}>Geen notificaties</Text>
+          <Text style={styles.emptyTitle}>Geen meldingen</Text>
           <Text style={styles.emptySubtext}>
             Je ontvangt hier meldingen over vervaldatums, badges, uitdagingen en meer
           </Text>
@@ -307,101 +307,129 @@ export function NotificationCenter({ userId, onNotificationPress }: Notification
 
   return (
     <View style={styles.container}>
+      {/* Header with unread count and mark all button */}
       {unreadCount > 0 && (
         <View style={styles.header}>
-          <View style={styles.headerContent}>
+          <View style={styles.headerLeft}>
             <View style={styles.headerBadge}>
               <Text style={styles.headerBadgeText}>{unreadCount}</Text>
             </View>
             <Text style={styles.headerText}>
-              {unreadCount === 1 ? 'ongelezen notificatie' : 'ongelezen notificaties'}
+              {unreadCount === 1 ? 'ongelezen' : 'ongelezen'}
             </Text>
           </View>
           <TouchableOpacity
             style={styles.markAllButton}
             onPress={markAllAsRead}
             disabled={markingAll}
+            activeOpacity={0.7}
           >
             {markingAll ? (
               <ActivityIndicator size="small" color="#047857" />
             ) : (
-              <Text style={styles.markAllButtonText}>Alles markeren als gelezen</Text>
+              <>
+                <Ionicons name="checkmark-done" size={16} color="#047857" />
+                <Text style={styles.markAllButtonText}>Alles gelezen</Text>
+              </>
             )}
           </TouchableOpacity>
         </View>
       )}
 
-      <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+      {/* Notifications List */}
+      <ScrollView 
+        style={styles.list} 
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+      >
         {notifications.map((notification) => {
           const iconColor = getNotificationColor(notification.type);
           const isUnread = !notification.read;
           const iconName = getNotificationIcon(notification.type);
 
           return (
-            <View
+            <TouchableOpacity
               key={notification.id}
               style={[styles.notificationCard, isUnread && styles.notificationCardUnread]}
+              onPress={() => handleNotificationPress(notification)}
+              activeOpacity={0.7}
             >
-              <TouchableOpacity
-                style={styles.notificationContent}
-                onPress={() => handleNotificationPress(notification)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.iconContainer, { backgroundColor: iconColor + '15' }]}>
-                  <Ionicons name={iconName as any} size={24} color={iconColor} />
-                </View>
-                <View style={styles.content}>
-                  <View style={styles.contentHeader}>
-                    <Text style={[styles.title, isUnread && styles.titleUnread]}>
-                      {notification.title}
-                    </Text>
-                    {isUnread && <View style={styles.unreadDot} />}
-                  </View>
-                  <Text style={styles.message} numberOfLines={2}>
-                    {notification.message}
+              {/* Icon */}
+              <View style={[styles.iconContainer, { backgroundColor: iconColor + '15' }]}>
+                <Ionicons name={iconName as any} size={22} color={iconColor} />
+              </View>
+
+              {/* Content */}
+              <View style={styles.content}>
+                <View style={styles.contentHeader}>
+                  <Text style={[styles.title, isUnread && styles.titleUnread]} numberOfLines={2}>
+                    {notification.title}
                   </Text>
+                  {isUnread && <View style={styles.unreadDot} />}
+                </View>
+                
+                <Text style={styles.message} numberOfLines={3}>
+                  {notification.message}
+                </Text>
+                
+                <View style={styles.footer}>
                   <Text style={styles.time}>{formatTimeAgo(notification.created_at)}</Text>
                   
                   {/* Show suggested recipes if available */}
                   {notification.type === 'expiry_recipe_suggestion' && 
-                   notification.data?.suggested_recipe && (
-                    <View style={styles.recipeSuggestion}>
-                      <Ionicons name="restaurant" size={14} color="#047857" />
-                      <Text style={styles.recipeSuggestionText} numberOfLines={1}>
-                        {notification.data.suggested_recipe.title}
+                   (notification.data?.suggested_recipes?.[0] || notification.data?.suggested_recipe) && (
+                    <View style={styles.recipeBadge}>
+                      <Ionicons name="restaurant" size={12} color="#047857" />
+                      <Text style={styles.recipeBadgeText} numberOfLines={1}>
+                        {notification.data?.suggested_recipes?.[0]?.title || 
+                         notification.data?.suggested_recipe?.title || 
+                         'Recept beschikbaar'}
                       </Text>
                     </View>
                   )}
-
-                  {/* Show invitation actions */}
-                  {notification.type === 'household_invitation' && !notification.read && (
-                    <View style={styles.invitationActions}>
-                      <TouchableOpacity
-                        style={styles.acceptButton}
-                        onPress={() => handleInvitationAction(notification, 'accept')}
-                      >
-                        <Ionicons name="checkmark" size={16} color="#fff" />
-                        <Text style={styles.acceptButtonText}>Accepteren</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.rejectButton}
-                        onPress={() => handleInvitationAction(notification, 'reject')}
-                      >
-                        <Ionicons name="close" size={16} color="#ef4444" />
-                        <Text style={styles.rejectButtonText}>Weigeren</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
                 </View>
-              </TouchableOpacity>
-              
+
+                {/* Show invitation actions */}
+                {notification.type === 'household_invitation' && !notification.read && (
+                  <View style={styles.invitationActions}>
+                    <TouchableOpacity
+                      style={styles.acceptButton}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleInvitationAction(notification, 'accept');
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                      <Text style={styles.acceptButtonText}>Accepteren</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.rejectButton}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleInvitationAction(notification, 'reject');
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="close" size={16} color="#ef4444" />
+                      <Text style={styles.rejectButtonText}>Weigeren</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Delete Button */}
               <TouchableOpacity
                 style={styles.deleteButton}
-                onPress={() => deleteNotification(notification.id)}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  deleteNotification(notification.id);
+                }}
+                activeOpacity={0.7}
               >
-                <Ionicons name="close" size={18} color="#94a3b8" />
+                <Ionicons name="close-circle-outline" size={20} color="#cbd5e1" />
               </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>
@@ -427,7 +455,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   header: {
-    padding: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     backgroundColor: '#f0fdf4',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(4, 120, 87, 0.1)',
@@ -435,21 +464,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  headerContent: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   headerBadge: {
     backgroundColor: '#047857',
-    borderRadius: 12,
-    paddingHorizontal: 8,
+    borderRadius: 10,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    minWidth: 24,
+    minWidth: 28,
     alignItems: 'center',
   },
   headerBadgeText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#fff',
   },
@@ -459,8 +488,15 @@ const styles = StyleSheet.create({
     color: '#047857',
   },
   markAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(4, 120, 87, 0.2)',
   },
   markAllButtonText: {
     fontSize: 13,
@@ -470,40 +506,44 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
+  listContent: {
+    paddingBottom: 24,
+  },
   notificationCard: {
     flexDirection: 'row',
     padding: 16,
+    paddingHorizontal: 24,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(15,23,42,0.08)',
+    borderBottomColor: '#f1f5f9',
     backgroundColor: '#fff',
     alignItems: 'flex-start',
+    gap: 12,
+    minHeight: 80,
   },
   notificationCardUnread: {
     backgroundColor: '#f8fafc',
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     borderLeftColor: '#047857',
-  },
-  notificationContent: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 12,
+    paddingLeft: 20,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    flexShrink: 0,
+    borderWidth: 1.5,
     borderColor: 'rgba(4, 120, 87, 0.1)',
   },
   content: {
     flex: 1,
-    gap: 6,
+    gap: 8,
+    minWidth: 0,
   },
   contentHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
   },
   title: {
@@ -511,48 +551,58 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
     flex: 1,
+    lineHeight: 20,
   },
   titleUnread: {
     fontWeight: '700',
     color: '#065f46',
   },
   message: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#64748b',
-    lineHeight: 18,
+    lineHeight: 20,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   time: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94a3b8',
-    marginTop: 2,
+    fontWeight: '500',
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#047857',
+    marginTop: 6,
+    flexShrink: 0,
   },
-  recipeSuggestion: {
+  recipeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    padding: 8,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     backgroundColor: '#f0fdf4',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(4, 120, 87, 0.1)',
+    borderColor: 'rgba(4, 120, 87, 0.2)',
+    maxWidth: '100%',
   },
-  recipeSuggestionText: {
-    fontSize: 12,
+  recipeBadgeText: {
+    fontSize: 11,
     color: '#047857',
     fontWeight: '600',
     flex: 1,
   },
   invitationActions: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
+    gap: 10,
+    marginTop: 8,
   },
   acceptButton: {
     flex: 1,
@@ -560,13 +610,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: '#047857',
+    minHeight: 44,
   },
   acceptButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#fff',
   },
   rejectButton: {
@@ -575,50 +626,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#ef4444',
     backgroundColor: '#fff',
+    minHeight: 44,
   },
   rejectButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#ef4444',
   },
   deleteButton: {
     padding: 8,
-    marginLeft: 8,
+    marginLeft: 4,
+    flexShrink: 0,
+    minWidth: 36,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 48,
-    gap: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 64,
+    gap: 20,
   },
   emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: '#f8fafc',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#e2e8f0',
     borderStyle: 'dashed',
+    marginBottom: 8,
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
-    marginTop: 8,
+    marginTop: 4,
   },
   emptySubtext: {
     fontSize: 14,
     color: '#64748b',
     textAlign: 'center',
     lineHeight: 20,
-    maxWidth: 280,
+    maxWidth: 300,
   },
 });

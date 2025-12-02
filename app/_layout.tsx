@@ -5,6 +5,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AuthProvider } from '../contexts/AuthContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { ShortcutHandler } from '../components/pwa/ShortcutHandler';
+import { AppBadgeManager } from '../components/pwa/AppBadgeManager';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -112,6 +114,8 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
         <AuthProvider>
+          <ShortcutHandler />
+          <AppBadgeManager />
           <Stack
             screenOptions={{
               headerShown: false,
